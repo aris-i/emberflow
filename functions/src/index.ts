@@ -35,6 +35,23 @@ async function onDocChange(
     return;
   }
 
+  // Revert any changes made to document other than @form
+  const revertedValues: Record<string, any> = {};
+
+  if (beforeDocument) {
+    const modifiedFields = Object.keys(document ?? {}).filter((key) => !key.startsWith("@form"));
+    modifiedFields.forEach((field) => {
+      if (document?.[field] !== beforeDocument[field]) {
+        revertedValues[field] = beforeDocument[field];
+      }
+    });
+  }
+  // if revertedValues is not empty, update the document
+  if (Object.keys(revertedValues).length > 0) {
+    console.log(`Reverting document with ID ${documentId}:\n`, revertedValues);
+    await snapshot.ref.update(revertedValues);
+  }
+
   await snapshot.ref.update({"@form.@status": "processing"});
 
   // Validate the document
@@ -76,7 +93,11 @@ async function onDocChange(
   const path = snapshot.ref.path;
   const status = "new";
   const timeCreated = admin.firestore.Timestamp.now();
-  const modifiedFields : string[] = [];
+
+  // get all @form fields that doesn't start with @
+  const formFields = Object.keys(document?.["@form"] ?? {}).filter((key) => !key.startsWith("@"));
+  // compare value of each @form field with the value of the same field in the document to get modified fields
+  const modifiedFields = formFields.filter((field) => document?.[field] !== document?.["@form"]?.[field]);
 
   const action: Action = {
     actionType,
