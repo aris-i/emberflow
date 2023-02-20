@@ -3,6 +3,7 @@ import * as admin from "firebase-admin";
 import {docPaths, Entity} from "./db-structure";
 import {validators} from "./validators";
 import {Action} from "./types";
+import {logics} from "./business-logics";
 
 admin.initializeApp();
 
@@ -108,9 +109,23 @@ async function onDocChange(
     modifiedFields,
   };
 
-  await admin.firestore().collection("actions").add(action);
+  const actionRef = await admin.firestore().collection("actions").add(action);
 
   await snapshot.ref.update({"@form.@status": "submitted"});
+
+  const matchingLogics = Object.values(logics).filter((logic) => {
+    return (
+      logic.actionTypes.includes(actionType) &&
+        logic.modifiedFields.some((field) => modifiedFields.includes(field)) &&
+        logic.entities.includes(entity)
+    );
+  });
+  const logicResults = await Promise.all(matchingLogics.map((logic) => logic.logicFn(action)));
+  const errorLogicResults = logicResults.filter((result) => result.status === "error");
+  if (errorLogicResults.length > 0) {
+    const errorMessage = errorLogicResults.map((result) => result.message).join("\n");
+    await actionRef.update({status: "finished-with-error", message: errorMessage});
+  }
 }
 
 

@@ -9,14 +9,15 @@ export type Action = {
     modifiedFields: string[];
     status: "new" | "processing" | "processed" | "processed-with-errors";
     timeCreated: FirebaseFirestore.Timestamp;
+    message?: string
 };
 
-type LogicResultDoc = {
+export type LogicResultDoc = {
     dstPath: string;
     doc: FirebaseFirestore.DocumentData | string | null;
     instructions: { [key: string]: string };
 };
-type LogicResult = {
+export type LogicResult = {
     name: string;
     status: "finished" | "error";
     message?: string;
@@ -27,8 +28,8 @@ type LogicResult = {
 export type LogicFn = (action: Action) => Promise<LogicResult>;
 export type LogicConfig = {
     name: string;
-    actionType: ("create" | "update" | "delete")[];
+    actionTypes: ("create" | "update" | "delete")[];
     modifiedFields: string[];
-    docPaths: Entity[];
+    entities: Entity[];
     logicFn: LogicFn;
 };

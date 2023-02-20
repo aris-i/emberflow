@@ -39,9 +39,9 @@ const echoLogic: LogicFn = async (action) => {
 const logics: LogicConfig[] = [
   {
     name: "EchoLogic",
-    actionType: ["create", "update"],
+    actionTypes: ["create", "update"],
     modifiedFields: ["name", "email"],
-    docPaths: [Entity.User],
+    entities: [Entity.User],
     logicFn: echoLogic,
   },
   // more logics here

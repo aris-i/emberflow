@@ -44,7 +44,6 @@ const dbStructure = {
   },
 };
 
-
 function traverseBFS(obj: Record<string, object>): string[] {
   const paths: string[] = [];
   const queue: { node: Record<string, object>; path: string }[] = [];
