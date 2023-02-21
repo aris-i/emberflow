@@ -8,7 +8,7 @@ const echoLogic: LogicFn = async (action) => {
   const {document, timeCreated, path, modifiedFields} = action;
   console.log(`Executing EchoLogic on document at ${path}...`);
 
-  const updatedDoc : DocumentData= {};
+  const updatedDoc: DocumentData = {};
 
   // Copy modified fields of document's @form to the document
   if (document["@form"]) {

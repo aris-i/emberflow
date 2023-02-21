@@ -1,6 +1,7 @@
 import {Entity} from "./db-structure";
 import {firestore} from "firebase-admin";
 import Timestamp = firestore.Timestamp;
+import DocumentData = firestore.DocumentData;
 
 export type Action = {
     actionType: string;
@@ -15,7 +16,7 @@ export type Action = {
 export type LogicResultDoc = {
     dstPath: string;
     doc: FirebaseFirestore.DocumentData | string | null;
-    instructions: { [key: string]: string };
+    instructions?: { [key: string]: string };
 };
 export type LogicResult = {
     name: string;
@@ -26,10 +27,19 @@ export type LogicResult = {
     documents: LogicResultDoc[];
 };
 export type LogicFn = (action: Action) => Promise<LogicResult>;
+export type ActionType = "create" | "update" | "delete";
 export type LogicConfig = {
     name: string;
-    actionTypes: ("create" | "update" | "delete")[];
-    modifiedFields: string[];
-    entities: Entity[];
+    actionTypes: ActionType[] | "all";
+    modifiedFields: string[] | "all"
+    entities: Entity[] | "all";
     logicFn: LogicFn;
 };
+
+export type SecurityStatus = "allowed" | "rejected"
+export type SecurityResult = {
+    status: SecurityStatus;
+    message?: string;
+};
+export type SecurityFn = (entity: Entity, doc: DocumentData, actionType: ActionType, modifiedFields: string[]) => Promise<SecurityResult>;
+export type SecurityConfig = Record<Entity, SecurityFn>;

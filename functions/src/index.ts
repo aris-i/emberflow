@@ -2,10 +2,73 @@ import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import {docPaths, Entity} from "./db-structure";
 import {validators} from "./validators";
-import {Action} from "./types";
+import {Action, LogicResultDoc} from "./types";
 import {logics} from "./business-logics";
+import {securityConfig} from "./security";
 
 admin.initializeApp();
+
+async function distribute(userDocsByDstPath: Record<string, LogicResultDoc[]>) {
+  const db = admin.firestore();
+
+  for (const [dstPath, resultDocs] of Object.entries(userDocsByDstPath).sort()) {
+    console.log(`Documents for path ${dstPath}:`);
+    for (const resultDoc of resultDocs) {
+      const {doc, instructions} = resultDoc;
+      if (typeof doc === "string") {
+        // Copy document to dstPath
+        const snapshot = await db.doc(doc).get();
+        if (!snapshot.exists) {
+          console.log(`Document ${doc} does not exist`);
+          continue;
+        }
+        const data = snapshot.data();
+        if (!data) {
+          console.log(`Document ${doc} has no data`);
+          continue;
+        }
+        await db.doc(dstPath).set(data);
+        console.log(`Document copied from ${doc} to ${dstPath}`);
+      } else if (doc === null) {
+        // Delete document at dstPath
+        await db.doc(dstPath).delete();
+        console.log(`Document deleted at ${dstPath}`);
+      } else {
+        const updateData: {[key: string]: any} = {...doc};
+        if (instructions) {
+          for (const [property, instruction] of Object.entries(instructions)) {
+            if (instruction === "++") {
+              updateData[property] = admin.firestore.FieldValue.increment(1);
+            } else if (instruction === "--") {
+              updateData[property] = admin.firestore.FieldValue.increment(-1);
+            } else if (instruction.startsWith("+")) {
+              const incrementValue = parseInt(instruction.slice(1));
+              if (isNaN(incrementValue)) {
+                console.log(`Invalid increment value ${instruction} for property ${property}`);
+              } else {
+                updateData[property] = admin.firestore.FieldValue.increment(incrementValue);
+              }
+            } else if (instruction.startsWith("-")) {
+              const decrementValue = parseInt(instruction.slice(1));
+              if (isNaN(decrementValue)) {
+                console.log(`Invalid decrement value ${instruction} for property ${property}`);
+              } else {
+                updateData[property] = admin.firestore.FieldValue.increment(-decrementValue);
+              }
+            } else {
+              console.log(`Invalid instruction ${instruction} for property ${property}`);
+            }
+          }
+        }
+
+        // Merge document to dstPath
+        await db.doc(dstPath).set(updateData, {merge: true});
+        console.log(`Document merged to ${dstPath}`);
+      }
+    }
+  }
+}
+
 
 async function onDocChange(
   entity: Entity,
@@ -68,6 +131,23 @@ async function onDocChange(
     }
   }
 
+
+  // get all @form fields that doesn't start with @
+  const formFields = Object.keys(document?.["@form"] ?? {}).filter((key) => !key.startsWith("@"));
+  // compare value of each @form field with the value of the same field in the document to get modified fields
+  const modifiedFields = formFields.filter((field) => document?.[field] !== document?.["@form"]?.[field]);
+
+  // Run security check
+  const securityFn = securityConfig[entity];
+  if (securityFn) {
+    const securityResult = await securityFn(entity, document, event, modifiedFields);
+    if (securityResult.status === "rejected") {
+      console.log(`Security check failed: ${securityResult.message}`);
+      await snapshot.ref.update({"@form.@status": "security-error", "@form.@message": securityResult.message});
+      return;
+    }
+  }
+
   // Check for delay
   const delay = document?.["@delay"];
   if (delay) {
@@ -95,11 +175,6 @@ async function onDocChange(
   const status = "new";
   const timeCreated = admin.firestore.Timestamp.now();
 
-  // get all @form fields that doesn't start with @
-  const formFields = Object.keys(document?.["@form"] ?? {}).filter((key) => !key.startsWith("@"));
-  // compare value of each @form field with the value of the same field in the document to get modified fields
-  const modifiedFields = formFields.filter((field) => document?.[field] !== document?.["@form"]?.[field]);
-
   const action: Action = {
     actionType,
     path,
@@ -113,11 +188,11 @@ async function onDocChange(
 
   await snapshot.ref.update({"@form.@status": "submitted"});
 
-  const matchingLogics = Object.values(logics).filter((logic) => {
+  const matchingLogics = logics.filter((logic) => {
     return (
-      logic.actionTypes.includes(actionType) &&
-        logic.modifiedFields.some((field) => modifiedFields.includes(field)) &&
-        logic.entities.includes(entity)
+      (logic.actionTypes === "all" || logic.actionTypes.includes(actionType)) &&
+        (logic.modifiedFields === "all" || logic.modifiedFields.some((field) => modifiedFields.includes(field))) &&
+        (logic.entities === "all" || logic.entities.includes(entity))
     );
   });
   const logicResults = await Promise.all(matchingLogics.map((logic) => logic.logicFn(action)));
@@ -126,6 +201,32 @@ async function onDocChange(
     const errorMessage = errorLogicResults.map((result) => result.message).join("\n");
     await actionRef.update({status: "finished-with-error", message: errorMessage});
   }
+
+  const docsByDstPath: Record<string, LogicResultDoc[]> = logicResults
+    .filter((result) => result.status === "finished")
+    .flatMap((result) => result.documents)
+    .reduce<Record<string, LogicResultDoc[]>>((grouped, doc) => {
+      const {dstPath} = doc;
+      const documents = grouped[dstPath] ? [...grouped[dstPath], doc] : [doc];
+      return {...grouped, [dstPath]: documents};
+    }, {});
+
+  const userId = context.auth.uid;
+  const userDocPath = docPaths[Entity.User].replace("{userId}", userId);
+  const {userDocsByDstPath, otherUsersDocsByDstPath} = Object.entries(docsByDstPath)
+    .reduce<Record<string, Record<string, LogicResultDoc[]>>>((result, [key, value]) => {
+      if (key.startsWith(userDocPath)) {
+        result.userDocsByDstPath[key] = value;
+      } else {
+        result.otherUsersDocsByDstPath[key] = value;
+      }
+      return result;
+    }, {userDocsByDstPath: {}, otherUsersDocsByDstPath: {}});
+
+  await distribute(userDocsByDstPath);
+  await snapshot.ref.update({"@form.@status": "finished"});
+  await distribute(otherUsersDocsByDstPath);
+  await actionRef.update({status: "finished"});
 }
 
 
