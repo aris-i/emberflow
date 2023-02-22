@@ -7,7 +7,7 @@ export type Action = {
     actionType: string;
     path: string;
     document: FirebaseFirestore.DocumentData;
-    modifiedFields: string[];
+    modifiedFields?: string[];
     status: "new" | "processing" | "processed" | "processed-with-errors";
     timeCreated: FirebaseFirestore.Timestamp;
     message?: string
@@ -41,5 +41,5 @@ export type SecurityResult = {
     status: SecurityStatus;
     message?: string;
 };
-export type SecurityFn = (entity: Entity, doc: DocumentData, actionType: ActionType, modifiedFields: string[]) => Promise<SecurityResult>;
+export type SecurityFn = (entity: Entity, doc: DocumentData, actionType: ActionType, modifiedFields?: string[]) => Promise<SecurityResult>;
 export type SecurityConfig = Record<Entity, SecurityFn>;
