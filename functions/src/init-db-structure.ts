@@ -1,48 +1,4 @@
-enum Entity {
-    User = "user",
-    Organization = "organization",
-    Project = "project",
-    ProjectAccessList = "projectAccessList",
-    Member = "member",
-    Form = "form",
-    Asset = "asset",
-    AssetAccessList = "assetAccessList",
-    Country = "country",
-}
-
-const dbStructure = {
-  users: {
-    [Entity.User]: {
-      organizations: {
-        [Entity.Organization]: {
-          projects: {
-            [Entity.Project]: {
-              accessList: {
-                [Entity.ProjectAccessList]: {},
-              },
-            },
-          },
-          members: {
-            [Entity.Member]: {},
-          },
-          forms: {
-            [Entity.Form]: {},
-          },
-          assets: {
-            [Entity.Asset]: {
-              accessList: {
-                [Entity.AssetAccessList]: {},
-              },
-            },
-          },
-        },
-      },
-    },
-  },
-  countries: {
-    [Entity.Country]: {},
-  },
-};
+import {dbStructure, Entity} from "./custom/db-structure";
 
 function traverseBFS(obj: Record<string, object>): string[] {
   const paths: string[] = [];
@@ -200,4 +156,4 @@ function expandAndGroupDocPaths(startingDocPath: string) {
 // const groupedPaths = expandAndGroupDocPaths("users/12343/organizations/3214/projects/2314");
 // console.log(groupedPaths);
 
-export {Entity, docPaths, docPathsRegex, findMatchingDocPathRegex, colPaths, filterSubDocPathsByEntity, expandAndGroupDocPaths};
+export {docPaths, docPathsRegex, findMatchingDocPathRegex, colPaths, filterSubDocPathsByEntity, expandAndGroupDocPaths};

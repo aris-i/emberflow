@@ -1,5 +1,4 @@
-import {Entity} from "./db-structure";
-import {LogicConfig, LogicFn} from "./types";
+import {LogicConfig, LogicFn} from "../types";
 import * as admin from "firebase-admin";
 import {firestore} from "firebase-admin";
 import DocumentData = firestore.DocumentData;
@@ -11,7 +10,7 @@ const echoLogic: LogicFn = async (action) => {
   const updatedDoc: DocumentData = {};
 
   // Copy modified fields of document's @form to the document
-  if (document["@form"]) {
+  if (document["@form"] && modifiedFields) {
     for (const field of modifiedFields) {
       if (document["@form"][field]) {
         updatedDoc[field] = document["@form"][field];
@@ -40,8 +39,8 @@ const logics: LogicConfig[] = [
   {
     name: "EchoLogic",
     actionTypes: ["create", "update"],
-    modifiedFields: ["name", "email"],
-    entities: [Entity.User],
+    modifiedFields: "all",
+    entities: "all",
     logicFn: echoLogic,
   },
   // more logics here

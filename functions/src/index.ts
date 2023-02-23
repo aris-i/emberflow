@@ -1,12 +1,13 @@
 import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
-import {docPaths, Entity} from "./db-structure";
-import {validators} from "./validators";
+import {docPaths} from "./init-db-structure";
+import {validators} from "./custom/validators";
 import {Action, ActionType, LogicResult, LogicResultDoc} from "./types";
-import {logics} from "./business-logics";
-import {securityConfig} from "./security";
+import {logics} from "./custom/business-logics";
+import {securityConfig} from "./custom/security";
 import {firestore} from "firebase-admin";
 import DocumentData = firestore.DocumentData;
+import {Entity} from "./custom/db-structure";
 
 admin.initializeApp();
 
