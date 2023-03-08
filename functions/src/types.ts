@@ -9,7 +9,7 @@ export type Action = {
     document: FirebaseFirestore.DocumentData;
     modifiedFields?: string[];
     status: "new" | "processing" | "processed" | "processed-with-errors";
-    timeCreated: FirebaseFirestore.Timestamp;
+    timeCreated: Timestamp;
     message?: string
 };
 
