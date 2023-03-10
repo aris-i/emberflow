@@ -13,13 +13,17 @@ export type Action = {
     message?: string
 };
 
+export type LogicResultDocAction = "merge" | "delete" | "copy";
+export type LogicResultDocCopyMode = "shallow" | "recursive";
+
 export type LogicResultDoc = {
-    action: "overwrite" | "merge" | "delete" | "shallow-copy" | "recursive-copy";
+    action: LogicResultDocAction;
     dstPath: string;
     srcPath?: string;
     doc?: FirebaseFirestore.DocumentData;
     instructions?: { [key: string]: string };
     skipEntityDuringRecursiveCopy?: Entity[];
+    copyMode?: LogicResultDocCopyMode;
 };
 
 export type LogicResult = {

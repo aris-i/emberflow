@@ -42,58 +42,39 @@ export async function distribute(userDocsByDstPath: Record<string, LogicResultDo
   const db = admin.firestore();
   let batch = db.batch();
   let writeCount = 0;
+  const forCopy: LogicResultDoc[] = [];
 
   for (const [dstPath, resultDocs] of Object.entries(userDocsByDstPath).sort()) {
     console.log(`Documents for path ${dstPath}:`);
     for (const resultDoc of resultDocs) {
-      const {doc, instructions, copyMode="recursive", skipEntity=[]} = resultDoc;
-      if (typeof doc === "string") {
-        // Copy document to dstPath
-        const srcDocRef = db.doc(doc);
-        const dstDocRef = db.doc(dstPath);
-        batch.set(dstDocRef, (await srcDocRef.get()).data()!);
-        [batch, writeCount] = await commitBatchIfNeeded(batch, db, writeCount);
-        console.log(`Document copied from ${doc} to ${dstPath}`);
-
-        if (!copyMode || copyMode === "recursive") {
-          const subDocPaths = expandAndGroupDocPaths(doc, fetchIds);
-          const pathsToCopy: string[] = [];
-          for (const [entity, paths] of Object.entries(subDocPaths)) {
-            if (!skipEntity || !skipEntity.includes(entity as Entity)) {
-              pathsToCopy.push(...paths);
-            }
-          }
-          for (const path of pathsToCopy) {
-            const srcDocRef = db.doc(path);
-            const dstDocRef = db.doc(path.replace(doc, dstPath));
-            batch.set(dstDocRef, (await srcDocRef.get()).data()!);
-            [batch, writeCount] = await commitBatchIfNeeded(batch, db, writeCount);
-            console.log(`Document copied from ${path} to ${dstDocRef.path}`);
-          }
-        }
-      } else if (doc === null) {
+      const {
+        action,
+        doc,
+        dstPath,
+        instructions,
+      } = resultDoc;
+      if (action === "copy") {
+        forCopy.push(resultDoc);
+      } else if (action === "delete") {
         // Delete document at dstPath
         const dstDocRef = db.doc(dstPath);
         batch.delete(dstDocRef);
         [batch, writeCount] = await commitBatchIfNeeded(batch, db, writeCount);
         console.log(`Document deleted at ${dstPath}`);
-      } else {
+      } else if (action === "merge") {
         const updateData: { [key: string]: any } = {...doc};
         if (instructions) {
           for (const [property, instruction] of Object.entries(instructions)) {
             if (instruction === "++") {
               updateData[property] = admin.firestore.FieldValue.increment(1);
-              [batch, writeCount] = await commitBatchIfNeeded(batch, db, writeCount);
             } else if (instruction === "--") {
               updateData[property] = admin.firestore.FieldValue.increment(-1);
-              [batch, writeCount] = await commitBatchIfNeeded(batch, db, writeCount);
             } else if (instruction.startsWith("+")) {
               const incrementValue = parseInt(instruction.slice(1));
               if (isNaN(incrementValue)) {
                 console.log(`Invalid increment value ${instruction} for property ${property}`);
               } else {
                 updateData[property] = admin.firestore.FieldValue.increment(incrementValue);
-                [batch, writeCount] = await commitBatchIfNeeded(batch, db, writeCount);
               }
             } else if (instruction.startsWith("-")) {
               const decrementValue = parseInt(instruction.slice(1));
@@ -101,7 +82,6 @@ export async function distribute(userDocsByDstPath: Record<string, LogicResultDo
                 console.log(`Invalid decrement value ${instruction} for property ${property}`);
               } else {
                 updateData[property] = admin.firestore.FieldValue.increment(-decrementValue);
-                [batch, writeCount] = await commitBatchIfNeeded(batch, db, writeCount);
               }
             } else {
               console.log(`Invalid instruction ${instruction} for property ${property}`);
@@ -110,7 +90,14 @@ export async function distribute(userDocsByDstPath: Record<string, LogicResultDo
         }
 
         // Merge document to dstPath
-        const dstDocRef = db.doc(dstPath);
+        const dstColPath = dstPath.endsWith("#") ? dstPath.slice(0, -2) : null;
+        let dstDocRef: FirebaseFirestore.DocumentReference;
+        if (dstColPath) {
+          const dstColRef = db.collection(dstColPath);
+          dstDocRef = dstColRef.doc();
+        } else {
+          dstDocRef = db.doc(dstPath);
+        }
         batch.set(dstDocRef, updateData, {merge: true});
         [batch, writeCount] = await commitBatchIfNeeded(batch, db, writeCount);
         console.log(`Document merged to ${dstPath}`);
@@ -121,6 +108,42 @@ export async function distribute(userDocsByDstPath: Record<string, LogicResultDo
   if (writeCount > 0) {
     console.log(`Committing final batch of ${writeCount} writes...`);
     await batch.commit();
+    writeCount = 0;
+  }
+
+  // Do copy after all other operations
+  for (const resultDoc of forCopy) {
+    const {
+      srcPath,
+      dstPath,
+      skipEntityDuringRecursiveCopy=[],
+      copyMode="recursive",
+    } = resultDoc;
+    if (!srcPath) {
+      continue;
+    }
+    const srcDocRef = db.doc(srcPath);
+    const dstDocRef = db.doc(dstPath);
+    batch.set(dstDocRef, (await srcDocRef.get()).data()!);
+    [batch, writeCount] = await commitBatchIfNeeded(batch, db, writeCount);
+    console.log(`Document copied from ${srcPath} to ${dstPath}`);
+
+    if (copyMode === "recursive") {
+      const subDocPaths = expandAndGroupDocPaths(srcPath, fetchIds);
+      const pathsToCopy: string[] = [];
+      for (const [entity, paths] of Object.entries(subDocPaths)) {
+        if (!skipEntityDuringRecursiveCopy || !skipEntityDuringRecursiveCopy.includes(entity as Entity)) {
+          pathsToCopy.push(...paths);
+        }
+      }
+      for (const path of pathsToCopy) {
+        const srcDocRef = db.doc(path);
+        const dstDocRef = db.doc(path.replace(srcPath, dstPath));
+        batch.set(dstDocRef, (await srcDocRef.get()).data()!);
+        [batch, writeCount] = await commitBatchIfNeeded(batch, db, writeCount);
+        console.log(`Document copied from ${path} to ${dstDocRef.path}`);
+      }
+    }
   }
 }
 
