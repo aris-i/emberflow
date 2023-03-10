@@ -14,10 +14,14 @@ export type Action = {
 };
 
 export type LogicResultDoc = {
+    action: "overwrite" | "merge" | "delete" | "shallow-copy" | "recursive-copy";
     dstPath: string;
-    doc: FirebaseFirestore.DocumentData | string | null;
+    srcPath?: string;
+    doc?: FirebaseFirestore.DocumentData;
     instructions?: { [key: string]: string };
+    skipEntityDuringRecursiveCopy?: Entity[];
 };
+
 export type LogicResult = {
     name: string;
     status: "finished" | "error";

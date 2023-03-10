@@ -1,5 +1,6 @@
 import {dbStructure, Entity} from "./custom/db-structure";
 
+
 function traverseBFS(obj: Record<string, object>): string[] {
   const paths: string[] = [];
   const queue: { node: Record<string, object>; path: string }[] = [];
@@ -66,15 +67,6 @@ for (const [key, value] of Object.entries(docPaths)) {
   docPathsRegex[key as Entity] = new RegExp(`^${regexPattern}$`);
 }
 
-function findMatchingDocPathRegex(docPath: string) {
-  for (const key in docPathsRegex) {
-    if (docPathsRegex[key as Entity].test(docPath)) {
-      return {entity: key as Entity, regex: docPathsRegex[key as Entity]};
-    }
-  }
-  return {entity: null, regex: null};
-}
-
 // const entityRegex = findMatchingDocPathRegex("users/3234/organizations/231");
 // console.log(entityRegex);
 
@@ -91,69 +83,10 @@ function mapColPaths(docPathsMap: { [key: string]: string }): { [key: string]: s
 const colPaths = mapColPaths(docPaths);
 // console.log(colPaths);
 
-function filterSubDocPathsByEntity(entity: Entity): string[] {
-  const path = docPaths[entity];
-  const paths = Object.values(docPaths);
-  return paths.filter((p) => p.startsWith(path));
-}
-
 // const subPaths1 = filterSubDocPathsByEntity(Entity.Project);
 // console.log(subPaths1);
 
-function expandAndGroupDocPaths(startingDocPath: string) {
-  const groupedPaths: { [key: string]: string[] } = {};
-  const {entity} = findMatchingDocPathRegex(startingDocPath);
-  if (!entity) {
-    return groupedPaths;
-  }
-  const entityDocPath = docPaths[entity];
-  const subDocPaths = filterSubDocPathsByEntity(entity);
-
-  const values = Object.values(subDocPaths).map((p) => p.replace(entityDocPath, startingDocPath));
-  const sortedValues = values.sort();
-  const newPathMap = new Map<string, string[]>();
-  const expandedPaths: string[] = [];
-
-  while (sortedValues.length > 0) {
-    const path = sortedValues.shift();
-    if (!path) {
-      break;
-    }
-
-    let skipPath = false;
-    for (const key of [...newPathMap.keys()].sort()) {
-      if (path.startsWith(key)) {
-        skipPath = true;
-        const values = newPathMap.get(key);
-        const newPaths = (values || []).map((value) => path.replace(key, value));
-        sortedValues.push(...newPaths);
-        break;
-      }
-    }
-
-    if (skipPath) continue;
-
-    if (/{\w+Id}$/.test(path)) {
-      // TODO:  This is a simulated fetch of data.  Do actual firebase fetch of empty documents.  Just fetch the id.
-      const randomIds = Array.from({length: 3}, () => Math.floor(Math.random() * 1000));
-      const newPaths = randomIds.map((id) => path.replace(/({\w+Id})$/, id.toString()));
-      newPathMap.set(path, newPaths);
-      sortedValues.push(...newPaths);
-      continue;
-    }
-
-    expandedPaths.push(path);
-  }
-
-  // Group expandedPaths based on docPaths keys and values
-  for (const [key, regex] of Object.entries(docPathsRegex)) {
-    groupedPaths[key] = expandedPaths.filter((path) => path.match(regex)) as string[];
-  }
-
-  return groupedPaths;
-}
-
 // const groupedPaths = expandAndGroupDocPaths("users/12343/organizations/3214/projects/2314");
-// console.log(groupedPaths);
+// console.log("group paths", groupedPaths);
 
-export {docPaths, docPathsRegex, findMatchingDocPathRegex, colPaths, filterSubDocPathsByEntity, expandAndGroupDocPaths};
+export {docPaths, docPathsRegex, colPaths};
