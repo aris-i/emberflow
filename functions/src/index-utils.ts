@@ -9,18 +9,14 @@ import * as functions from "firebase-functions";
 import {securityConfig} from "./custom/security";
 import {expandAndGroupDocPaths} from "./utils";
 import DocumentData = firestore.DocumentData;
+import FieldPath = firestore.FieldPath;
 
 async function fetchIds(collectionPath: string) {
   const ids: string[] = [];
-
-  // Fetch count number of IDs from the collection
-  const querySnapshot = await admin.firestore().collection(collectionPath).get();
-
-  // Add each ID to the ids array
+  const querySnapshot = await admin.firestore().collection(collectionPath).select(FieldPath.documentId()).get();
   querySnapshot.forEach((doc) => {
     ids.push(doc.id);
   });
-
   return ids;
 }
 
@@ -246,6 +242,10 @@ export async function onDocChange(
     return;
   }
   const userId = context.auth.uid;
+  if (!userId) {
+    console.info("User ID is null, then this change is initiated by the service account and should be ignored");
+    return;
+  }
 
   const afterDocument = change.after ? change.after.data() : null;
   const beforeDocument = change.before ? change.before.data() : null;
@@ -325,6 +325,15 @@ export async function onDocChange(
   await snapshot.ref.update({"@form.@status": "submitted"});
 
   const logicResults = await runBusinessLogics(actionType, formModifiedFields, entity, action, logics);
+  // Save all logic results under logicResults collection of action document
+  await Promise.all( logicResults.map(async (result) => {
+    const {documents, ...logicResult} = result;
+    const logicResultRef = await actionRef.collection("logicResults").add(logicResult);
+    await Promise.all(documents.map(async (doc) => {
+      await logicResultRef.collection("documents").add(doc);
+    }));
+  }));
+
   const errorLogicResults = logicResults.filter((result) => result.status === "error");
   if (errorLogicResults.length > 0) {
     const errorMessage = errorLogicResults.map((result) => result.message).join("\n");
