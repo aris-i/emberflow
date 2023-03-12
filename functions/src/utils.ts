@@ -16,7 +16,7 @@ function filterSubDocPathsByEntity(entity: Entity): string[] {
   return paths.filter((p) => p.startsWith(path));
 }
 
-async function expandAndGroupDocPaths(startingDocPath: string, idsFetcher: (collectionPath: string, count: number) => Promise<string[]>) {
+async function expandAndGroupDocPaths(startingDocPath: string, idsFetcher: (collectionPath: string) => Promise<string[]>) {
   const groupedPaths: { [key: string]: string[] } = {};
   const {entity} = findMatchingDocPathRegex(startingDocPath);
   if (!entity) {
@@ -52,7 +52,7 @@ async function expandAndGroupDocPaths(startingDocPath: string, idsFetcher: (coll
     if (/{\w+Id}$/.test(path)) {
       const idIndex = path.lastIndexOf("/");
       const collectionPath = path.substring(0, idIndex);
-      const ids = await idsFetcher(collectionPath, 3);
+      const ids = await idsFetcher(collectionPath);
       const newPaths = ids.map((id) => path.replace(/{\w+Id}$/, id.toString()));
       newPathMap.set(path, newPaths);
       sortedValues.push(...newPaths);

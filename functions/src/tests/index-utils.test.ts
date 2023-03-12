@@ -15,76 +15,221 @@ import {
   Action,
   LogicConfig,
   LogicResult,
+  LogicResultDoc,
 } from "../types";
+import * as utils from "../../src/utils";
 
 
 admin.initializeApp();
 
 describe("distribute", () => {
   let dbSpy: jest.SpyInstance;
+  let colSpy: jest.SpyInstance;
 
   beforeEach(() => {
-    dbSpy = jest.spyOn(admin.firestore(), "doc").mockReturnValue({
+    const dbDoc = ({
       get: jest.fn().mockResolvedValue({exists: true, data: () => ({})}),
       set: jest.fn().mockResolvedValue({}),
       delete: jest.fn().mockResolvedValue({}),
+    } as unknown) as admin.firestore.DocumentReference<admin.firestore.DocumentData>;
+    dbSpy = jest.spyOn(admin.firestore(), "doc").mockReturnValue(dbDoc);
+    colSpy = jest.spyOn(admin.firestore(), "collection").mockReturnValue({
+      doc: jest.fn(() => dbDoc),
     } as any);
   });
 
   afterEach(() => {
     dbSpy.mockRestore();
+    colSpy.mockRestore();
   });
 
-  it("should copy a document to dstPath", async () => {
+  it("should merge a document to dstPath with instructions", async () => {
+    const setSpy = jest.fn().mockResolvedValue({});
+    const batchSpy = jest.spyOn(admin.firestore(), "batch").mockReturnValue({
+      set: setSpy,
+      delete: jest.fn(),
+      commit: jest.fn().mockResolvedValue(undefined),
+    } as any);
+
     const userDocsByDstPath = {
       "/users/test-user-id/documents/test-doc-id": [
         {
-          doc: "test-doc-id",
-          instructions: undefined,
+          action: "merge",
+          doc: {name: "test-doc-name-updated"},
+          instructions: {
+            "count": "++",
+            "score": "+5",
+            "minusCount": "--",
+            "minusScore": "-3",
+          },
           dstPath: "/users/test-user-id/documents/test-doc-id",
-        },
+        } as LogicResultDoc,
       ],
     };
     await distribute(userDocsByDstPath);
-    expect(admin.firestore().doc).toHaveBeenCalledTimes(2);
-    expect(admin.firestore().doc).toHaveBeenCalledWith("test-doc-id");
+
+    expect(batchSpy).toHaveBeenCalledTimes(1);
+    expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
-    expect(admin.firestore().doc("/users/test-user-id/documents/test-doc-id").set).toHaveBeenCalledWith({});
+    expect(setSpy.mock.calls[0][1]).toEqual({
+      name: "test-doc-name-updated",
+      count: admin.firestore.FieldValue.increment(1),
+      score: admin.firestore.FieldValue.increment(5),
+      minusCount: admin.firestore.FieldValue.increment(-1),
+      minusScore: admin.firestore.FieldValue.increment(-3),
+    });
+    expect(setSpy.mock.calls[0][2]).toEqual({merge: true});
+    expect(setSpy).toHaveBeenCalledTimes(1);
+
+    batchSpy.mockRestore();
+  });
+
+  it("should merge a document to dstPath with # in path", async () => {
+    const setSpy = jest.fn().mockResolvedValue({});
+    const batchSpy = jest.spyOn(admin.firestore(), "batch").mockReturnValue({
+      set: setSpy,
+      delete: jest.fn(),
+      commit: jest.fn().mockResolvedValue(undefined),
+    } as any);
+
+    const randomId = "random-id";
+    const docSpy = jest.spyOn(admin.firestore.CollectionReference.prototype, "doc").mockReturnValue({
+      set: jest.fn(),
+      delete: jest.fn(),
+      collection: jest.fn(),
+      get: jest.fn(),
+      id: randomId,
+      parent: jest.fn(),
+      path: "/users/test-user-id/documents/" + randomId,
+      withConverter: jest.fn(),
+    } as any);
+    jest.spyOn(admin.firestore(), "collection").mockReturnValue({
+      doc: docSpy,
+    } as any);
+
+    const userDocsByDstPath = {
+      "/users/test-user-id/documents/#": [
+        {
+          action: "merge",
+          doc: {name: "test-doc-name-updated"},
+          instructions: undefined,
+          dstPath: "/users/test-user-id/documents/#",
+        } as LogicResultDoc,
+      ],
+    };
+    await distribute(userDocsByDstPath);
+
+    expect(batchSpy).toHaveBeenCalledTimes(1);
+    expect(admin.firestore().collection).toHaveBeenCalledTimes(1);
+    expect(admin.firestore().doc).not.toHaveBeenCalled();
+    expect(admin.firestore().collection).toHaveBeenCalledWith("/users/test-user-id/documents");
+    expect(docSpy).toHaveBeenCalledTimes(1);
+    expect(setSpy.mock.calls[0][1]).toEqual({name: "test-doc-name-updated"});
+    expect(setSpy.mock.calls[0][2]).toEqual({merge: true});
+    expect(setSpy).toHaveBeenCalledTimes(1);
+
+    batchSpy.mockRestore();
+    docSpy.mockRestore();
   });
 
   it("should delete a document at dstPath", async () => {
+    const deleteSpy = jest.fn().mockResolvedValue({});
+    const batchSpy = jest.spyOn(admin.firestore(), "batch").mockReturnValue({
+      set: jest.fn(),
+      delete: deleteSpy,
+      commit: jest.fn().mockResolvedValue(undefined),
+    } as any);
+
     const userDocsByDstPath = {
       "/users/test-user-id/documents/test-doc-id": [
         {
-          doc: null,
-          instructions: undefined,
+          action: "delete",
           dstPath: "/users/test-user-id/documents/test-doc-id",
-        },
+        } as LogicResultDoc,
       ],
     };
     await distribute(userDocsByDstPath);
+
+    expect(batchSpy).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
-    expect(admin.firestore().doc("/users/test-user-id/documents/test-doc-id").delete).toHaveBeenCalled();
+    expect(deleteSpy).toHaveBeenCalledTimes(1);
+
+    batchSpy.mockRestore();
   });
 
-  it("should merge a document to dstPath", async () => {
+  it("should copy a document to dstPath with shallow copy mode", async () => {
+    const setSpy = jest.fn().mockResolvedValue({});
+    const batchSpy = jest.spyOn(admin.firestore(), "batch").mockReturnValue({
+      set: setSpy,
+      delete: jest.fn(),
+      commit: jest.fn().mockResolvedValue(undefined),
+    } as any);
+
     const userDocsByDstPath = {
       "/users/test-user-id/documents/test-doc-id": [
         {
-          doc: {name: "test-doc-name-updated"},
-          instructions: undefined,
-          dstPath: "/users/test-user-id/documents/test-doc-id",
-        },
+          action: "copy",
+          copyMode: "shallow",
+          srcPath: "/users/test-user-id-1/documents/test-doc-id",
+          dstPath: "/users/test-user-id-2/documents/test-doc-id",
+        } as LogicResultDoc,
       ],
     };
     await distribute(userDocsByDstPath);
-    expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
-    expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
-    expect(admin.firestore().doc("/users/test-user-id/documents/test-doc-id").set).toHaveBeenCalledWith(
-      {name: "test-doc-name-updated"},
-      {merge: true}
-    );
+
+    expect(batchSpy).toHaveBeenCalledTimes(1);
+    expect(admin.firestore().doc).toHaveBeenCalledTimes(2);
+    expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id-1/documents/test-doc-id");
+    expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id-2/documents/test-doc-id");
+    expect(setSpy.mock.calls[0][1]).toEqual({});
+    expect(setSpy).toHaveBeenCalledTimes(1);
+
+    batchSpy.mockRestore();
+  });
+
+  it("should copy a document to dstPath with recursive copy mode", async () => {
+    const setSpy = jest.fn().mockResolvedValue({});
+    const batchSpy = jest.spyOn(admin.firestore(), "batch").mockReturnValue({
+      set: setSpy,
+      delete: jest.fn(),
+      commit: jest.fn().mockResolvedValue(undefined),
+    } as any);
+
+    const srcDocMock = ({
+      get: jest.fn().mockResolvedValue({
+        exists: true,
+        data: () => ({field: "value"}),
+      }),
+    } as unknown) as admin.firestore.DocumentReference<admin.firestore.DocumentData>;
+
+    const mockDoc = jest.spyOn(admin.firestore(), "doc").mockReturnValue(srcDocMock);
+    const mockExpandAndGroupDocPaths = jest.spyOn(utils, "expandAndGroupDocPaths").mockResolvedValue({});
+
+
+    const userDocsByDstPath = {
+      "/users/test-user-id-2/documents/test-doc-id": [
+        {
+          action: "copy",
+          copyMode: "recursive",
+          srcPath: "/users/test-user-id-1/documents/test-doc-id",
+          dstPath: "/users/test-user-id-2/documents/test-doc-id",
+        } as LogicResultDoc,
+      ],
+    };
+    await distribute(userDocsByDstPath);
+
+    expect(mockExpandAndGroupDocPaths).toHaveBeenCalledTimes(1);
+    expect(batchSpy).toHaveBeenCalledTimes(1);
+    expect(admin.firestore().doc).toHaveBeenCalledTimes(2);
+    expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id-1/documents/test-doc-id");
+    expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id-2/documents/test-doc-id");
+    expect(setSpy.mock.calls[0][1]).toEqual({field: "value"});
+    expect(setSpy).toHaveBeenCalledTimes(1);
+
+    batchSpy.mockRestore();
+    mockDoc.mockRestore();
+    mockExpandAndGroupDocPaths.mockRestore();
   });
 });
 
@@ -351,11 +496,11 @@ describe("groupDocsByUserAndDstPath", () => {
       execTime: 25,
       timeFinished: firestore.Timestamp.now(),
       documents: [
-        {dstPath: "users/user123/document1", doc: {field1: "value1", field2: "value2"}},
-        {dstPath: "users/user123/document2", doc: {field3: "value3"}},
-        {dstPath: "users/user456/document3", doc: {field4: "value4"}},
-        {dstPath: "users/user789/document4", doc: null},
-        {dstPath: "othercollection/document5", doc: {field5: "value5"}},
+        {action: "merge", dstPath: "users/user123/document1", doc: {field1: "value1", field2: "value2"}},
+        {action: "merge", dstPath: "users/user123/document2", doc: {field3: "value3"}},
+        {action: "merge", dstPath: "users/user456/document3", doc: {field4: "value4"}},
+        {action: "delete", dstPath: "users/user789/document4"},
+        {action: "merge", dstPath: "othercollection/document5", doc: {field5: "value5"}},
       ],
     },
     {
@@ -364,9 +509,9 @@ describe("groupDocsByUserAndDstPath", () => {
       execTime: 25,
       timeFinished: firestore.Timestamp.now(),
       documents: [
-        {dstPath: "users/user123/document2", doc: {field6: "value6"}},
-        {dstPath: "users/user123/document6", doc: null},
-        {dstPath: "users/user123/document7", doc: {field7: "value7"}},
+        {action: "merge", dstPath: "users/user123/document2", doc: {field6: "value6"}},
+        {action: "delete", dstPath: "users/user123/document6"},
+        {action: "merge", dstPath: "users/user123/document7", doc: {field7: "value7"}},
       ],
     },
     {
@@ -374,7 +519,7 @@ describe("groupDocsByUserAndDstPath", () => {
       execTime: 25,
       timeFinished: firestore.Timestamp.now(),
       status: "error",
-      documents: [{dstPath: "users/user123/document8", doc: {field8: "value8"}}],
+      documents: [{action: "merge", dstPath: "users/user123/document8", doc: {field8: "value8"}}],
     },
   ];
 
@@ -382,20 +527,21 @@ describe("groupDocsByUserAndDstPath", () => {
     const userId = "user123";
     const expectedResults = {
       userDocsByDstPath: {
-        "users/user123/document1": [{dstPath: "users/user123/document1", doc: {field1: "value1", field2: "value2"}}],
+        "users/user123/document1": [{action: "merge", dstPath: "users/user123/document1", doc: {field1: "value1", field2: "value2"}}],
         "users/user123/document2": [
-          {dstPath: "users/user123/document2", doc: {field3: "value3"}},
-          {dstPath: "users/user123/document2", doc: {field6: "value6"}},
+          {action: "merge", dstPath: "users/user123/document2", doc: {field3: "value3"}},
+          {action: "merge", dstPath: "users/user123/document2", doc: {field6: "value6"}},
         ],
-        "users/user123/document6": [{dstPath: "users/user123/document6", doc: null}],
-        "users/user123/document7": [{dstPath: "users/user123/document7", doc: {field7: "value7"}}],
+        "users/user123/document6": [{action: "delete", dstPath: "users/user123/document6"}],
+        "users/user123/document7": [{action: "merge", dstPath: "users/user123/document7", doc: {field7: "value7"}}],
       },
       otherUsersDocsByDstPath: {
-        "users/user456/document3": [{dstPath: "users/user456/document3", doc: {field4: "value4"}}],
-        "users/user789/document4": [{dstPath: "users/user789/document4", doc: null}],
-        "othercollection/document5": [{dstPath: "othercollection/document5", doc: {field5: "value5"}}],
+        "users/user456/document3": [{action: "merge", dstPath: "users/user456/document3", doc: {field4: "value4"}}],
+        "users/user789/document4": [{action: "delete", dstPath: "users/user789/document4"}],
+        "othercollection/document5": [{action: "merge", dstPath: "othercollection/document5", doc: {field5: "value5"}}],
       },
     };
+
 
     const results = groupDocsByUserAndDstPath(logicResults, userId);
 

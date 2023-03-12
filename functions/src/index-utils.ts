@@ -86,7 +86,7 @@ export async function distribute(userDocsByDstPath: Record<string, LogicResultDo
         }
 
         // Merge document to dstPath
-        const dstColPath = dstPath.endsWith("#") ? dstPath.slice(0, -2) : null;
+        const dstColPath = dstPath.endsWith("/#") ? dstPath.slice(0, -2) : null;
         let dstDocRef: FirebaseFirestore.DocumentReference;
         if (dstColPath) {
           const dstColRef = db.collection(dstColPath);

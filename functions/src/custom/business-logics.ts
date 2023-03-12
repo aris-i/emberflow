@@ -26,6 +26,7 @@ const echoLogic: LogicFn = async (action) => {
     timeFinished: admin.firestore.Timestamp.now(),
     documents: [
       {
+        action: "merge",
         dstPath: path,
         doc: updatedDoc,
         instructions: {},
