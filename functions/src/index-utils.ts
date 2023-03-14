@@ -1,4 +1,4 @@
-import {Action, ActionType, LogicConfig, LogicResult, LogicResultDoc} from "./types";
+import {Action, ActionType, LogicConfig, LogicResult, LogicResultDoc, SecurityFn, ValidateFormResult} from "./types";
 import {Entity} from "./custom/db-structure";
 import {validators} from "./custom/validators";
 import {docPaths} from "./init-db-structure";
@@ -7,6 +7,7 @@ import {firestore} from "firebase-admin";
 import {expandAndGroupDocPaths} from "./utils";
 import DocumentData = firestore.DocumentData;
 import FieldPath = firestore.FieldPath;
+import {securityConfig} from "./custom/security";
 
 async function fetchIds(collectionPath: string) {
   const ids: string[] = [];
@@ -159,7 +160,7 @@ export async function revertModificationsOutsideForm(document: FirebaseFirestore
   }
 }
 
-export function validateForm(entity: Entity, document: DocumentData) {
+export function validateForm(entity: Entity, document: DocumentData): ValidateFormResult {
   let hasValidationError = false;
   const validate = validators[entity];
   const validationResult = validate(document);
@@ -169,7 +170,7 @@ export function validateForm(entity: Entity, document: DocumentData) {
     console.log(`Document validation failed: ${JSON.stringify(validationResult)}`);
     hasValidationError = true;
   }
-  return {hasValidationError, validationResult};
+  return [hasValidationError, validationResult];
 }
 
 export function getFormModifiedFields(document: DocumentData) {
@@ -228,3 +229,6 @@ export function groupDocsByUserAndDstPath(logicResults: Awaited<LogicResult>[], 
   return {userDocsByDstPath, otherUsersDocsByDstPath};
 }
 
+export function getSecurityFn(entity: Entity): SecurityFn {
+  return securityConfig[entity];
+}

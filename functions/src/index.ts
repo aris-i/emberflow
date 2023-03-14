@@ -2,13 +2,13 @@ import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import {docPaths} from "./init-db-structure";
 import {Entity} from "./custom/db-structure";
-import {securityConfig} from "./custom/security";
 import {Action} from "./types";
 import {logics} from "./custom/business-logics";
 import {
   delayFormSubmissionAndCheckIfCancelled,
   distribute,
   getFormModifiedFields,
+  getSecurityFn,
   groupDocsByUserAndDstPath,
   revertModificationsOutsideForm,
   runBusinessLogics,
@@ -54,7 +54,7 @@ export async function onDocChange(
   }
 
   // Validate the document
-  const {hasValidationError, validationResult} = validateForm(entity, document);
+  const [hasValidationError, validationResult] = validateForm(entity, document);
   if (hasValidationError) {
     await snapshot.ref.update({"@form.@status": "form-validation-failed", "@form.@message": validationResult});
     return;
@@ -62,7 +62,7 @@ export async function onDocChange(
 
   const formModifiedFields = getFormModifiedFields(document);
   // Run security check
-  const securityFn = securityConfig[entity];
+  const securityFn = getSecurityFn(entity);
   if (securityFn) {
     const securityResult = await securityFn(entity, document, event, formModifiedFields);
     if (securityResult.status === "rejected") {

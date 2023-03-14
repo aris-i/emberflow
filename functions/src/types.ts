@@ -52,3 +52,5 @@ export type ValidationResult = {
     [key: string]: string[];
 }
 export type ValidatorFn = (document: DocumentData) => ValidationResult;
+export type ValidateFormResult = [hasValidationErrors: boolean, validationResult: ValidationResult];
+

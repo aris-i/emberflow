@@ -311,7 +311,7 @@ describe("validateForm", () => {
       email: "johndoe@example.com",
       password: "abc123",
     };
-    const {hasValidationError, validationResult} = validateForm(entity, document);
+    const [hasValidationError, validationResult] = validateForm(entity, document);
     expect(hasValidationError).toBe(false);
     expect(validationResult).toEqual({});
   });
@@ -323,7 +323,7 @@ describe("validateForm", () => {
       email: "johndoe@example.com",
       password: "abc",
     };
-    const {hasValidationError, validationResult} = validateForm(entity, document);
+    const [hasValidationError, validationResult] = validateForm(entity, document);
     expect(hasValidationError).toBe(true);
     expect(validationResult).toEqual({name: ["Name is required"]});
   });
