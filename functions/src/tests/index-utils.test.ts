@@ -19,8 +19,9 @@ import {
 } from "../types";
 import * as utils from "../../src/utils";
 
-
 admin.initializeApp();
+jest.spyOn(console, "log").mockImplementation();
+jest.spyOn(console, "info").mockImplementation();
 
 describe("distribute", () => {
   let dbSpy: jest.SpyInstance;
