@@ -3,15 +3,38 @@ import * as functions from "firebase-functions";
 import {onDocChange} from "../index";
 import * as indexutils from "../index-utils";
 import * as admin from "firebase-admin";
-import CollectionReference = firestore.CollectionReference;
-import Firestore = firestore.Firestore;
-import DocumentReference = firestore.DocumentReference;
-import Mocked = jest.Mocked;
 import {SecurityResult, ValidateFormResult} from "../types";
 import DocumentData = firestore.DocumentData;
 import {firestore} from "firebase-admin";
 import DocumentSnapshot = firestore.DocumentSnapshot;
 
+function createDocumentSnapshot(data: DocumentData|null, refPath: string, exists = true): DocumentSnapshot<DocumentData> {
+  return {
+    exists,
+    id: "test-id",
+    ref: {
+      id: "test-id",
+      path: refPath,
+      set: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+      get: jest.fn(),
+    },
+    data: () => data,
+    get: jest.fn(),
+    isEqual: jest.fn(),
+    create_time: admin.firestore.Timestamp.now(),
+    update_time: admin.firestore.Timestamp.now(),
+    readTime: admin.firestore.Timestamp.now(),
+  } as unknown as DocumentSnapshot<DocumentData>;
+}
+
+function createChange(beforeData: DocumentData, afterData: DocumentData|null, refPath: string): functions.Change<functions.firestore.DocumentSnapshot> {
+  return {
+    before: createDocumentSnapshot(beforeData, refPath),
+    after: createDocumentSnapshot(afterData, refPath),
+  };
+}
 
 jest.spyOn(console, "log").mockImplementation();
 jest.spyOn(console, "info").mockImplementation();
@@ -20,20 +43,6 @@ describe("onDocChange", () => {
   const entity: Entity = Entity.User;
   const userId = "test-user-id";
   const refPath = "/example/test-id";
-  const deletedDocumentSnapshot = jest.fn().mockImplementation(() => {
-    return {
-      exists: true,
-      id: "test-id",
-      ref: {
-        id: "test-id",
-        path: refPath,
-      },
-      data: () => ({
-        field1: "value1",
-        field2: "value2",
-      }),
-    };
-  });
 
   let context: functions.EventContext;
 
@@ -78,37 +87,27 @@ describe("onDocChange", () => {
       },
       timestamp: "2022-03-15T18:52:04.369Z",
     };
-    await onDocChange(entity, {after: null, before: deletedDocumentSnapshot()}, contextWithoutAuth, "delete");
+    const change = createChange({}, {}, refPath);
+    await onDocChange(entity, change, contextWithoutAuth, "delete");
     expect(console.log).toHaveBeenCalledWith("Auth is null, then this change is initiated by the service account and should be ignored");
     expect(console.log).toHaveBeenCalledTimes(1);
   });
 
   it("should re-add deleted document", async () => {
-    const ref = {
-      id: "test-id",
-      path: refPath,
-      set: jest.fn(),
-    };
-    const before = {
-      ...deletedDocumentSnapshot(),
-      ref,
-    };
-    const deleteChange: functions.Change<functions.firestore.DocumentSnapshot | null> = {
-      after: null,
-      before,
-    };
-    await onDocChange(entity, deleteChange, context, "delete");
-    expect(ref.set).toHaveBeenCalledWith({
+    const deletedDocumentData = {
       field1: "value1",
       field2: "value2",
-    });
-    expect(ref.set).toHaveBeenCalledTimes(1);
+    };
+    const change = createChange(deletedDocumentData, null, refPath);
+    await onDocChange(entity, change, context, "delete");
+    expect(change.after.ref.set).toHaveBeenCalledWith(deletedDocumentData);
+    expect(change.after.ref.set).toHaveBeenCalledTimes(1);
     expect(console.log).toHaveBeenCalledWith("Document re-added with ID test-id");
     expect(console.log).toHaveBeenCalledTimes(4);
   });
 
   it("should revert modifications outside form", async () => {
-    const before = {
+    const beforeData = {
       field1: "oldValue",
       field2: "oldValue",
       field3: {
@@ -116,7 +115,7 @@ describe("onDocChange", () => {
         nestedField2: "oldValue",
       },
     };
-    const after = {
+    const afterData = {
       field1: "newValue",
       field2: "oldValue",
       field3: {
@@ -125,48 +124,7 @@ describe("onDocChange", () => {
       },
     };
 
-    const updateMock = jest.fn();
-    const firestore = {} as Firestore;
-    const collectionRef = {} as CollectionReference<DocumentData>;
-
-    const ref = {
-      id: "test-id",
-      firestore,
-      parent: collectionRef,
-      path: "example/test-id",
-      collection: jest.fn(),
-      update: updateMock,
-      get: jest.fn(),
-      isEqual: jest.fn(),
-      delete: jest.fn(),
-      withConverter: jest.fn(),
-      listCollections: jest.fn(),
-    } as unknown as Mocked<DocumentReference<DocumentData>>;
-
-    const change: functions.Change<functions.firestore.DocumentSnapshot> = {
-      after: {
-        exists: true,
-        id: "test-id",
-        ref: ref as DocumentReference<DocumentData>,
-        data: () => after,
-        get: jest.fn(),
-        isEqual: jest.fn(),
-        create_time: admin.firestore.Timestamp.now(),
-        update_time: admin.firestore.Timestamp.now(),
-        readTime: admin.firestore.Timestamp.now(),
-      } as functions.firestore.DocumentSnapshot,
-      before: {
-        exists: true,
-        id: "test-id",
-        ref: ref as DocumentReference<DocumentData>,
-        data: () => before,
-        get: jest.fn(),
-        isEqual: jest.fn(),
-        create_time: admin.firestore.Timestamp.now(),
-        update_time: admin.firestore.Timestamp.now(),
-        readTime: admin.firestore.Timestamp.now(),
-      } as functions.firestore.DocumentSnapshot,
-    };
+    const change = createChange(beforeData, afterData, refPath);
 
     // Mock validateForm to return a validation error
     jest.spyOn(indexutils, "validateForm").mockReturnValue([
@@ -184,10 +142,10 @@ describe("onDocChange", () => {
 
     await onDocChange(Entity.User, change, context, "update");
 
-    expect(revertModificationsOutsideFormMock).toHaveBeenCalledWith(after, before, change.after);
-    expect(indexutils.validateForm).toHaveBeenCalledWith(Entity.User, after);
-    expect(ref.update).toHaveBeenCalledWith({"@form.@status": "form-validation-failed", "@form.@message": {"field1": ["error message 1"], "field2": ["error message 2"]}});
-    expect(ref.update).toHaveBeenCalledTimes(1);
+    expect(revertModificationsOutsideFormMock).toHaveBeenCalledWith(afterData, beforeData, change.after);
+    expect(indexutils.validateForm).toHaveBeenCalledWith(Entity.User, afterData);
+    expect(change.after.ref.update).toHaveBeenCalledWith({"@form.@status": "form-validation-failed", "@form.@message": {"field1": ["error message 1"], "field2": ["error message 2"]}});
+    expect(change.after.ref.update).toHaveBeenCalledTimes(1);
   });
 
   it("should return on security check failure", async () => {
@@ -199,7 +157,7 @@ describe("onDocChange", () => {
     const securityFnMock = jest.fn().mockResolvedValue(rejectedSecurityResult);
     getSecurityFnMock.mockReturnValue(securityFnMock);
 
-    const before = {
+    const beforeData = {
       "field1": "oldValue",
       "field2": "oldValue",
       "field3": {
@@ -213,7 +171,7 @@ describe("onDocChange", () => {
       },
     };
 
-    const after = {
+    const afterData = {
       "field1": "oldValue",
       "field2": "oldValue",
       "field3": {
@@ -227,38 +185,7 @@ describe("onDocChange", () => {
       },
     };
 
-    const change: functions.Change<functions.firestore.DocumentSnapshot> = {
-      after: {
-        exists: true,
-        id: "test-id",
-        ref: {
-          id: "test-id",
-          path: refPath,
-          update: jest.fn(),
-        },
-        data: () => after,
-        get: jest.fn(),
-        isEqual: jest.fn(),
-        create_time: admin.firestore.Timestamp.now(),
-        update_time: admin.firestore.Timestamp.now(),
-        readTime: admin.firestore.Timestamp.now(),
-      } as unknown as DocumentSnapshot<DocumentData>,
-      before: {
-        exists: true,
-        id: "test-id",
-        ref: {
-          id: "test-id",
-          path: refPath,
-        },
-        data: () => before,
-        get: jest.fn(),
-        isEqual: jest.fn(),
-        create_time: admin.firestore.Timestamp.now(),
-        update_time: admin.firestore.Timestamp.now(),
-        readTime: admin.firestore.Timestamp.now(),
-      } as unknown as DocumentSnapshot<DocumentData>,
-    };
-
+    const change = createChange(beforeData, afterData, refPath);
 
     const validateFormMock = jest.spyOn(indexutils, "validateForm");
     validateFormMock.mockReturnValue([false, {}] as ValidateFormResult);
