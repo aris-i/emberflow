@@ -29,15 +29,13 @@ function createDocumentSnapshot(data: DocumentData|null, refPath: string, exists
   } as unknown as DocumentSnapshot<DocumentData>;
 }
 
-function createChange(beforeData: DocumentData, afterData: DocumentData|null, refPath: string): functions.Change<functions.firestore.DocumentSnapshot> {
+function createChange(beforeData: DocumentData|null, afterData: DocumentData|null, refPath: string): functions.Change<functions.firestore.DocumentSnapshot> {
   return {
     before: createDocumentSnapshot(beforeData, refPath),
     after: createDocumentSnapshot(afterData, refPath),
   };
 }
 
-jest.spyOn(console, "log").mockImplementation();
-jest.spyOn(console, "info").mockImplementation();
 
 describe("onDocChange", () => {
   const entity: Entity = Entity.User;
@@ -47,6 +45,8 @@ describe("onDocChange", () => {
   let context: functions.EventContext;
 
   beforeEach(() => {
+    jest.spyOn(console, "log").mockImplementation();
+    jest.spyOn(console, "info").mockImplementation();
     context = {
       auth: {
         uid: userId,
@@ -70,8 +70,13 @@ describe("onDocChange", () => {
       },
       timestamp: "2022-03-15T18:52:04.369Z",
     };
-    jest.clearAllMocks();
   });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+    jest.restoreAllMocks();
+  });
+
 
   it("should not execute when auth is null", async () => {
     const contextWithoutAuth: functions.EventContext = {
@@ -116,11 +121,14 @@ describe("onDocChange", () => {
       },
     };
     const afterData = {
-      field1: "newValue",
-      field2: "oldValue",
-      field3: {
+      "field1": "newValue",
+      "field2": "oldValue",
+      "field3": {
         nestedField1: "newValue",
         nestedField2: "oldValue",
+      },
+      "@form": {
+        "@status": "submit",
       },
     };
 
@@ -197,5 +205,69 @@ describe("onDocChange", () => {
     expect(securityFnMock).toHaveBeenCalledWith(entity, change.after.data(), "update", ["field1"]);
     expect(change.after.ref.update).toHaveBeenCalledWith({"@form.@status": "security-error", "@form.@message": "Unauthorized access"});
     expect(console.log).toHaveBeenCalledWith(`Security check failed: ${rejectedSecurityResult.message}`);
+  });
+
+  it("should call delayFormSubmissionAndCheckIfCancelled with correct parameters", async () => {
+    jest.spyOn(indexutils, "revertModificationsOutsideForm").mockResolvedValue();
+    jest.spyOn(indexutils, "validateForm").mockReturnValue([false, {}]);
+    jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue(["field1", "field2"]);
+    jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() =>
+      Promise.resolve({status: "allowed"})
+    );
+
+    const delayFormSubmissionAndCheckIfCancelledSpy = jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(true);
+
+    const doc = {
+      "@form": {
+        "@delay": 1000,
+        "@status": "submit",
+      },
+      "someField": "exampleValue",
+    };
+
+    const change = createChange(null, doc, "/example/test-id");
+    const event = "create";
+    await onDocChange(Entity.User, change, context, event);
+
+    // Test that the delayFormSubmissionAndCheckIfCancelled function is called with the correct parameters
+    expect(delayFormSubmissionAndCheckIfCancelledSpy).toHaveBeenCalledWith(
+      1000,
+      change.after,
+    );
+
+    // Test that snapshot.ref.update is called with the correct parameters
+    expect(change.after.ref.update).toHaveBeenCalledWith({"@form.@status": "cancelled"});
+  });
+
+  it("should not process the form if @form.@status is not 'submit'", async () => {
+    jest.spyOn(indexutils, "revertModificationsOutsideForm").mockResolvedValue();
+    jest.spyOn(indexutils, "validateForm").mockReturnValue([false, {}]);
+    jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue(["field1", "field2"]);
+    jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() =>
+      Promise.resolve({status: "allowed"})
+    );
+
+    const delayFormSubmissionAndCheckIfCancelledSpy = jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(true);
+
+    const doc = {
+      "@form": {
+        "@status": "not-submit",
+        "@delay": 1000,
+      },
+      "someField": "exampleValue",
+    };
+
+    const change = createChange(null, doc, "/example/test-id");
+    const event = "create";
+    await onDocChange(Entity.User, change, context, event);
+
+    // Test that the delayFormSubmissionAndCheckIfCancelled function is NOT called
+    expect(indexutils.revertModificationsOutsideForm).toHaveBeenCalled();
+    expect(indexutils.getFormModifiedFields).not.toHaveBeenCalled();
+    expect(indexutils.getSecurityFn).not.toHaveBeenCalled();
+    expect(delayFormSubmissionAndCheckIfCancelledSpy).not.toHaveBeenCalled();
+
+    // Test that snapshot.ref.update is NOT called
+    expect(change.after.ref.update).not.toHaveBeenCalled();
   });
 });

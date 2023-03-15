@@ -53,6 +53,12 @@ export async function onDocChange(
     await revertModificationsOutsideForm(afterDocument, beforeDocument, snapshot);
   }
 
+  // if not form.@status is submit then return
+  if (document?.["@form"]?.["@status"] !== "submit") {
+    console.log("Form is not submitted");
+    return;
+  }
+
   // Validate the document
   const [hasValidationError, validationResult] = validateForm(entity, document);
   if (hasValidationError) {
