@@ -1,12 +1,44 @@
 import {Entity} from "../custom/db-structure";
-import * as functions from "firebase-functions";
 import {onDocChange} from "../index";
 import * as indexutils from "../index-utils";
 import * as admin from "firebase-admin";
+
 import {SecurityResult, ValidateFormResult} from "../types";
 import DocumentData = firestore.DocumentData;
 import {firestore} from "firebase-admin";
 import DocumentSnapshot = firestore.DocumentSnapshot;
+import * as functions from "firebase-functions";
+
+jest.mock("firebase-admin", () => {
+  const actualAdmin = jest.requireActual("firebase-admin");
+
+  const nowMock = jest.fn().mockImplementation(() => new actualAdmin.firestore.Timestamp(0, 0));
+  const TimestampMock = class extends actualAdmin.firestore.Timestamp {
+    static now = nowMock;
+  };
+
+  const collectionMock = jest.fn(() => ({
+    doc: jest.fn(() => ({
+      set: jest.fn(),
+      get: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+    })),
+  }));
+
+  const initializeAppMock = jest.fn();
+
+  return {
+    ...actualAdmin,
+    initializeApp: initializeAppMock,
+    firestore: {
+      ...actualAdmin.firestore,
+      Timestamp: TimestampMock,
+      collection: collectionMock,
+    },
+  };
+});
+
 
 function createDocumentSnapshot(data: DocumentData|null, refPath: string, exists = true): DocumentSnapshot<DocumentData> {
   return {
@@ -269,5 +301,41 @@ describe("onDocChange", () => {
 
     // Test that snapshot.ref.update is NOT called
     expect(change.after.ref.update).not.toHaveBeenCalled();
+  });
+
+  it("should set @form.@status to 'submitted' after passing all checks", async () => {
+    jest.spyOn(indexutils, "revertModificationsOutsideForm").mockResolvedValue();
+    jest.spyOn(indexutils, "validateForm").mockReturnValue([false, {}]);
+    jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue(["field1", "field2"]);
+    jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() =>
+      Promise.resolve({status: "allowed"})
+    );
+    jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(false);
+
+    const addActionSpy = jest.fn();
+
+    jest.spyOn(admin.firestore(), "collection").mockReturnValue({
+      add: addActionSpy,
+    } as any);
+
+    const doc = {
+      "@form": {
+        "@actionType": "create",
+        "name": "test",
+        "@status": "submit",
+      },
+      "someField": "exampleValue",
+    };
+
+    const change = createChange(null, doc, "/example/test-id");
+    const event = "create";
+    await onDocChange(Entity.User, change, context, event);
+
+    // Test that the snapshot.ref.update is called with the correct parameters
+    expect(change.after.ref.update).toHaveBeenCalledWith({"@form.@status": "processing"});
+    expect(change.after.ref.update).toHaveBeenCalledWith({"@form.@status": "submitted"});
+
+    // Test that addActionSpy is called with the correct parameters
+    expect(addActionSpy).toHaveBeenCalled();
   });
 });

@@ -6,12 +6,11 @@ import * as admin from "firebase-admin";
 import {firestore} from "firebase-admin";
 import {expandAndGroupDocPaths} from "./utils";
 import DocumentData = firestore.DocumentData;
-import FieldPath = firestore.FieldPath;
 import {securityConfig} from "./custom/security";
 
 async function fetchIds(collectionPath: string) {
   const ids: string[] = [];
-  const querySnapshot = await admin.firestore().collection(collectionPath).select(FieldPath.documentId()).get();
+  const querySnapshot = await admin.firestore().collection(collectionPath).select(firestore.FieldPath.documentId()).get();
   querySnapshot.forEach((doc) => {
     ids.push(doc.id);
   });
@@ -149,7 +148,7 @@ export async function revertModificationsOutsideForm(document: FirebaseFirestore
     const modifiedFields = Object.keys(document ?? {}).filter((key) => !key.startsWith("@form"));
     modifiedFields.forEach((field) => {
       if (document?.[field] !== beforeDocument[field]) {
-        revertedValues[field] = beforeDocument[field];
+        revertedValues[field] = beforeDocument[field];// TODO:  Handle nested fields
       }
     });
   }
@@ -176,7 +175,7 @@ export function validateForm(entity: Entity, document: DocumentData): ValidateFo
 export function getFormModifiedFields(document: DocumentData) {
   const formFields = Object.keys(document?.["@form"] ?? {}).filter((key) => !key.startsWith("@"));
   // compare value of each @form field with the value of the same field in the document to get modified fields
-  return formFields.filter((field) => document?.[field] !== document?.["@form"]?.[field]);
+  return formFields.filter((field) => document?.[field] !== document?.["@form"]?.[field]);// TODO:  Handle nested fields
 }
 
 export async function delayFormSubmissionAndCheckIfCancelled(delay: number, snapshot: firestore.DocumentSnapshot) {

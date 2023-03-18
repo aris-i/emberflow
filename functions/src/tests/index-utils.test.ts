@@ -17,7 +17,7 @@ import {
   LogicResult,
   LogicResultDoc,
 } from "../types";
-import * as utils from "../../src/utils";
+import * as utils from "../utils";
 
 admin.initializeApp();
 jest.spyOn(console, "log").mockImplementation();

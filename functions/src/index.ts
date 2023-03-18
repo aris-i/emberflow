@@ -59,6 +59,13 @@ export async function onDocChange(
     return;
   }
 
+  // Create Action document
+  const actionType = document["@form"]?.["@actionType"];
+  if (!actionType) {
+    console.log("No actionType found");
+    return;
+  }
+
   // Validate the document
   const [hasValidationError, validationResult] = validateForm(entity, document);
   if (hasValidationError) {
@@ -88,12 +95,6 @@ export async function onDocChange(
   }
 
   await snapshot.ref.update({"@form.@status": "processing"});
-
-  // Create Action document
-  const actionType = document["@form"]?.["@actionType"];
-  if (!actionType) {
-    return;
-  }
 
   const path = snapshot.ref.path;
   const status = "processing";
