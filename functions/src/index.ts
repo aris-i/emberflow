@@ -15,6 +15,7 @@ import {
   validateForm,
 } from "./index-utils";
 
+//Sample Change
 admin.initializeApp();
 
 export async function onDocChange(
