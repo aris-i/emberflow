@@ -10,7 +10,7 @@ import {
 } from "../index-utils";
 import {firestore} from "firebase-admin";
 import DocumentSnapshot = firestore.DocumentSnapshot;
-import {Entity} from "../custom/db-structure";
+import {initializeEmberFlow} from "../index";
 import {
   Action,
   LogicConfig,
@@ -18,6 +18,9 @@ import {
   LogicResultDoc,
 } from "../types";
 import * as utils from "../utils";
+import {Entity, dbStructure} from "../sample-custom/db-structure";
+import {securityConfig} from "../sample-custom/security";
+import {validatorConfig} from "../sample-custom/validators";
 
 admin.initializeApp();
 jest.spyOn(console, "log").mockImplementation();
@@ -67,6 +70,7 @@ describe("distribute", () => {
         } as LogicResultDoc,
       ],
     };
+    initializeEmberFlow(admin, dbStructure, Entity, securityConfig, validatorConfig, []);
     await distribute(userDocsByDstPath);
 
     expect(batchSpy).toHaveBeenCalledTimes(1);
@@ -305,7 +309,7 @@ describe("revertModificationsOutsideForm", () => {
 
 describe("validateForm", () => {
   it("returns an object with empty validationResult when document is valid", () => {
-    const entity = Entity.User;
+    const entity = "user";
     const document = {
       name: "John Doe",
       email: "johndoe@example.com",
@@ -317,7 +321,7 @@ describe("validateForm", () => {
   });
 
   it("returns an object with validation errors when document is invalid", () => {
-    const entity = Entity.User;
+    const entity = "user";
     const document = {
       name: "",
       email: "johndoe@example.com",
@@ -404,7 +408,7 @@ describe("delayFormSubmissionAndCheckIfCancelled", () => {
 describe("runBusinessLogics", () => {
   const actionType = "create";
   const formModifiedFields = ["field1", "field2"];
-  const entity = Entity.User;
+  const entity = "user";
   const action:Action = {
     actionType,
     path: "users/user123",
@@ -430,25 +434,26 @@ describe("runBusinessLogics", () => {
         name: "Logic 1",
         actionTypes: ["create"],
         modifiedFields: ["field1"],
-        entities: [Entity.User],
+        entities: ["user"],
         logicFn: logicFn1,
       },
       {
         name: "Logic 2",
         actionTypes: "all",
         modifiedFields: ["field2"],
-        entities: [Entity.User],
+        entities: ["user"],
         logicFn: logicFn2,
       },
       {
         name: "Logic 3",
         actionTypes: ["delete"],
         modifiedFields: ["field3"],
-        entities: [Entity.User],
+        entities: ["user"],
         logicFn: logicFn3,
       },
     ];
-    const results = await runBusinessLogics(actionType, formModifiedFields, entity, action, logics);
+    initializeEmberFlow(admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
+    const results = await runBusinessLogics(actionType, formModifiedFields, entity, action);
 
     expect(logicFn1).toHaveBeenCalledWith(action);
     expect(logicFn2).toHaveBeenCalledWith(action);
@@ -465,25 +470,26 @@ describe("runBusinessLogics", () => {
         name: "Logic 1",
         actionTypes: ["create"],
         modifiedFields: ["field1"],
-        entities: [Entity.YourCustomEntity],
+        entities: ["customentity"],
         logicFn: jest.fn(),
       },
       {
         name: "Logic 2",
         actionTypes: ["update"],
         modifiedFields: ["field2"],
-        entities: [Entity.YourCustomEntity],
+        entities: ["customentity"],
         logicFn: jest.fn(),
       },
       {
         name: "Logic 3",
         actionTypes: ["delete"],
         modifiedFields: ["field3"],
-        entities: [Entity.YourCustomEntity],
+        entities: ["customentity"],
         logicFn: jest.fn(),
       },
     ];
-    const results = await runBusinessLogics(actionType, formModifiedFields, entity, action, logics);
+    initializeEmberFlow(admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
+    const results = await runBusinessLogics(actionType, formModifiedFields, entity, action);
 
     expect(results).toEqual([]);
   });

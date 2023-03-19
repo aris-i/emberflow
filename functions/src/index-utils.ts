@@ -1,12 +1,15 @@
-import {Action, ActionType, LogicConfig, LogicResult, LogicResultDoc, SecurityFn, ValidateFormResult} from "./types";
-import {Entity} from "./custom/db-structure";
-import {validators} from "./custom/validators";
-import {docPaths} from "./init-db-structure";
-import * as admin from "firebase-admin";
+import {
+  Action,
+  ActionType,
+  LogicResult,
+  LogicResultDoc,
+  SecurityFn,
+  ValidateFormResult,
+} from "./types";
 import {firestore} from "firebase-admin";
 import {expandAndGroupDocPaths} from "./utils";
 import DocumentData = firestore.DocumentData;
-import {securityConfig} from "./custom/security";
+import {admin, docPaths, logics, securityConfig, validatorConfig} from "./index";
 
 async function fetchIds(collectionPath: string) {
   const ids: string[] = [];
@@ -125,7 +128,7 @@ export async function distribute(userDocsByDstPath: Record<string, LogicResultDo
       const subDocPaths = expandAndGroupDocPaths(srcPath, fetchIds);
       const pathsToCopy: string[] = [];
       for (const [entity, paths] of Object.entries(subDocPaths)) {
-        if (!skipEntityDuringRecursiveCopy || !skipEntityDuringRecursiveCopy.includes(entity as Entity)) {
+        if (!skipEntityDuringRecursiveCopy || !skipEntityDuringRecursiveCopy.includes(entity)) {
           pathsToCopy.push(...paths);
         }
       }
@@ -159,9 +162,9 @@ export async function revertModificationsOutsideForm(document: FirebaseFirestore
   }
 }
 
-export function validateForm(entity: Entity, document: DocumentData): ValidateFormResult {
+export function validateForm(entity: string, document: FirebaseFirestore.DocumentData): ValidateFormResult {
   let hasValidationError = false;
-  const validate = validators[entity];
+  const validate = validatorConfig[entity];
   const validationResult = validate(document);
 
   // Check if validation failed
@@ -194,7 +197,7 @@ export async function delayFormSubmissionAndCheckIfCancelled(delay: number, snap
   return cancelFormSubmission;
 }
 
-export async function runBusinessLogics(actionType: ActionType, formModifiedFields: string[], entity: Entity, action: Action, logics: LogicConfig[]) {
+export async function runBusinessLogics(actionType: ActionType, formModifiedFields: string[], entity: string, action: Action) {
   const matchingLogics = logics.filter((logic) => {
     return (
       (logic.actionTypes === "all" || logic.actionTypes.includes(actionType)) &&
@@ -215,7 +218,7 @@ export function groupDocsByUserAndDstPath(logicResults: Awaited<LogicResult>[], 
       return {...grouped, [dstPath]: documents};
     }, {});
 
-  const userDocPath = docPaths[Entity.User].replace("{userId}", userId);
+  const userDocPath = docPaths["user"].replace("{userId}", userId);
   const {userDocsByDstPath, otherUsersDocsByDstPath} = Object.entries(docsByDstPath)
     .reduce<Record<string, Record<string, LogicResultDoc[]>>>((result, [key, value]) => {
       if (key.startsWith(userDocPath)) {
@@ -228,6 +231,6 @@ export function groupDocsByUserAndDstPath(logicResults: Awaited<LogicResult>[], 
   return {userDocsByDstPath, otherUsersDocsByDstPath};
 }
 
-export function getSecurityFn(entity: Entity): SecurityFn {
+export function getSecurityFn(entity: string): SecurityFn {
   return securityConfig[entity];
 }

@@ -1,9 +1,5 @@
 import * as functions from "firebase-functions";
-import * as admin from "firebase-admin";
-import {docPaths} from "./init-db-structure";
-import {Entity} from "./custom/db-structure";
-import {Action} from "./types";
-import {logics} from "./custom/business-logics";
+import {Action, FirebaseAdmin, LogicConfig, SecurityConfig, ValidatorConfig} from "./types";
 import {
   delayFormSubmissionAndCheckIfCancelled,
   distribute,
@@ -14,12 +10,66 @@ import {
   runBusinessLogics,
   validateForm,
 } from "./index-utils";
+import {initDbStructure} from "./db-structure";
 
-//Sample Change
-admin.initializeApp();
+export let admin: FirebaseAdmin;
+export let dbStructure: Record<string, object>;
+export let Entity: Record<string, string>;
+export let securityConfig: SecurityConfig;
+export let validatorConfig: ValidatorConfig;
+export let logics: LogicConfig[];
+export let docPaths: Record<string, string>;
+export let colPaths: Record<string, string>;
+export let docPathsRegex: Record<string, RegExp>;
+
+export function initializeEmberFlow(
+  adminInstance: FirebaseAdmin,
+  customDbStructure: Record<string, object>,
+  CustomEntity: Record<string, string>,
+  customSecurityConfig: SecurityConfig,
+  customValidatorConfig: ValidatorConfig,
+  customLogics: LogicConfig[],
+) {
+  admin = adminInstance;
+  dbStructure = customDbStructure;
+  Entity = CustomEntity;
+  securityConfig = customSecurityConfig;
+  validatorConfig = customValidatorConfig;
+  logics = customLogics;
+
+  const {docPaths: dp, colPaths: cp, docPathsRegex: dbr} = initDbStructure(dbStructure, Entity);
+  docPaths = dp;
+  colPaths = cp;
+  docPathsRegex = dbr;
+
+  Object.values(docPaths).forEach((path) => {
+    const parts = path.split("/");
+    const entity = parts[parts.length - 1].replace(/{(\w+)Id}$/, "$1");
+
+    exports[`on${entity.charAt(0).toUpperCase() + entity.slice(1)}Create`] = functions.firestore
+      .document(path)
+      .onCreate(async (snapshot, context) => {
+        await onDocChange(entity, {before: null, after: snapshot}, context, "create");
+      });
+
+    exports[`on${entity.charAt(0).toUpperCase() + entity.slice(1)}Update`] = functions.firestore
+      .document(path)
+      .onUpdate(async (change, context) => {
+        await onDocChange(entity, change, context, "update");
+      });
+
+    exports[`on${entity.charAt(0).toUpperCase() + entity.slice(1)}Delete`] = functions.firestore
+      .document(path)
+      .onDelete(async (snapshot, context) => {
+        await onDocChange(entity, {before: snapshot, after: null}, context, "delete");
+      });
+  });
+
+  return {docPaths, colPaths, docPathsRegex};
+}
 
 export async function onDocChange(
-  entity: Entity,
+  entity: string,
   change: functions.Change<functions.firestore.DocumentSnapshot | null>,
   context: functions.EventContext,
   event: "create" | "update" | "delete"
@@ -113,7 +163,7 @@ export async function onDocChange(
 
   await snapshot.ref.update({"@form.@status": "submitted"});
 
-  const logicResults = await runBusinessLogics(actionType, formModifiedFields, entity, action, logics);
+  const logicResults = await runBusinessLogics(actionType, formModifiedFields, entity, action);
   // Save all logic results under logicResults collection of action document
   await Promise.all(logicResults.map(async (result) => {
     const {documents, ...logicResult} = result;
@@ -136,26 +186,3 @@ export async function onDocChange(
   await actionRef.update({status: "finished"});
 }
 
-Object.values(docPaths).forEach((path) => {
-  const parts = path.split("/");
-  const colPath = parts[parts.length - 1].replace(/{(\w+)Id}$/, "$1");
-  const entity = colPath as Entity;
-
-  exports[`on${colPath.charAt(0).toUpperCase() + colPath.slice(1)}Create`] = functions.firestore
-    .document(path)
-    .onCreate(async (snapshot, context) => {
-      await onDocChange(entity, {before: null, after: snapshot}, context, "create");
-    });
-
-  exports[`on${colPath.charAt(0).toUpperCase() + colPath.slice(1)}Update`] = functions.firestore
-    .document(path)
-    .onUpdate(async (change, context) => {
-      await onDocChange(entity, change, context, "update");
-    });
-
-  exports[`on${colPath.charAt(0).toUpperCase() + colPath.slice(1)}Delete`] = functions.firestore
-    .document(path)
-    .onDelete(async (snapshot, context) => {
-      await onDocChange(entity, {before: snapshot, after: null}, context, "delete");
-    });
-});

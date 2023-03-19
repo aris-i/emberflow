@@ -1,4 +1,3 @@
-import {Entity} from "../custom/db-structure";
 import {onDocChange} from "../index";
 import * as indexutils from "../index-utils";
 import * as admin from "firebase-admin";
@@ -70,7 +69,7 @@ function createChange(beforeData: DocumentData|null, afterData: DocumentData|nul
 
 
 describe("onDocChange", () => {
-  const entity: Entity = Entity.User;
+  const entity = "user";
   const userId = "test-user-id";
   const refPath = "/example/test-id";
 
@@ -180,10 +179,10 @@ describe("onDocChange", () => {
       "revertModificationsOutsideForm"
     ).mockResolvedValue();
 
-    await onDocChange(Entity.User, change, context, "update");
+    await onDocChange("user", change, context, "update");
 
     expect(revertModificationsOutsideFormMock).toHaveBeenCalledWith(afterData, beforeData, change.after);
-    expect(indexutils.validateForm).toHaveBeenCalledWith(Entity.User, afterData);
+    expect(indexutils.validateForm).toHaveBeenCalledWith("user", afterData);
     expect(change.after.ref.update).toHaveBeenCalledWith({"@form.@status": "form-validation-failed", "@form.@message": {"field1": ["error message 1"], "field2": ["error message 2"]}});
     expect(change.after.ref.update).toHaveBeenCalledTimes(1);
   });
@@ -259,7 +258,7 @@ describe("onDocChange", () => {
 
     const change = createChange(null, doc, "/example/test-id");
     const event = "create";
-    await onDocChange(Entity.User, change, context, event);
+    await onDocChange("user", change, context, event);
 
     // Test that the delayFormSubmissionAndCheckIfCancelled function is called with the correct parameters
     expect(delayFormSubmissionAndCheckIfCancelledSpy).toHaveBeenCalledWith(
@@ -291,7 +290,7 @@ describe("onDocChange", () => {
 
     const change = createChange(null, doc, "/example/test-id");
     const event = "create";
-    await onDocChange(Entity.User, change, context, event);
+    await onDocChange("user", change, context, event);
 
     // Test that the delayFormSubmissionAndCheckIfCancelled function is NOT called
     expect(indexutils.revertModificationsOutsideForm).toHaveBeenCalled();
@@ -329,7 +328,7 @@ describe("onDocChange", () => {
 
     const change = createChange(null, doc, "/example/test-id");
     const event = "create";
-    await onDocChange(Entity.User, change, context, event);
+    await onDocChange("user", change, context, event);
 
     // Test that the snapshot.ref.update is called with the correct parameters
     expect(change.after.ref.update).toHaveBeenCalledWith({"@form.@status": "processing"});

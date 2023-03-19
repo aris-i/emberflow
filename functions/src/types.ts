@@ -1,7 +1,9 @@
+import * as admin from "firebase-admin";
 import {firestore} from "firebase-admin";
-import {Entity} from "./custom/db-structure";
 import Timestamp = firestore.Timestamp;
 import DocumentData = firestore.DocumentData;
+
+export type FirebaseAdmin = typeof admin;
 
 export type Action = {
     actionType: string;
@@ -19,7 +21,7 @@ export type LogicResultDoc = {
     srcPath?: string;
     doc?: FirebaseFirestore.DocumentData;
     instructions?: { [key: string]: string };
-    skipEntityDuringRecursiveCopy?: Entity[];
+    skipEntityDuringRecursiveCopy?: string[];
     copyMode?: "shallow" | "recursive";
 };
 
@@ -37,7 +39,7 @@ export type LogicConfig = {
     name: string;
     actionTypes: ActionType[] | "all";
     modifiedFields: string[] | "all"
-    entities: Entity[] | "all";
+    entities: string[] | "all";
     logicFn: LogicFn;
 };
 
@@ -46,11 +48,12 @@ export type SecurityResult = {
     status: SecurityStatus;
     message?: string;
 };
-export type SecurityFn = (entity: Entity, doc: DocumentData, actionType: ActionType, modifiedFields?: string[]) => Promise<SecurityResult>;
-export type SecurityConfig = Record<Entity, SecurityFn>;
+export type SecurityFn = (entity: string, doc: DocumentData, actionType: ActionType, modifiedFields?: string[]) => Promise<SecurityResult>;
+export type SecurityConfig = Record<string, SecurityFn>;
 export type ValidationResult = {
     [key: string]: string[];
 }
 export type ValidatorFn = (document: DocumentData) => ValidationResult;
+export type ValidatorConfig = Record<string, ValidatorFn>;
 export type ValidateFormResult = [hasValidationErrors: boolean, validationResult: ValidationResult];
 

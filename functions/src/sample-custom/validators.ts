@@ -1,6 +1,7 @@
-import {DocumentData} from "@google-cloud/firestore";
 import {Entity} from "./db-structure";
-import {ValidationResult, ValidatorFn} from "../types";
+import {ValidationResult, ValidatorConfig} from "../types";
+import {firestore} from "firebase-admin";
+import DocumentData = firestore.DocumentData;
 
 function userValidator(document: DocumentData): ValidationResult {
   const data = document;
@@ -15,9 +16,9 @@ function blankValidator(document: DocumentData): ValidationResult {
   return {};
 }
 
-const validators: Record<Entity, ValidatorFn> = {
+const validatorConfig: ValidatorConfig = {
   [Entity.User]: userValidator,
   [Entity.YourCustomEntity]: blankValidator,
 };
 
-export {validators};
+export {validatorConfig};

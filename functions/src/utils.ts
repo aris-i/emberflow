@@ -1,16 +1,15 @@
-import {docPaths, docPathsRegex} from "./init-db-structure";
-import {Entity} from "./custom/db-structure";
+import {docPaths, docPathsRegex} from "./index";
 
-function findMatchingDocPathRegex(docPath: string) {
+function findMatchingDocPathRegex(docPath: string, docPathsRegex: Record<string, RegExp>) {
   for (const key in docPathsRegex) {
-    if (docPathsRegex[key as Entity].test(docPath)) {
-      return {entity: key as Entity, regex: docPathsRegex[key as Entity]};
+    if (docPathsRegex[key].test(docPath)) {
+      return {entity: key, regex: docPathsRegex[key]};
     }
   }
   return {entity: null, regex: null};
 }
 
-function filterSubDocPathsByEntity(entity: Entity): string[] {
+function filterSubDocPathsByEntity(entity: string, docPaths: Record<string, string>): string[] {
   const path = docPaths[entity];
   const paths = Object.values(docPaths);
   return paths.filter((p) => p.startsWith(path));
@@ -18,12 +17,12 @@ function filterSubDocPathsByEntity(entity: Entity): string[] {
 
 async function expandAndGroupDocPaths(startingDocPath: string, idsFetcher: (collectionPath: string) => Promise<string[]>) {
   const groupedPaths: { [key: string]: string[] } = {};
-  const {entity} = findMatchingDocPathRegex(startingDocPath);
+  const {entity} = findMatchingDocPathRegex(startingDocPath, docPathsRegex);
   if (!entity) {
     return groupedPaths;
   }
   const entityDocPath = docPaths[entity];
-  const subDocPaths = filterSubDocPathsByEntity(entity);
+  const subDocPaths = filterSubDocPathsByEntity(entity, docPaths);
 
   const values = Object.values(subDocPaths).map((p) => p.replace(entityDocPath, startingDocPath));
   const sortedValues = values.sort();
