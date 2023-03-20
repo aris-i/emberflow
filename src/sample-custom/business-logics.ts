@@ -1,7 +1,7 @@
-import {LogicConfig, LogicFn} from "../types";
 import * as admin from "firebase-admin";
 import {firestore} from "firebase-admin";
 import DocumentData = firestore.DocumentData;
+import {LogicConfig, LogicFn} from "@primeiq/emberflow/lib/types";
 
 const echoLogic: LogicFn = async (action) => {
   const {document, timeCreated, path, modifiedFields} = action;

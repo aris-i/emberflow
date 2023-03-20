@@ -4,7 +4,8 @@ export enum Entity {
     YourCustomEntity = "yourCustomEntity",
 }
 
-// Map your custom entities to dbStructure below.  Do not remove users and [Entity.User]
+// Map your custom entities to dbStructure below.
+// Do not remove users and [Entity.User]
 export const dbStructure = {
   users: {
     [Entity.User]: {

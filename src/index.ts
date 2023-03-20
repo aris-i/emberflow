@@ -21,6 +21,7 @@ export let logics: LogicConfig[];
 export let docPaths: Record<string, string>;
 export let colPaths: Record<string, string>;
 export let docPathsRegex: Record<string, RegExp>;
+export const functionsConfig: Record<string, any> = {};
 
 export function initializeEmberFlow(
   adminInstance: FirebaseAdmin,
@@ -29,7 +30,12 @@ export function initializeEmberFlow(
   customSecurityConfig: SecurityConfig,
   customValidatorConfig: ValidatorConfig,
   customLogics: LogicConfig[],
-) {
+) : {
+  docPaths: Record<string, string>,
+  colPaths: Record<string, string>,
+  docPathsRegex: Record<string, RegExp>,
+  functionsConfig: Record<string, any>
+} {
   admin = adminInstance;
   dbStructure = customDbStructure;
   Entity = CustomEntity;
@@ -46,26 +52,26 @@ export function initializeEmberFlow(
     const parts = path.split("/");
     const entity = parts[parts.length - 1].replace(/{(\w+)Id}$/, "$1");
 
-    exports[`on${entity.charAt(0).toUpperCase() + entity.slice(1)}Create`] = functions.firestore
+    functionsConfig[`on${entity.charAt(0).toUpperCase() + entity.slice(1)}Create`] = functions.firestore
       .document(path)
       .onCreate(async (snapshot, context) => {
         await onDocChange(entity, {before: null, after: snapshot}, context, "create");
       });
 
-    exports[`on${entity.charAt(0).toUpperCase() + entity.slice(1)}Update`] = functions.firestore
+    functionsConfig[`on${entity.charAt(0).toUpperCase() + entity.slice(1)}Update`] = functions.firestore
       .document(path)
       .onUpdate(async (change, context) => {
         await onDocChange(entity, change, context, "update");
       });
 
-    exports[`on${entity.charAt(0).toUpperCase() + entity.slice(1)}Delete`] = functions.firestore
+    functionsConfig[`on${entity.charAt(0).toUpperCase() + entity.slice(1)}Delete`] = functions.firestore
       .document(path)
       .onDelete(async (snapshot, context) => {
         await onDocChange(entity, {before: snapshot, after: null}, context, "delete");
       });
   });
 
-  return {docPaths, colPaths, docPathsRegex};
+  return {docPaths, colPaths, docPathsRegex, functionsConfig};
 }
 
 export async function onDocChange(

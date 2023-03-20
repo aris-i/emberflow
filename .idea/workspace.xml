@@ -5,29 +5,17 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="0cf11182-2e3e-4341-b0b6-740b179cea3d" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.firebaserc" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/firebase.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/functions/.eslintignore" beforeDir="false" afterPath="$PROJECT_DIR$/.eslintignore" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/functions/.eslintrc.js" beforeDir="false" afterPath="$PROJECT_DIR$/.eslintrc.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/functions/.gitignore" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/functions/jest.config.js" beforeDir="false" afterPath="$PROJECT_DIR$/jest.config.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/functions/package-lock.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/functions/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/package.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/functions/src/db-structure.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/db-structure.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/functions/src/index-utils.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/index-utils.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/functions/src/index.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/index.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/functions/src/sample-custom/business-logics.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/sample-custom/business-logics.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/functions/src/sample-custom/db-structure.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/sample-custom/db-structure.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/functions/src/sample-custom/security.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/sample-custom/security.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/functions/src/sample-custom/validators.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/sample-custom/validators.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/functions/src/tests/index-utils.test.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/tests/index-utils.test.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/functions/src/tests/index.test.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/tests/index.test.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/functions/src/types.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/types.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/functions/src/utils.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/utils.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/functions/tsconfig.dev.json" beforeDir="false" afterPath="$PROJECT_DIR$/tsconfig.dev.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/functions/tsconfig.json" beforeDir="false" afterPath="$PROJECT_DIR$/tsconfig.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/package-lock.json" beforeDir="false" afterPath="$PROJECT_DIR$/package-lock.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/package.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/index.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/index.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/sample-custom/business-logics.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/sample-custom/business-logics.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/sample-custom/db-structure.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/sample-custom/db-structure.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/sample-custom/security.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/sample-custom/security.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/sample-custom/validators.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/sample-custom/validators.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsconfig.json" beforeDir="false" afterPath="$PROJECT_DIR$/tsconfig.json" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -56,18 +44,22 @@
     "RunOnceActivity.OpenProjectViewOnStart": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "WebServerToolWindowFactoryState": "false",
+    "last_opened_file_path": "/Users/aris/IdeaProjects/emberflow/src/sample-custom",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
     "node.js.selected.package.eslint": "(autodetect)",
     "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs.jest.jest_package": "/Users/aris/IdeaProjects/emberflow/functions/node_modules/jest",
+    "nodejs.jest.jest_package": "/Users/aris/IdeaProjects/emberflow/node_modules/jest",
     "nodejs_package_manager_path": "npm",
     "settings.editor.selected.configurable": "project.propVCSSupport.DirectoryMappings",
-    "ts.external.directory.path": "/Users/aris/IdeaProjects/emberflow/functions/node_modules/typescript/lib",
+    "ts.external.directory.path": "/Users/aris/IdeaProjects/emberflow/node_modules/typescript/lib",
     "vue.rearranger.settings.migration": "true"
   }
 }]]></component>
   <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/src/sample-custom" />
+    </key>
     <key name="MoveFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$" />
     </key>
@@ -98,7 +90,11 @@
       <option name="presentableId" value="Default" />
       <updated>1679135514935</updated>
       <workItem from="1679135517347" duration="213000" />
-      <workItem from="1679135733229" duration="15921000" />
+      <workItem from="1679135733229" duration="16851000" />
+      <workItem from="1679223912949" duration="2198000" />
+      <workItem from="1679231289478" duration="191000" />
+      <workItem from="1679232037275" duration="1223000" />
+      <workItem from="1679269303412" duration="7077000" />
     </task>
     <task id="LOCAL-00001" summary="Added .idea to .gitignore and remove custom folder">
       <created>1679135803896</created>
@@ -121,7 +117,14 @@
       <option name="project" value="LOCAL" />
       <updated>1679222198928</updated>
     </task>
-    <option name="localTasksCounter" value="4" />
+    <task id="LOCAL-00004" summary="Removed the functions directory because this should be a library.  Removed other configurations related to deploying on firebase">
+      <created>1679223140183</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1679223140183</updated>
+    </task>
+    <option name="localTasksCounter" value="5" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -142,7 +145,8 @@
     <MESSAGE value="Added .idea to .gitignore and remove custom folder" />
     <MESSAGE value="Commit sample edit from different repository at the same time" />
     <MESSAGE value="Refactored to make it ready for publishing to an npm repository" />
-    <option name="LAST_COMMIT_MESSAGE" value="Refactored to make it ready for publishing to an npm repository" />
+    <MESSAGE value="Removed the functions directory because this should be a library.  Removed other configurations related to deploying on firebase" />
+    <option name="LAST_COMMIT_MESSAGE" value="Removed the functions directory because this should be a library.  Removed other configurations related to deploying on firebase" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -150,8 +154,13 @@
         <line-breakpoint enabled="true" type="javascript">
           <url>file://$PROJECT_DIR$/src/types.ts</url>
           <line>12</line>
-          <properties lambdaOrdinal="-1" />
           <option name="timeStamp" value="2" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="javascript">
+          <url>file://$PROJECT_DIR$/src/index-utils.ts</url>
+          <line>37</line>
+          <properties lambdaOrdinal="-1" />
+          <option name="timeStamp" value="3" />
         </line-breakpoint>
       </breakpoints>
     </breakpoint-manager>
