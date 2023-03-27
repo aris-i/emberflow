@@ -124,7 +124,7 @@ export async function onDocChange(
   }
 
   // Validate the document
-  const [hasValidationError, validationResult] = validateForm(entity, document);
+  const [hasValidationError, validationResult] = await validateForm(entity, document, snapshot.ref.path);
   if (hasValidationError) {
     await snapshot.ref.update({"@form.@status": "form-validation-failed", "@form.@message": validationResult});
     return;

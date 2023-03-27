@@ -162,10 +162,14 @@ export async function revertModificationsOutsideForm(document: FirebaseFirestore
   }
 }
 
-export function validateForm(entity: string, document: FirebaseFirestore.DocumentData): ValidateFormResult {
+export async function validateForm(
+    entity: string,
+    document: FirebaseFirestore.DocumentData,
+    docPath: string
+): Promise<ValidateFormResult> {
   let hasValidationError = false;
   const validate = validatorConfig[entity];
-  const validationResult = validate(document);
+  const validationResult = await validate(document, docPath);
 
   // Check if validation failed
   if (validationResult && Object.keys(validationResult).length > 0) {

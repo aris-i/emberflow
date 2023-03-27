@@ -308,26 +308,27 @@ describe("revertModificationsOutsideForm", () => {
 });
 
 describe("validateForm", () => {
-  it("returns an object with empty validationResult when document is valid", () => {
+  const docPath = "users/1"
+  it("returns an object with empty validationResult when document is valid", async () => {
     const entity = "user";
     const document = {
       name: "John Doe",
       email: "johndoe@example.com",
       password: "abc123",
     };
-    const [hasValidationError, validationResult] = validateForm(entity, document);
+    const [hasValidationError, validationResult] = await validateForm(entity, document, docPath);
     expect(hasValidationError).toBe(false);
     expect(validationResult).toEqual({});
   });
 
-  it("returns an object with validation errors when document is invalid", () => {
+  it("returns an object with validation errors when document is invalid", async () => {
     const entity = "user";
     const document = {
       name: "",
       email: "johndoe@example.com",
       password: "abc",
     };
-    const [hasValidationError, validationResult] = validateForm(entity, document);
+    const [hasValidationError, validationResult] = await validateForm(entity, document, docPath);
     expect(hasValidationError).toBe(true);
     expect(validationResult).toEqual({name: ["Name is required"]});
   });

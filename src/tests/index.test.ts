@@ -160,19 +160,20 @@ describe("onDocChange", () => {
       },
       "@form": {
         "@status": "submit",
+        "@actionType": "create"
       },
     };
 
     const change = createChange(beforeData, afterData, refPath);
 
     // Mock validateForm to return a validation error
-    jest.spyOn(indexutils, "validateForm").mockReturnValue([
+    jest.spyOn(indexutils, "validateForm").mockReturnValue(Promise.resolve([
       true,
       {
         field1: ["error message 1"],
         field2: ["error message 2"],
       },
-    ]);
+    ]));
 
     const revertModificationsOutsideFormMock = jest.spyOn(
       indexutils,
@@ -182,7 +183,7 @@ describe("onDocChange", () => {
     await onDocChange("user", change, context, "update");
 
     expect(revertModificationsOutsideFormMock).toHaveBeenCalledWith(afterData, beforeData, change.after);
-    expect(indexutils.validateForm).toHaveBeenCalledWith("user", afterData);
+    expect(indexutils.validateForm).toHaveBeenCalledWith("user", afterData, refPath);
     expect(change.after.ref.update).toHaveBeenCalledWith({"@form.@status": "form-validation-failed", "@form.@message": {"field1": ["error message 1"], "field2": ["error message 2"]}});
     expect(change.after.ref.update).toHaveBeenCalledTimes(1);
   });
@@ -221,18 +222,19 @@ describe("onDocChange", () => {
         "field1": "newValue",
         "field2": "oldValue",
         "@status": "submit",
+        "@actionType": "create"
       },
     };
 
     const change = createChange(beforeData, afterData, refPath);
 
     const validateFormMock = jest.spyOn(indexutils, "validateForm");
-    validateFormMock.mockReturnValue([false, {}] as ValidateFormResult);
+    validateFormMock.mockReturnValue(Promise.resolve([false, {}] as ValidateFormResult));
 
     await onDocChange(entity, change, context, "update");
 
     expect(getSecurityFnMock).toHaveBeenCalledWith(entity);
-    expect(validateFormMock).toHaveBeenCalledWith(entity, change.after.data());
+    expect(validateFormMock).toHaveBeenCalledWith(entity, change.after.data(), refPath);
     expect(securityFnMock).toHaveBeenCalledWith(entity, change.after.data(), "update", ["field1"]);
     expect(change.after.ref.update).toHaveBeenCalledWith({"@form.@status": "security-error", "@form.@message": "Unauthorized access"});
     expect(console.log).toHaveBeenCalledWith(`Security check failed: ${rejectedSecurityResult.message}`);
@@ -240,7 +242,7 @@ describe("onDocChange", () => {
 
   it("should call delayFormSubmissionAndCheckIfCancelled with correct parameters", async () => {
     jest.spyOn(indexutils, "revertModificationsOutsideForm").mockResolvedValue();
-    jest.spyOn(indexutils, "validateForm").mockReturnValue([false, {}]);
+    jest.spyOn(indexutils, "validateForm").mockReturnValue(Promise.resolve([false, {}]));
     jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue(["field1", "field2"]);
     jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() =>
       Promise.resolve({status: "allowed"})
@@ -252,6 +254,7 @@ describe("onDocChange", () => {
       "@form": {
         "@delay": 1000,
         "@status": "submit",
+        "@actionType": "create"
       },
       "someField": "exampleValue",
     };
@@ -272,7 +275,7 @@ describe("onDocChange", () => {
 
   it("should not process the form if @form.@status is not 'submit'", async () => {
     jest.spyOn(indexutils, "revertModificationsOutsideForm").mockResolvedValue();
-    jest.spyOn(indexutils, "validateForm").mockReturnValue([false, {}]);
+    jest.spyOn(indexutils, "validateForm").mockReturnValue(Promise.resolve([false, {}]));
     jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue(["field1", "field2"]);
     jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() =>
       Promise.resolve({status: "allowed"})
@@ -304,7 +307,7 @@ describe("onDocChange", () => {
 
   it("should set @form.@status to 'submitted' after passing all checks", async () => {
     jest.spyOn(indexutils, "revertModificationsOutsideForm").mockResolvedValue();
-    jest.spyOn(indexutils, "validateForm").mockReturnValue([false, {}]);
+    jest.spyOn(indexutils, "validateForm").mockReturnValue(Promise.resolve([false, {}]));
     jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue(["field1", "field2"]);
     jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() =>
       Promise.resolve({status: "allowed"})

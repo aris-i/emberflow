@@ -53,7 +53,7 @@ export type SecurityConfig = Record<string, SecurityFn>;
 export type ValidationResult = {
     [key: string]: string[];
 }
-export type ValidatorFn = (document: DocumentData) => ValidationResult;
+export type ValidatorFn = (document: DocumentData, docPath: string) => Promise<ValidationResult>;
 export type ValidatorConfig = Record<string, ValidatorFn>;
 export type ValidateFormResult = [hasValidationErrors: boolean, validationResult: ValidationResult];
 
