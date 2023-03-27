@@ -38,7 +38,8 @@ async function blankValidator(document: DocumentData, docPath: string): Promise<
  */
 const validatorConfig: ValidatorConfig = {
   [Entity.User]: userValidator,
-  [Entity.YourCustomEntity]: blankValidator,
+  [Entity.Feed]: blankValidator,
+  [Entity.Friend]: blankValidator,
 };
 
 export {validatorConfig};

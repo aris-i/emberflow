@@ -5,7 +5,7 @@ import DocumentData = firestore.DocumentData;
 
 export type FirebaseAdmin = typeof admin;
 
-export type Action = {
+export interface Action{
     actionType: string;
     path: string;
     document: FirebaseFirestore.DocumentData;
@@ -13,47 +13,63 @@ export type Action = {
     status: "new" | "processing" | "processed" | "processed-with-errors";
     timeCreated: Timestamp;
     message?: string
-};
+}
 
-export type LogicResultDoc = {
-    action: "merge" | "delete" | "copy";
+export type LogicResultAction = "merge" | "delete" | "copy";
+export interface LogicResultDoc{
+    action: LogicResultAction;
     dstPath: string;
     srcPath?: string;
     doc?: FirebaseFirestore.DocumentData;
     instructions?: { [key: string]: string };
     skipEntityDuringRecursiveCopy?: string[];
     copyMode?: "shallow" | "recursive";
-};
+}
 
-export type LogicResult = {
+export interface LogicResult{
     name: string;
     status: "finished" | "error";
     message?: string;
-    execTime: number;
+    execTime?: number;
     timeFinished: Timestamp;
     documents: LogicResultDoc[];
-};
+}
 export type LogicFn = (action: Action) => Promise<LogicResult>;
-export type ActionType = "create" | "update" | "delete";
-export type LogicConfig = {
+export type LogicActionType = "create" | "update" | "delete";
+export interface LogicConfig{
     name: string;
-    actionTypes: ActionType[] | "all";
+    actionTypes: LogicActionType[] | "all";
     modifiedFields: string[] | "all"
     entities: string[] | "all";
     logicFn: LogicFn;
-};
+}
 
 export type SecurityStatus = "allowed" | "rejected"
-export type SecurityResult = {
+export interface SecurityResult {
     status: SecurityStatus;
     message?: string;
-};
-export type SecurityFn = (entity: string, doc: DocumentData, actionType: ActionType, modifiedFields?: string[]) => Promise<SecurityResult>;
+}
+
+export type SecurityFn = (entity: string, doc: DocumentData, actionType: LogicActionType, modifiedFields?: string[]) => Promise<SecurityResult>;
 export type SecurityConfig = Record<string, SecurityFn>;
-export type ValidationResult = {
+export interface ValidationResult {
     [key: string]: string[];
 }
 export type ValidatorFn = (document: DocumentData, docPath: string) => Promise<ValidationResult>;
 export type ValidatorConfig = Record<string, ValidatorFn>;
 export type ValidateFormResult = [hasValidationErrors: boolean, validationResult: ValidationResult];
 
+export interface ViewDefinition {
+    destEntity: string;
+    destProp?: string;
+    srcProps: string[];
+    srcEntity: string;
+}
+
+export type IdGenerator = (collectionPath: string) => Promise<string[]>;
+
+export interface QueryCondition {
+    fieldName: string;
+    operator: firestore.WhereFilterOp;
+    value: any;
+}

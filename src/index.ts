@@ -1,5 +1,12 @@
 import * as functions from "firebase-functions";
-import {Action, FirebaseAdmin, LogicConfig, SecurityConfig, ValidatorConfig} from "./types";
+import {
+  Action,
+  FirebaseAdmin,
+  LogicConfig,
+  SecurityConfig,
+  ValidatorConfig,
+  ViewDefinition,
+} from "./types";
 import {
   delayFormSubmissionAndCheckIfCancelled,
   distribute,
@@ -10,7 +17,8 @@ import {
   runBusinessLogics,
   validateForm,
 } from "./index-utils";
-import {initDbStructure} from "./db-structure";
+import {initDbStructure} from "./init-db-structure";
+import {createViewLogicFn} from "./logics";
 
 export let admin: FirebaseAdmin;
 export let dbStructure: Record<string, object>;
@@ -21,6 +29,7 @@ export let logics: LogicConfig[];
 export let docPaths: Record<string, string>;
 export let colPaths: Record<string, string>;
 export let docPathsRegex: Record<string, RegExp>;
+export let viewDefinitions: ViewDefinition[];
 export const functionsConfig: Record<string, any> = {};
 
 export function initializeEmberFlow(
@@ -43,10 +52,22 @@ export function initializeEmberFlow(
   validatorConfig = customValidatorConfig;
   logics = customLogics;
 
-  const {docPaths: dp, colPaths: cp, docPathsRegex: dbr} = initDbStructure(dbStructure, Entity);
+  const {docPaths: dp, colPaths: cp, docPathsRegex: dbr, viewDefinitions: vd} = initDbStructure(dbStructure, Entity);
   docPaths = dp;
   colPaths = cp;
   docPathsRegex = dbr;
+  viewDefinitions = vd;
+
+  const viewLogicConfigs: LogicConfig[] = viewDefinitions.map((viewDef): LogicConfig => {
+    return {
+      name: `${viewDef.destEntity}#${viewDef.destProp} ViewLogic`,
+      entities: [viewDef.srcEntity],
+      actionTypes: ["update", "delete"],
+      modifiedFields: viewDef.srcProps,
+      logicFn: createViewLogicFn(viewDef),
+    };
+  });
+  logics.push(...viewLogicConfigs);
 
   Object.values(docPaths).forEach((path) => {
     const parts = path.split("/");
@@ -192,3 +213,4 @@ export async function onDocChange(
   await actionRef.update({status: "finished"});
 }
 
+export {hydrateDocPath} from "./utils/paths";
