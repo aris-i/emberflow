@@ -1,24 +1,19 @@
 import {
   Action,
-  ActionType,
+  LogicActionType,
+  LogicConfig,
   LogicResult,
   LogicResultDoc,
   SecurityFn,
   ValidateFormResult,
+  ViewDefinition,
 } from "./types";
 import {firestore} from "firebase-admin";
-import {expandAndGroupDocPaths} from "./utils";
-import DocumentData = firestore.DocumentData;
 import {admin, docPaths, logics, securityConfig, validatorConfig} from "./index";
-
-async function fetchIds(collectionPath: string) {
-  const ids: string[] = [];
-  const querySnapshot = await admin.firestore().collection(collectionPath).select(firestore.FieldPath.documentId()).get();
-  querySnapshot.forEach((doc) => {
-    ids.push(doc.id);
-  });
-  return ids;
-}
+import {createViewLogicFn} from "./logics";
+import DocumentData = firestore.DocumentData;
+import {expandAndGroupDocPaths} from "./utils/paths";
+import {fetchIds} from "./utils/query";
 
 async function commitBatchIfNeeded(
   batch: FirebaseFirestore.WriteBatch,
@@ -197,7 +192,7 @@ export async function delayFormSubmissionAndCheckIfCancelled(delay: number, snap
   return cancelFormSubmission;
 }
 
-export async function runBusinessLogics(actionType: ActionType, formModifiedFields: string[], entity: string, action: Action) {
+export async function runBusinessLogics(actionType: LogicActionType, formModifiedFields: string[], entity: string, action: Action) {
   const matchingLogics = logics.filter((logic) => {
     return (
       (logic.actionTypes === "all" || logic.actionTypes.includes(actionType)) &&
@@ -205,6 +200,8 @@ export async function runBusinessLogics(actionType: ActionType, formModifiedFiel
             (logic.entities === "all" || logic.entities.includes(entity))
     );
   });
+  // TODO: Handle errors
+  // TODO: Add logic for execTime
   return await Promise.all(matchingLogics.map((logic) => logic.logicFn(action)));
 }
 
@@ -233,4 +230,21 @@ export function groupDocsByUserAndDstPath(logicResults: Awaited<LogicResult>[], 
 
 export function getSecurityFn(entity: string): SecurityFn {
   return securityConfig[entity];
+}
+
+
+export function createLogicConfigsFromViewDefinitions(viewDefinitions: ViewDefinition[]): LogicConfig[] {
+  const logicConfigs: LogicConfig[] = [];
+  for (const viewDef of viewDefinitions) {
+    const {destEntity, destProp, srcProps, srcEntity} = viewDef;
+    logicConfigs.push({
+      name: `${destEntity}${destProp ? `#${destProp}` : ""} view updater`,
+      actionTypes: "all",
+      modifiedFields: srcProps,
+      entities: [srcEntity],
+      logicFn: createViewLogicFn(viewDef),
+    });
+  }
+
+  return logicConfigs;
 }

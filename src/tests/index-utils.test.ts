@@ -17,7 +17,7 @@ import {
   LogicResult,
   LogicResultDoc,
 } from "../types";
-import * as utils from "../utils";
+import * as paths from "../utils/paths";
 import {Entity, dbStructure} from "../sample-custom/db-structure";
 import {securityConfig} from "../sample-custom/security";
 import {validatorConfig} from "../sample-custom/validators";
@@ -209,7 +209,7 @@ describe("distribute", () => {
     } as unknown) as admin.firestore.DocumentReference<admin.firestore.DocumentData>;
 
     const mockDoc = jest.spyOn(admin.firestore(), "doc").mockReturnValue(srcDocMock);
-    const mockExpandAndGroupDocPaths = jest.spyOn(utils, "expandAndGroupDocPaths").mockResolvedValue({});
+    const mockExpandAndGroupDocPaths = jest.spyOn(paths, "expandAndGroupDocPaths").mockResolvedValue({});
 
 
     const userDocsByDstPath = {
