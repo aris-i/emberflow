@@ -1,6 +1,6 @@
 {
   "name": "@primeiq/emberflow",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "A Firebase Cloud Functions library for handling document changes in a structured way",
   "main": "lib/index.js",
   "types": "lib/index.d.js",

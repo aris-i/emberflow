@@ -1,6 +1,7 @@
 # Compiled JavaScript files
 lib/**/*.js
 lib/**/*.js.map
+lib/**/*.d.ts
 
 # TypeScript v1 declaration files
 typings/
@@ -8,3 +9,4 @@ typings/
 # Node.js dependency directory
 node_modules/
 /.idea/
+/.npmrc
