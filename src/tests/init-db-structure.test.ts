@@ -42,21 +42,23 @@ describe("mapDocPaths", () => {
       "as",
       "hs",
       "as/a",
-      "as/a/bs/b#f=View:Entity:prop1,prop2",
-      "as/a/bs/b",
-      "as/a/ds/d=View:Entity:prop1,prop2",
+      "hs/h",
+      "as/a/cs",
+      "as/a/cs/c",
+      "as/a/cs/c#f=View:a:prop1,prop2",
+      "hs/h=View:a:prop1,prop2",
     ];
 
     const Entity = {
       Entity1: "a",
-      Entity2: "b",
-      Entity3: "d",
+      Entity2: "h",
+      Entity3: "c",
     };
 
     const expectedOutput = {
       "a": "as/{aId}",
-      "b": "as/{aId}/bs/{bId}",
-      "d": "as/{aId}/ds/{dId}",
+      "h": "hs/{hId}",
+      "c": "as/{aId}/cs/{cId}",
     };
 
     const result = mapDocPaths(paths, Entity);

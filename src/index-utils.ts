@@ -13,7 +13,6 @@ import {admin, docPaths, logics, securityConfig, validatorConfig} from "./index"
 import {createViewLogicFn} from "./logics";
 import DocumentData = firestore.DocumentData;
 import {expandAndGroupDocPaths} from "./utils/paths";
-import {fetchIds} from "./utils/query";
 
 async function commitBatchIfNeeded(
   batch: FirebaseFirestore.WriteBatch,
@@ -120,7 +119,7 @@ export async function distribute(userDocsByDstPath: Record<string, LogicResultDo
     console.log(`Document copied from ${srcPath} to ${dstPath}`);
 
     if (copyMode === "recursive") {
-      const subDocPaths = expandAndGroupDocPaths(srcPath, fetchIds);
+      const subDocPaths = expandAndGroupDocPaths(srcPath);
       const pathsToCopy: string[] = [];
       for (const [entity, paths] of Object.entries(subDocPaths)) {
         if (!skipEntityDuringRecursiveCopy || !skipEntityDuringRecursiveCopy.includes(entity)) {
@@ -135,6 +134,12 @@ export async function distribute(userDocsByDstPath: Record<string, LogicResultDo
         console.log(`Document copied from ${path} to ${dstDocRef.path}`);
       }
     }
+  }
+
+  if (writeCount > 0) {
+    console.log(`Committing final batch of ${writeCount} writes...`);
+    await batch.commit();
+    writeCount = 0;
   }
 }
 

@@ -5,6 +5,7 @@ export enum Entity {
     // Add your custom entities below
     Feed = "feed",
     Friend = "friend",
+    Game = "game",
 }
 
 // Map your custom entities to dbStructure below.
@@ -21,6 +22,9 @@ export const dbStructure = {
       friends: {
         [Entity.Friend]: {
           [view(Entity.User, ["name", "email"])]: {},
+          games: {
+            game: {},
+          },
         },
       },
     },

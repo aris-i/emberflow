@@ -45,7 +45,7 @@ export function mapDocPaths(paths: string[], Entity: Record<string, string>): Re
   const docPathsMap: Record<string, string> = {} as Record<string, string>;
 
   for (const entityKey of Object.values(Entity)) {
-    const entityWithModifier = new RegExp(`/${entityKey}[^/]*$`);
+    const entityWithModifier = new RegExp(`/${entityKey}([#=][^/]*)?$`);
     const entityPaths = paths.filter((path) => entityWithModifier.test(path));
     if (entityPaths.length > 0) {
       const entityPath = entityPaths[0];

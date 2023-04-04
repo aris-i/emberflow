@@ -1,6 +1,7 @@
 import {Action, LogicFn, LogicResultAction, LogicResultDoc, ViewDefinition} from "../types";
-import {docPaths, hydrateDocPath} from "../index";
+import {docPaths} from "../index";
 import * as admin from "firebase-admin";
+import {hydrateDocPath} from "../utils/paths";
 
 export function createViewLogicFn(viewDefinition: ViewDefinition): LogicFn {
   return async (action: Action) => {

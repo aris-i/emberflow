@@ -1,8 +1,28 @@
-import {IdGenerator, QueryCondition} from "../types";
-import {docPaths, docPathsRegex} from "../index";
+import {QueryCondition} from "../types";
 import {fetchIds} from "./query";
+import {docPaths, docPathsRegex} from "../index";
 
-export function findMatchingDocPathRegex(docPath: string, docPathsRegex: Record<string, RegExp>) {
+export const _mockable = {
+  filterSubDocPathsByEntity: (entity: string, excludeEntities?: string[]): string[] => {
+    const path = docPaths[entity];
+    const paths = Object.values(docPaths);
+
+    // Find the doc paths of the excluded entities
+    const excludePaths = excludeEntities?.map((excludeEntity) => docPaths[excludeEntity]);
+
+    return paths.filter((p) => {
+      // Check if the path starts with the given entity's doc path
+      const startsWithPath = p.startsWith(path);
+
+      // Check if the path starts with any of the excluded entity's doc paths
+      const startsWithExcludedPath = excludePaths?.some((excludePath) => p.startsWith(excludePath));
+
+      return startsWithPath && !startsWithExcludedPath;
+    });
+  },
+};
+
+export function findMatchingDocPathRegex(docPath: string) {
   for (const key in docPathsRegex) {
     if (docPathsRegex[key].test(docPath)) {
       return {entity: key, regex: docPathsRegex[key]};
@@ -11,20 +31,21 @@ export function findMatchingDocPathRegex(docPath: string, docPathsRegex: Record<
   return {entity: null, regex: null};
 }
 
-export function filterSubDocPathsByEntity(entity: string, docPaths: Record<string, string>): string[] {
-  const path = docPaths[entity];
-  const paths = Object.values(docPaths);
-  return paths.filter((p) => p.startsWith(path));
+export function filterSubDocPathsByEntity(entity: string, excludeEntities?: string[]): string[] {
+  return _mockable.filterSubDocPathsByEntity(entity, excludeEntities);
 }
 
-export async function expandAndGroupDocPaths(startingDocPath: string, idsFetcher: IdGenerator) {
+export async function expandAndGroupDocPaths(
+  startingDocPath: string,
+  entityCondition?: Record<string, QueryCondition>,
+  excludeEntities?: string[]) {
   const groupedPaths: { [key: string]: string[] } = {};
-  const {entity} = findMatchingDocPathRegex(startingDocPath, docPathsRegex);
+  const {entity} = findMatchingDocPathRegex(startingDocPath);
   if (!entity) {
     return groupedPaths;
   }
   const entityDocPath = docPaths[entity];
-  const subDocPaths = filterSubDocPathsByEntity(entity, docPaths);
+  const subDocPaths = filterSubDocPathsByEntity(entity, excludeEntities);
 
   const values = Object.values(subDocPaths).map((p) => p.replace(entityDocPath, startingDocPath));
   const sortedValues = values.sort();
@@ -53,7 +74,8 @@ export async function expandAndGroupDocPaths(startingDocPath: string, idsFetcher
     if (/{\w+Id}$/.test(path)) {
       const idIndex = path.lastIndexOf("/");
       const collectionPath = path.substring(0, idIndex);
-      const ids = await idsFetcher(collectionPath);
+      const {entity} = findMatchingDocPathRegex(path);
+      const ids = await fetchIds(collectionPath, entityCondition?.[entity!]);
       const newPaths = ids.map((id) => path.replace(/{\w+Id}$/, id.toString()));
       newPathMap.set(path, newPaths);
       sortedValues.push(...newPaths);
@@ -65,7 +87,9 @@ export async function expandAndGroupDocPaths(startingDocPath: string, idsFetcher
 
   // Group expandedPaths based on docPaths keys and values
   for (const [key, regex] of Object.entries(docPathsRegex)) {
-    groupedPaths[key] = expandedPaths.filter((path) => path.match(regex)) as string[];
+    const paths = expandedPaths.filter((p) => regex.test(p));
+    if (!paths.length) continue;
+    groupedPaths[key] = paths;
   }
 
   return groupedPaths;
@@ -99,13 +123,11 @@ export async function hydrateDocPath(destDocPath: string, entityCondition: Recor
       const collectionPathSegments = segments.slice(0, braceIdx);
       const collectionPath = collectionPathSegments.join("/");
       const entity = segments[braceIdx].slice(1, -3);
-      // TODO: Test for entity condition
       const condition = entityCondition[entity];
       const ids = await fetchIds(collectionPath, condition);
 
       // Generate the document paths by merging the IDs with the collection path
       const remainingPathSegments = segments.slice(braceIdx);
-      // TODO: Test for no id's returned due to condition
       for (const id of ids) {
         const documentPathSegments = [...collectionPathSegments, id, ...remainingPathSegments.slice(1)];
         queue.push([documentPathSegments, braceIdx + 1]);

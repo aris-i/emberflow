@@ -208,9 +208,7 @@ export async function onDocChange(
   const {userDocsByDstPath, otherUsersDocsByDstPath} = groupDocsByUserAndDstPath(logicResults, userId);
 
   await distribute(userDocsByDstPath);
-  await snapshot.ref.update({"@form.@status": "finished"});
+  await snapshot.ref.update({"@form": {"@status": "finished"}});
   await distribute(otherUsersDocsByDstPath);
   await actionRef.update({status: "finished"});
 }
-
-export {hydrateDocPath} from "./utils/paths";
