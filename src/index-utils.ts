@@ -13,6 +13,7 @@ import {admin, docPaths, logics, securityConfig, validatorConfig} from "./index"
 import {createViewLogicFn} from "./logics";
 import DocumentData = firestore.DocumentData;
 import {expandAndGroupDocPaths} from "./utils/paths";
+import {deepEqual} from "./utils/misc";
 
 async function commitBatchIfNeeded(
   batch: FirebaseFirestore.WriteBatch,
@@ -150,8 +151,8 @@ export async function revertModificationsOutsideForm(document: FirebaseFirestore
   if (beforeDocument) {
     const modifiedFields = Object.keys(document ?? {}).filter((key) => !key.startsWith("@form"));
     modifiedFields.forEach((field) => {
-      if (document?.[field] !== beforeDocument[field]) {
-        revertedValues[field] = beforeDocument[field];// TODO:  Handle nested fields
+      if ( !deepEqual(document?.[field], beforeDocument[field]) ) {
+        revertedValues[field] = beforeDocument[field];
       }
     });
   }
@@ -178,7 +179,7 @@ export function validateForm(entity: string, document: FirebaseFirestore.Documen
 export function getFormModifiedFields(document: DocumentData) {
   const formFields = Object.keys(document?.["@form"] ?? {}).filter((key) => !key.startsWith("@"));
   // compare value of each @form field with the value of the same field in the document to get modified fields
-  return formFields.filter((field) => document?.[field] !== document?.["@form"]?.[field]);// TODO:  Handle nested fields
+  return formFields.filter((field) => !deepEqual(document?.[field], document?.["@form"]?.[field]));
 }
 
 export async function delayFormSubmissionAndCheckIfCancelled(delay: number, snapshot: firestore.DocumentSnapshot) {

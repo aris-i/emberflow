@@ -73,3 +73,5 @@ export interface QueryCondition {
     operator: firestore.WhereFilterOp;
     value: any;
 }
+
+export type AnyObject = { [key: string]: any };

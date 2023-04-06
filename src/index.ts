@@ -32,6 +32,10 @@ export let docPathsRegex: Record<string, RegExp>;
 export let viewDefinitions: ViewDefinition[];
 export const functionsConfig: Record<string, any> = {};
 
+export const _mockable = {
+  createNowTimestamp: () => admin.firestore.Timestamp.now(),
+};
+
 export function initializeEmberFlow(
   adminInstance: FirebaseAdmin,
   customDbStructure: Record<string, object>,
@@ -176,7 +180,7 @@ export async function onDocChange(
 
   const path = snapshot.ref.path;
   const status = "processing";
-  const timeCreated = admin.firestore.Timestamp.now();
+  const timeCreated = _mockable.createNowTimestamp();
 
   const action: Action = {
     actionType,
