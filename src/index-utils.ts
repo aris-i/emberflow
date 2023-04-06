@@ -13,7 +13,7 @@ import {admin, docPaths, logics, securityConfig, validatorConfig} from "./index"
 import {createViewLogicFn} from "./logics";
 import DocumentData = firestore.DocumentData;
 import {expandAndGroupDocPaths} from "./utils/paths";
-import {fetchIds} from "./utils/query";
+import {deepEqual} from "./utils/misc";
 
 async function commitBatchIfNeeded(
   batch: FirebaseFirestore.WriteBatch,
@@ -120,7 +120,7 @@ export async function distribute(userDocsByDstPath: Record<string, LogicResultDo
     console.log(`Document copied from ${srcPath} to ${dstPath}`);
 
     if (copyMode === "recursive") {
-      const subDocPaths = expandAndGroupDocPaths(srcPath, fetchIds);
+      const subDocPaths = expandAndGroupDocPaths(srcPath);
       const pathsToCopy: string[] = [];
       for (const [entity, paths] of Object.entries(subDocPaths)) {
         if (!skipEntityDuringRecursiveCopy || !skipEntityDuringRecursiveCopy.includes(entity)) {
@@ -136,6 +136,12 @@ export async function distribute(userDocsByDstPath: Record<string, LogicResultDo
       }
     }
   }
+
+  if (writeCount > 0) {
+    console.log(`Committing final batch of ${writeCount} writes...`);
+    await batch.commit();
+    writeCount = 0;
+  }
 }
 
 export async function revertModificationsOutsideForm(document: FirebaseFirestore.DocumentData, beforeDocument: FirebaseFirestore.DocumentData | null | undefined, snapshot: FirebaseFirestore.DocumentSnapshot) {
@@ -145,8 +151,8 @@ export async function revertModificationsOutsideForm(document: FirebaseFirestore
   if (beforeDocument) {
     const modifiedFields = Object.keys(document ?? {}).filter((key) => !key.startsWith("@form"));
     modifiedFields.forEach((field) => {
-      if (document?.[field] !== beforeDocument[field]) {
-        revertedValues[field] = beforeDocument[field];// TODO:  Handle nested fields
+      if ( !deepEqual(document?.[field], beforeDocument[field]) ) {
+        revertedValues[field] = beforeDocument[field];
       }
     });
   }
@@ -177,7 +183,7 @@ export async function validateForm(
 export function getFormModifiedFields(document: DocumentData) {
   const formFields = Object.keys(document?.["@form"] ?? {}).filter((key) => !key.startsWith("@"));
   // compare value of each @form field with the value of the same field in the document to get modified fields
-  return formFields.filter((field) => document?.[field] !== document?.["@form"]?.[field]);// TODO:  Handle nested fields
+  return formFields.filter((field) => !deepEqual(document?.[field], document?.["@form"]?.[field]));
 }
 
 export async function delayFormSubmissionAndCheckIfCancelled(delay: number, snapshot: firestore.DocumentSnapshot) {
