@@ -1,7 +1,7 @@
 import {Entity} from "./db-structure";
 import {firestore} from "firebase-admin";
 import DocumentData = firestore.DocumentData;
-import {ValidationResult, ValidatorConfig} from "../types";
+import {ValidationResult, ValidatorConfig} from "@primeiq/emberflow/lib/types";
 
 /**
  * Validates the user document.

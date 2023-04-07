@@ -1,8 +1,8 @@
-import {createViewLogicFn} from "../../logics/index";
+import {createViewLogicFn} from "../../logics";
 import {Action, ViewDefinition} from "../../types";
 import * as admin from "firebase-admin";
-import {hydrateDocPath} from "../../index";
-
+import * as queryutils from "../../utils/query";
+import * as pathsutils from "../../utils/paths";
 
 const vd1: ViewDefinition = {
   srcEntity: "user",
@@ -55,6 +55,12 @@ jest.mock("../../index", () => {
 
 describe("createViewLogicFn", () => {
   it("should create a logic function that processes the given action and view definition", async () => {
+    const hydrateDocPathSpy = jest.spyOn(pathsutils, "hydrateDocPath");
+    const fetchIdsMock = jest.spyOn(queryutils, "fetchIds");
+    fetchIdsMock
+      .mockResolvedValueOnce(["456", "789"])
+      .mockResolvedValue(["1234"]);
+
     // Create the logic function using the viewDefinition
     const logicFn = createViewLogicFn(vd1);
 
@@ -75,6 +81,19 @@ describe("createViewLogicFn", () => {
     expect(document).toHaveProperty("action", "merge");
     expect(document).toHaveProperty("dstPath", "users/789/friends/1234");
     expect(document.doc).toEqual({"name": "John Doe"});
+
+    expect(hydrateDocPathSpy.mock.calls[0][0]).toEqual("users/{userId}/friends/{friendId}");
+    expect(hydrateDocPathSpy.mock.calls[0][1]).toEqual({
+      "friend": {
+        fieldName: "id",
+        operator: "==",
+        value: "1234",
+      },
+    });
+
+    fetchIdsMock
+      .mockResolvedValueOnce(["123", "890"])
+      .mockResolvedValue(["987"]);
 
     // Create the logic function using the viewDefinition
     const logicFn2 = createViewLogicFn(vd2);
@@ -97,17 +116,8 @@ describe("createViewLogicFn", () => {
     expect(document).toHaveProperty("dstPath", "users/890/posts/987");
     expect(document.doc).toEqual({"postedBy.name": "John Doe"});
 
-    expect((hydrateDocPath as jest.Mock).mock.calls[0][0]).toEqual("users/{userId}/friends/{friendId}");
-    expect((hydrateDocPath as jest.Mock).mock.calls[0][1]).toEqual({
-      "friend": {
-        fieldName: "id",
-        operator: "==",
-        value: "1234",
-      },
-    });
-
-    expect((hydrateDocPath as jest.Mock).mock.calls[1][0]).toEqual("users/{userId}/posts/{postId}");
-    expect((hydrateDocPath as jest.Mock).mock.calls[1][1]).toEqual({
+    expect(hydrateDocPathSpy.mock.calls[1][0]).toEqual("users/{userId}/posts/{postId}");
+    expect(hydrateDocPathSpy.mock.calls[1][1]).toEqual({
       "post": {
         fieldName: "postedBy.id",
         operator: "==",
