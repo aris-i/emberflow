@@ -1,3 +1,4 @@
+// TODO: You should import from the path to the ember-flow package in your project
 import {view} from "../utils/db-structure";
 
 export enum Entity {

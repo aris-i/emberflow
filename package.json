@@ -1,6 +1,6 @@
 {
   "name": "@primeiq/emberflow",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "A Firebase Cloud Functions library for handling document changes in a structured way",
   "main": "lib/index.js",
   "types": "lib/index.d.js",
@@ -15,14 +15,11 @@
     "type": "git",
     "url": "git+https://github.com/yourusername/emberflow.git"
   },
-  "dependencies": {
-  },
   "peerDependencies": {
     "firebase-admin": "^11.5.0",
     "firebase-functions": "^4.2.0"
   },
   "devDependencies": {
-    "@primeiq/emberflow": "^1.0.4",
     "@types/chai": "^4.3.4",
     "@types/jest": "^29.4.0",
     "@typescript-eslint/eslint-plugin": "^5.12.0",

@@ -1,7 +1,8 @@
 import * as admin from "firebase-admin";
 import {firestore} from "firebase-admin";
 import DocumentData = firestore.DocumentData;
-import {LogicConfig, LogicFn} from "@primeiq/emberflow/lib/types";
+// TODO: You should import from the path to the ember-flow package in your project
+import {LogicConfig, LogicFn} from "../types";
 
 const echoLogic: LogicFn = async (action) => {
   const {document, timeCreated, path, modifiedFields} = action;

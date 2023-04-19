@@ -1,7 +1,8 @@
 import {Entity} from "./db-structure";
 import {firestore} from "firebase-admin";
 import DocumentData = firestore.DocumentData;
-import {ValidationResult, ValidatorConfig} from "@primeiq/emberflow/lib/types";
+// TODO: You should import from the path to the ember-flow package in your project
+import {ValidationResult, ValidatorConfig} from "../types";
 
 /**
  * Validates the user document.
