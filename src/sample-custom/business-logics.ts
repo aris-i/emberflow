@@ -1,7 +1,7 @@
 import * as admin from "firebase-admin";
 import {firestore} from "firebase-admin";
 import DocumentData = firestore.DocumentData;
-// TODO: You should import from the path to the ember-flow package in your project
+// You should import from the path to the ember-flow package in your project
 import {LogicConfig, LogicFn} from "../types";
 
 const echoLogic: LogicFn = async (action) => {

@@ -44,6 +44,14 @@ export interface LogicConfig{
     logicFn: LogicFn;
 }
 
+export type ViewLogicFn = (logicResultDoc: LogicResultDoc) => Promise<LogicResult>;
+export interface ViewLogicConfig{
+    name: string;
+    modifiedFields: string[];
+    entity: string;
+    viewLogicFn: ViewLogicFn;
+}
+
 export type SecurityStatus = "allowed" | "rejected"
 export interface SecurityResult {
     status: SecurityStatus;

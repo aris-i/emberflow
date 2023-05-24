@@ -12,7 +12,7 @@ To use Emberflow in your Firebase Functions project, follow these steps:
 npm install @primeiq/emberflow
 ```
 
-2. Import and initialize Emberflow in your Firebase Functions `index.ts` file:
+2. Import and initialize Emberflow in your Firebase Functions `view-logics.ts` file:
 
 ```typescript
 import * as admin from "firebase-admin";

@@ -1,5 +1,5 @@
 import {Entity} from "./db-structure";
-// TODO: You should import from the path to the ember-flow package in your project
+// You should import from the path to the ember-flow package in your project
 import {
   SecurityConfig,
   SecurityFn,

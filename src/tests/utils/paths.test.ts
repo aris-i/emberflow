@@ -4,6 +4,7 @@ import {QueryCondition} from "../../types";
 import {initializeEmberFlow} from "../../index";
 import * as admin from "firebase-admin";
 import {dbStructure, Entity} from "../../sample-custom/db-structure";
+import {Firestore} from "@google-cloud/firestore";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 
 initializeEmberFlow(admin, dbStructure, Entity, {}, {}, []);
@@ -18,6 +19,79 @@ describe("hydrateDocPath", () => {
   beforeEach(() => {
     // Clear the mock before each test
     (fetchIds as jest.Mock).mockClear();
+  });
+
+  it("should skip path segments when no IDs are found for a given condition", async () => {
+    // Mock fetchIds to return an empty array for the user entity
+    const mockFetchIds = fetchIds as jest.MockedFunction<typeof fetchIds>;
+    mockFetchIds
+      .mockResolvedValueOnce([])
+      .mockResolvedValue(["321", "654"]);
+
+    const destDocPath = "users/{userId}/posts/{postId}";
+    const userCondition: QueryCondition = {
+      fieldName: "id",
+      operator: "in",
+      value: ["123", "456"],
+    };
+
+    // Execute the hydrateDocPath function
+    const result = await hydrateDocPath(destDocPath, {
+      user: userCondition,
+    });
+
+    // Check the result, expecting an empty array since no user IDs were found
+    expect(result).toEqual([]);
+
+    // Check if the mocked fetchIds function was called correctly
+    expect(mockFetchIds).toHaveBeenCalledTimes(1);
+    expect(mockFetchIds).toHaveBeenNthCalledWith(1, "users", userCondition);
+  });
+
+  it("should handle hard-coded IDs and skip non-existent paths", async () => {
+    // Mock Firestore document fetching
+    const docGet = jest.fn();
+    const doc = jest.fn(() => ({get: docGet}));
+    const firestoreInstance = {
+      doc,
+      settings: jest.fn(),
+      collection: jest.fn(),
+      collectionGroup: jest.fn(),
+      getAll: jest.fn(),
+      runTransaction: jest.fn(),
+      batch: jest.fn(),
+      terminate: jest.fn(),
+    } as unknown as Firestore;
+    const firestoreMock = jest.fn(() => firestoreInstance);
+    jest.spyOn(admin, "firestore").mockImplementation(firestoreMock);
+
+    // Mock Firestore document existence
+    const existingDoc = {exists: true};
+    const nonExistingDoc = {exists: false};
+    docGet
+      .mockReturnValueOnce(existingDoc)
+      .mockReturnValueOnce(nonExistingDoc)
+      .mockReturnValueOnce(existingDoc);
+
+    // Define the input document path with hardcoded IDs
+    const destDocPath = "users/{userId}/posts/321";
+    const mockFetchIds = fetchIds as jest.MockedFunction<typeof fetchIds>;
+    mockFetchIds
+      .mockResolvedValue(["123", "456", "789"]);
+
+    // Execute the hydrateDocPath function
+    const result = await hydrateDocPath(destDocPath, {});
+
+    // Check the result
+    expect(result).toEqual(["users/123/posts/321", "users/789/posts/321"]);
+
+    // Check if the mocked Firestore functions were called correctly
+    expect(firestoreMock).toHaveBeenCalledTimes(3);
+    expect(doc).toHaveBeenCalledTimes(3);
+    expect(doc).toHaveBeenNthCalledWith(1, "users/123/posts/321");
+    expect(doc).toHaveBeenNthCalledWith(2, "users/456/posts/321");
+    expect(doc).toHaveBeenNthCalledWith(3, "users/789/posts/321");
+    expect(docGet).toHaveBeenCalledTimes(3);
   });
 
   it("should return all possible document paths", async () => {

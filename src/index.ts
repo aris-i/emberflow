@@ -3,33 +3,37 @@ import {
   Action,
   FirebaseAdmin,
   LogicConfig,
+  LogicResultDoc,
   SecurityConfig,
   ValidatorConfig,
   ViewDefinition,
+  ViewLogicConfig,
 } from "./types";
 import {
+  consolidateAndGroupByDstPath,
   delayFormSubmissionAndCheckIfCancelled,
   distribute,
   getFormModifiedFields,
   getSecurityFn,
   groupDocsByUserAndDstPath,
   revertModificationsOutsideForm,
-  runBusinessLogics,
+  runBusinessLogics, runPeerSyncViews,
+  runViewLogics,
   validateForm,
 } from "./index-utils";
 import {initDbStructure} from "./init-db-structure";
-import {createViewLogicFn} from "./logics";
+import {createViewLogicFn} from "./logics/view-logics";
 
 export let admin: FirebaseAdmin;
 export let dbStructure: Record<string, object>;
 export let Entity: Record<string, string>;
 export let securityConfig: SecurityConfig;
 export let validatorConfig: ValidatorConfig;
-export let logics: LogicConfig[];
+export let logicConfigs: LogicConfig[];
 export let docPaths: Record<string, string>;
 export let colPaths: Record<string, string>;
 export let docPathsRegex: Record<string, RegExp>;
-export let viewDefinitions: ViewDefinition[];
+export let viewLogicConfigs: ViewLogicConfig[];
 export const functionsConfig: Record<string, any> = {};
 
 export const _mockable = {
@@ -42,7 +46,7 @@ export function initializeEmberFlow(
   CustomEntity: Record<string, string>,
   customSecurityConfig: SecurityConfig,
   customValidatorConfig: ValidatorConfig,
-  customLogics: LogicConfig[],
+  customLogicConfigs: LogicConfig[],
 ) : {
   docPaths: Record<string, string>,
   colPaths: Record<string, string>,
@@ -54,24 +58,21 @@ export function initializeEmberFlow(
   Entity = CustomEntity;
   securityConfig = customSecurityConfig;
   validatorConfig = customValidatorConfig;
-  logics = customLogics;
+  logicConfigs = customLogicConfigs;
 
   const {docPaths: dp, colPaths: cp, docPathsRegex: dbr, viewDefinitions: vd} = initDbStructure(dbStructure, Entity);
   docPaths = dp;
   colPaths = cp;
   docPathsRegex = dbr;
-  viewDefinitions = vd;
 
-  const viewLogicConfigs: LogicConfig[] = viewDefinitions.map((viewDef): LogicConfig => {
+  viewLogicConfigs = vd.map((viewDef: ViewDefinition): ViewLogicConfig => {
     return {
-      name: `${viewDef.destEntity}#${viewDef.destProp} ViewLogic`,
-      entities: [viewDef.srcEntity],
-      actionTypes: ["update", "delete"],
+      name: `${viewDef.destEntity}${viewDef.destProp ? "#" + viewDef.destProp : ""} ViewLogic`,
+      entity: viewDef.srcEntity,
       modifiedFields: viewDef.srcProps,
-      logicFn: createViewLogicFn(viewDef),
+      viewLogicFn: createViewLogicFn(viewDef),
     };
   });
-  logics.push(...viewLogicConfigs);
 
   Object.values(docPaths).forEach((path) => {
     const parts = path.split("/");
@@ -209,10 +210,31 @@ export async function onDocChange(
     const errorMessage = errorLogicResults.map((result) => result.message).join("\n");
     await actionRef.update({status: "finished-with-error", message: errorMessage});
   }
-  const {userDocsByDstPath, otherUsersDocsByDstPath} = groupDocsByUserAndDstPath(logicResults, userId);
+
+  const dstPathLogicDocsMap: Map<string, LogicResultDoc> = consolidateAndGroupByDstPath(logicResults);
+  const {
+    userDocsByDstPath,
+    otherUsersDocsByDstPath,
+  } = groupDocsByUserAndDstPath(dstPathLogicDocsMap, userId);
+
+  const viewLogicResults = await runViewLogics(userDocsByDstPath);
+  const dstPathViewLogicDocsMap: Map<string, LogicResultDoc> = consolidateAndGroupByDstPath(viewLogicResults);
+  const {
+    userDocsByDstPath: userViewDocsByDstPath,
+    otherUsersDocsByDstPath: otherUsersViewDocsByDstPath,
+  } = groupDocsByUserAndDstPath(dstPathViewLogicDocsMap, userId);
 
   await distribute(userDocsByDstPath);
-  await snapshot.ref.update({"@form": {"@status": "finished"}});
+  await distribute(userViewDocsByDstPath);
+  await snapshot.ref.update({"@form.@status": "finished"});
+
+  const peerSyncViewLogicResults = await runPeerSyncViews(userDocsByDstPath);
+  const dstPathPeerSyncViewLogicDocsMap: Map<string, LogicResultDoc> = consolidateAndGroupByDstPath(peerSyncViewLogicResults);
+  const {otherUsersDocsByDstPath: otherUsersPeerSyncViewDocsByDstPath} = groupDocsByUserAndDstPath(dstPathPeerSyncViewLogicDocsMap, userId);
+
   await distribute(otherUsersDocsByDstPath);
+  await distribute(otherUsersViewDocsByDstPath);
+  await distribute(otherUsersPeerSyncViewDocsByDstPath);
+
   await actionRef.update({status: "finished"});
 }

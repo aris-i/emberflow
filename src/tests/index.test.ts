@@ -2,7 +2,7 @@ import {onDocChange, _mockable, initializeEmberFlow} from "../index";
 import * as indexutils from "../index-utils";
 import * as admin from "firebase-admin";
 
-import {SecurityResult, ValidateFormResult} from "../types";
+import {LogicResult, LogicResultDoc, SecurityResult, ValidateFormResult} from "../types";
 import DocumentData = firestore.DocumentData;
 import {firestore} from "firebase-admin";
 import DocumentSnapshot = firestore.DocumentSnapshot;
@@ -206,7 +206,10 @@ describe("onDocChange", () => {
 
     expect(revertModificationsOutsideFormMock).toHaveBeenCalledWith(afterData, beforeData, change.after);
     expect(indexutils.validateForm).toHaveBeenCalledWith("user", afterData, refPath);
-    expect(change.after.ref.update).toHaveBeenCalledWith({"@form.@status": "form-validation-failed", "@form.@message": {"field1": ["error message 1"], "field2": ["error message 2"]}});
+    expect(change.after.ref.update).toHaveBeenCalledWith({
+      "@form.@status": "form-validation-failed",
+      "@form.@message": {"field1": ["error message 1"], "field2": ["error message 2"]},
+    });
     expect(change.after.ref.update).toHaveBeenCalledTimes(1);
   });
 
@@ -257,7 +260,10 @@ describe("onDocChange", () => {
     expect(getSecurityFnMock).toHaveBeenCalledWith(entity);
     expect(validateFormMock).toHaveBeenCalledWith(entity, change.after.data(), refPath);
     expect(securityFnMock).toHaveBeenCalledWith(entity, change.after.data(), "update", ["field1"]);
-    expect(change.after.ref.update).toHaveBeenCalledWith({"@form.@status": "security-error", "@form.@message": "Unauthorized access"});
+    expect(change.after.ref.update).toHaveBeenCalledWith({
+      "@form.@status": "security-error",
+      "@form.@message": "Unauthorized access",
+    });
     expect(console.log).toHaveBeenCalledWith(`Security check failed: ${rejectedSecurityResult.message}`);
   });
 
@@ -363,5 +369,196 @@ describe("onDocChange", () => {
 
     // Test that addActionSpy is called with the correct parameters
     expect(addActionSpy).toHaveBeenCalled();
+  });
+
+  it("should set @form.@status to 'logic-error' if there are logic error results", async () => {
+    jest.spyOn(indexutils, "revertModificationsOutsideForm").mockResolvedValue();
+    jest.spyOn(indexutils, "validateForm").mockResolvedValue([false, {}]);
+    jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue(["field1", "field2"]);
+    jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() => Promise.resolve({status: "allowed"}));
+    jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(false);
+
+    const errorMessage = "logic error message";
+    const runBusinessLogicsSpy = jest.spyOn(indexutils, "runBusinessLogics").mockResolvedValue([
+      {
+        name: "testLogic",
+        status: "error",
+        message: errorMessage,
+        timeFinished: _mockable.createNowTimestamp(),
+        documents: [],
+      },
+    ]);
+
+    const actionRefUpdateSpy = jest.fn();
+    const collectionAddSpy = jest.fn().mockResolvedValue({
+      update: actionRefUpdateSpy,
+      collection: jest.fn().mockReturnValue({
+        add: jest.fn(),
+      }),
+    });
+    jest.spyOn(admin.firestore(), "collection").mockReturnValue({add: collectionAddSpy} as any);
+
+    const doc = {
+      "@form": {
+        "@actionType": "create",
+        "name": "test",
+        "@status": "submit",
+      },
+      "someField": "exampleValue",
+    };
+
+    const change = createChange(null, doc, "/example/test-id");
+    const event = "create";
+
+    await onDocChange("user", change, contextWithAuth, event);
+
+    // Test that the runBusinessLogics function was called with the correct parameters
+    expect(runBusinessLogicsSpy).toHaveBeenCalledWith(
+      "create",
+      ["field1", "field2"],
+      "user",
+      expect.objectContaining({
+        actionType: "create",
+        document: {
+          "@form": {
+            "@actionType": "create",
+            "@status": "submit",
+            "name": "test",
+          },
+          "someField": "exampleValue",
+        },
+        modifiedFields: ["field1", "field2"],
+        path: "/example/test-id",
+        status: "processing",
+        // TimeCreated is not specified because it's dynamic
+      })
+    );
+    // Test that the snapshot.ref.update is called with the correct parameters
+    expect(change.after.ref.update).toHaveBeenCalledTimes(3);
+    const updateMock = change.after.ref.update as jest.Mock;
+    expect(updateMock.mock.calls[0][0]).toEqual({"@form.@status": "processing"});
+    expect(updateMock.mock.calls[1][0]).toEqual({"@form.@status": "submitted"});
+    expect(updateMock.mock.calls[2][0]).toEqual({"@form.@status": "finished"});
+
+    // Test that collectionAddSpy is not called if there are logic errors
+    expect(collectionAddSpy).toHaveBeenCalledTimes(1);
+    expect(collectionAddSpy).toHaveBeenCalledWith(expect.objectContaining({
+      actionType: "create",
+      document: {
+        "@form": {
+          "@actionType": "create",
+          "@status": "submit",
+          "name": "test",
+        },
+        "someField": "exampleValue",
+      },
+      modifiedFields: ["field1", "field2"],
+      path: "/example/test-id",
+      status: "processing",
+      // TimeCreated is not specified because it's dynamic
+    }));
+    expect(actionRefUpdateSpy).toHaveBeenCalledTimes(2);
+    expect(actionRefUpdateSpy.mock.calls[0][0]).toEqual({status: "finished-with-error", message: errorMessage});
+  });
+
+  // ... existing test code ...
+
+  it("should execute the sequence of operations correctly", async () => {
+    jest.spyOn(indexutils, "revertModificationsOutsideForm").mockResolvedValue();
+    jest.spyOn(indexutils, "validateForm").mockResolvedValue([false, {}]);
+    jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue(["field1", "field2"]);
+    jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() => Promise.resolve({status: "allowed"}));
+    jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(false);
+
+    const businessLogicResults: LogicResult[] = [
+      {
+        name: "testLogic",
+        status: "finished",
+        timeFinished: _mockable.createNowTimestamp(),
+        documents: [],
+      },
+    ];
+    const runBusinessLogicsSpy =
+        jest.spyOn(indexutils, "runBusinessLogics").mockResolvedValue(businessLogicResults);
+
+    const actionRefUpdateSpy = jest.fn();
+    const collectionAddSpy = jest.fn().mockResolvedValue({
+      update: actionRefUpdateSpy,
+      collection: jest.fn().mockReturnValue({
+        add: jest.fn(),
+      }),
+    });
+    jest.spyOn(admin.firestore(), "collection").mockReturnValue({add: collectionAddSpy} as any);
+
+    const doc = {
+      "@form": {
+        "@actionType": "create",
+        "name": "test",
+        "@status": "submit",
+      },
+      "someField": "exampleValue",
+    };
+
+    const change = createChange(null, doc, "/example/test-id");
+    const event = "create";
+
+    const consolidatedLogicResults = new Map<string, LogicResultDoc>();
+    const consolidatedViewLogicResults = new Map<string, LogicResultDoc>();
+    const consolidatedPeerSyncViewLogicResults = new Map<string, LogicResultDoc>();
+    const userDocsByDstPath = new Map<string, LogicResultDoc>();
+    const otherUsersDocsByDstPath = new Map<string, LogicResultDoc>();
+    const viewLogicResults: LogicResult[] = [];
+    const userViewDocsByDstPath = new Map<string, LogicResultDoc>();
+    const otherUsersViewDocsByDstPath = new Map<string, LogicResultDoc>();
+    const peerSyncViewLogicResults: LogicResult[] = [];
+    const otherUsersPeerSyncViewDocsByDstPath = new Map<string, LogicResultDoc>();
+
+    jest.spyOn(indexutils, "consolidateAndGroupByDstPath")
+      .mockReturnValueOnce(consolidatedLogicResults)
+      .mockReturnValueOnce(consolidatedViewLogicResults)
+      .mockReturnValue(consolidatedPeerSyncViewLogicResults);
+    jest.spyOn(indexutils, "groupDocsByUserAndDstPath")
+      .mockReturnValueOnce({
+        userDocsByDstPath,
+        otherUsersDocsByDstPath,
+      })
+      .mockReturnValueOnce({
+        userDocsByDstPath: userViewDocsByDstPath,
+        otherUsersDocsByDstPath: otherUsersViewDocsByDstPath,
+      })
+      .mockReturnValueOnce({
+        userDocsByDstPath: new Map<string, LogicResultDoc>(),
+        otherUsersDocsByDstPath: otherUsersPeerSyncViewDocsByDstPath,
+      });
+    jest.spyOn(indexutils, "runViewLogics").mockResolvedValue(viewLogicResults);
+    jest.spyOn(indexutils, "runPeerSyncViews").mockResolvedValue(peerSyncViewLogicResults);
+    jest.spyOn(indexutils, "distribute");
+
+    await onDocChange("user", change, contextWithAuth, event);
+
+    // Test that the runBusinessLogics function was called with the correct parameters
+    expect(runBusinessLogicsSpy).toHaveBeenCalled();
+    // Test that the snapshot.ref.update is called with the correct parameters
+    expect(change.after.ref.update).toHaveBeenCalledTimes(3);
+
+    expect(collectionAddSpy).toHaveBeenCalledTimes(1);
+
+    // Test that the functions are called in the correct sequence
+    expect(indexutils.consolidateAndGroupByDstPath).toHaveBeenNthCalledWith(1, businessLogicResults);
+    expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(1, consolidatedLogicResults, "test-uid");
+    expect(indexutils.runViewLogics).toHaveBeenCalledWith(userDocsByDstPath);
+    expect(indexutils.consolidateAndGroupByDstPath).toHaveBeenNthCalledWith(2, viewLogicResults);
+    expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(2, consolidatedViewLogicResults, "test-uid");
+    expect(indexutils.distribute).toHaveBeenNthCalledWith(1, userDocsByDstPath);
+    expect(indexutils.distribute).toHaveBeenNthCalledWith(2, userViewDocsByDstPath);
+    expect(change.after.ref.update).toHaveBeenCalledWith({"@form.@status": "finished"});
+    expect(indexutils.runPeerSyncViews).toHaveBeenCalledWith(userDocsByDstPath);
+    expect(indexutils.consolidateAndGroupByDstPath).toHaveBeenNthCalledWith(3, peerSyncViewLogicResults);
+    expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(3, consolidatedPeerSyncViewLogicResults, "test-uid");
+    expect(indexutils.distribute).toHaveBeenCalledWith(otherUsersDocsByDstPath);
+    expect(indexutils.distribute).toHaveBeenCalledWith(otherUsersViewDocsByDstPath);
+    expect(indexutils.distribute).toHaveBeenCalledWith(otherUsersPeerSyncViewDocsByDstPath);
+    expect(actionRefUpdateSpy).toHaveBeenCalledTimes(1);
+    expect(actionRefUpdateSpy.mock.calls[0][0]).toEqual({status: "finished"});
   });
 });

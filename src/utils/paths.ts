@@ -1,6 +1,6 @@
 import {QueryCondition} from "../types";
 import {fetchIds} from "./query";
-import {docPaths, docPathsRegex} from "../index";
+import {docPaths, docPathsRegex, admin} from "../index";
 
 export const _mockable = {
   filterSubDocPathsByEntity: (entity: string, excludeEntities?: string[]): string[] => {
@@ -117,7 +117,16 @@ export async function hydrateDocPath(destDocPath: string, entityCondition: Recor
 
     if (braceIdx === -1) {
       // We've reached the end of the path, so add it to the document paths
-      documentPaths.push(segments.join("/"));
+      const path = segments.join("/");
+      if (idx < segments.length - 1) {
+        // This means that the path contains hard coded ids, so we need to check if that pat exists in the database
+        const doc = await admin.firestore().doc(path).get();
+        if (!doc.exists) {
+          console.error(`Document ${path} does not exist. Skipping...`);
+          continue;
+        }
+      }
+      documentPaths.push(path);
     } else {
       // Extract the collection path and fetch its IDs
       const collectionPathSegments = segments.slice(0, braceIdx);
@@ -125,6 +134,10 @@ export async function hydrateDocPath(destDocPath: string, entityCondition: Recor
       const entity = segments[braceIdx].slice(1, -3);
       const condition = entityCondition[entity];
       const ids = await fetchIds(collectionPath, condition);
+      if (ids.length === 0) {
+        console.info(`No IDs found for ${collectionPath} with condition ${JSON.stringify(condition)}. Skipping...`);
+        continue;
+      }
 
       // Generate the document paths by merging the IDs with the collection path
       const remainingPathSegments = segments.slice(braceIdx);
@@ -134,7 +147,6 @@ export async function hydrateDocPath(destDocPath: string, entityCondition: Recor
       }
     }
   }
-
   return documentPaths;
 }
 

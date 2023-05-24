@@ -7,6 +7,9 @@ import {
   delayFormSubmissionAndCheckIfCancelled,
   runBusinessLogics,
   groupDocsByUserAndDstPath,
+  consolidateAndGroupByDstPath,
+  runViewLogics,
+  _mockable,
 } from "../index-utils";
 import {firestore} from "firebase-admin";
 import DocumentSnapshot = firestore.DocumentSnapshot;
@@ -14,8 +17,9 @@ import {initializeEmberFlow} from "../index";
 import {
   Action,
   LogicConfig,
-  LogicResult,
+  LogicResult, LogicResultAction,
   LogicResultDoc,
+  ViewLogicConfig,
 } from "../types";
 import * as paths from "../utils/paths";
 import {Entity, dbStructure} from "../sample-custom/db-structure";
@@ -55,21 +59,20 @@ describe("distribute", () => {
       commit: jest.fn().mockResolvedValue(undefined),
     } as any);
 
-    const userDocsByDstPath = {
-      "/users/test-user-id/documents/test-doc-id": [
-        {
-          action: "merge",
-          doc: {name: "test-doc-name-updated"},
-          instructions: {
-            "count": "++",
-            "score": "+5",
-            "minusCount": "--",
-            "minusScore": "-3",
-          },
-          dstPath: "/users/test-user-id/documents/test-doc-id",
-        } as LogicResultDoc,
-      ],
-    };
+    const userDocsByDstPath = new Map([[
+      "/users/test-user-id/documents/test-doc-id",
+      {
+        action: "merge",
+        doc: {name: "test-doc-name-updated"},
+        instructions: {
+          "count": "++",
+          "score": "+5",
+          "minusCount": "--",
+          "minusScore": "-3",
+        },
+        dstPath: "/users/test-user-id/documents/test-doc-id",
+      } as LogicResultDoc,
+    ]]);
     initializeEmberFlow(admin, dbStructure, Entity, securityConfig, validatorConfig, []);
     await distribute(userDocsByDstPath);
 
@@ -112,16 +115,15 @@ describe("distribute", () => {
       doc: docSpy,
     } as any);
 
-    const userDocsByDstPath = {
-      "/users/test-user-id/documents/#": [
+    const userDocsByDstPath = new Map([[
+      "/users/test-user-id/documents/#",
         {
           action: "merge",
           doc: {name: "test-doc-name-updated"},
           instructions: undefined,
           dstPath: "/users/test-user-id/documents/#",
         } as LogicResultDoc,
-      ],
-    };
+    ]]);
     await distribute(userDocsByDstPath);
 
     expect(batchSpy).toHaveBeenCalledTimes(1);
@@ -145,14 +147,13 @@ describe("distribute", () => {
       commit: jest.fn().mockResolvedValue(undefined),
     } as any);
 
-    const userDocsByDstPath = {
-      "/users/test-user-id/documents/test-doc-id": [
+    const userDocsByDstPath = new Map([[
+      "/users/test-user-id/documents/test-doc-id",
         {
           action: "delete",
           dstPath: "/users/test-user-id/documents/test-doc-id",
         } as LogicResultDoc,
-      ],
-    };
+    ]]);
     await distribute(userDocsByDstPath);
 
     expect(batchSpy).toHaveBeenCalledTimes(1);
@@ -171,16 +172,15 @@ describe("distribute", () => {
       commit: jest.fn().mockResolvedValue(undefined),
     } as any);
 
-    const userDocsByDstPath = {
-      "/users/test-user-id/documents/test-doc-id": [
+    const userDocsByDstPath = new Map([[
+      "/users/test-user-id/documents/test-doc-id",
         {
           action: "copy",
           copyMode: "shallow",
           srcPath: "/users/test-user-id-1/documents/test-doc-id",
           dstPath: "/users/test-user-id-2/documents/test-doc-id",
         } as LogicResultDoc,
-      ],
-    };
+    ]]);
     await distribute(userDocsByDstPath);
 
     expect(batchSpy).toHaveBeenCalledTimes(1);
@@ -212,16 +212,15 @@ describe("distribute", () => {
     const mockExpandAndGroupDocPaths = jest.spyOn(paths, "expandAndGroupDocPaths").mockResolvedValue({});
 
 
-    const userDocsByDstPath = {
-      "/users/test-user-id-2/documents/test-doc-id": [
+    const userDocsByDstPath = new Map([[
+      "/users/test-user-id-2/documents/test-doc-id",
         {
           action: "copy",
           copyMode: "recursive",
           srcPath: "/users/test-user-id-1/documents/test-doc-id",
           dstPath: "/users/test-user-id-2/documents/test-doc-id",
         } as LogicResultDoc,
-      ],
-    };
+    ]]);
     await distribute(userDocsByDstPath);
 
     expect(mockExpandAndGroupDocPaths).toHaveBeenCalledTimes(1);
@@ -308,7 +307,7 @@ describe("revertModificationsOutsideForm", () => {
 });
 
 describe("validateForm", () => {
-  const docPath = "users/1"
+  const docPath = "users/1";
   it("returns an object with empty validationResult when document is valid", async () => {
     const entity = "user";
     const document = {
@@ -497,62 +496,164 @@ describe("runBusinessLogics", () => {
 });
 
 describe("groupDocsByUserAndDstPath", () => {
-  const logicResults: LogicResult[] = [
-    {
-      name: "logic 1",
-      status: "finished",
-      execTime: 25,
-      timeFinished: firestore.Timestamp.now(),
-      documents: [
-        {action: "merge", dstPath: "users/user123/document1", doc: {field1: "value1", field2: "value2"}},
-        {action: "merge", dstPath: "users/user123/document2", doc: {field3: "value3"}},
-        {action: "merge", dstPath: "users/user456/document3", doc: {field4: "value4"}},
-        {action: "delete", dstPath: "users/user789/document4"},
-        {action: "merge", dstPath: "othercollection/document5", doc: {field5: "value5"}},
-      ],
-    },
-    {
-      name: "logic 2",
-      status: "finished",
-      execTime: 25,
-      timeFinished: firestore.Timestamp.now(),
-      documents: [
-        {action: "merge", dstPath: "users/user123/document2", doc: {field6: "value6"}},
-        {action: "delete", dstPath: "users/user123/document6"},
-        {action: "merge", dstPath: "users/user123/document7", doc: {field7: "value7"}},
-      ],
-    },
-    {
-      name: "logic 2",
-      execTime: 25,
-      timeFinished: firestore.Timestamp.now(),
-      status: "error",
-      documents: [{action: "merge", dstPath: "users/user123/document8", doc: {field8: "value8"}}],
-    },
-  ];
+  initializeEmberFlow(admin, dbStructure, Entity, {}, {}, []);
+  const docsByDstPath = new Map<string, LogicResultDoc>([
+    ["users/user123/document1", {action: "merge", dstPath: "users/user123/document1", doc: {field1: "value1", field2: "value2"}}],
+    ["users/user123/document2", {action: "merge", dstPath: "users/user123/document2", doc: {field3: "value3", field6: "value6"}}],
+    ["users/user456/document3", {action: "merge", dstPath: "users/user456/document3", doc: {field4: "value4"}}],
+    ["users/user789/document4", {action: "delete", dstPath: "users/user789/document4"}],
+    ["othercollection/document5", {action: "merge", dstPath: "othercollection/document5", doc: {field5: "value5"}}],
+  ]);
 
   it("should group documents by destination path and user", () => {
     const userId = "user123";
     const expectedResults = {
-      userDocsByDstPath: {
-        "users/user123/document1": [{action: "merge", dstPath: "users/user123/document1", doc: {field1: "value1", field2: "value2"}}],
-        "users/user123/document2": [
-          {action: "merge", dstPath: "users/user123/document2", doc: {field3: "value3"}},
-          {action: "merge", dstPath: "users/user123/document2", doc: {field6: "value6"}},
-        ],
-        "users/user123/document6": [{action: "delete", dstPath: "users/user123/document6"}],
-        "users/user123/document7": [{action: "merge", dstPath: "users/user123/document7", doc: {field7: "value7"}}],
-      },
-      otherUsersDocsByDstPath: {
-        "users/user456/document3": [{action: "merge", dstPath: "users/user456/document3", doc: {field4: "value4"}}],
-        "users/user789/document4": [{action: "delete", dstPath: "users/user789/document4"}],
-        "othercollection/document5": [{action: "merge", dstPath: "othercollection/document5", doc: {field5: "value5"}}],
-      },
+      userDocsByDstPath: new Map<string, LogicResultDoc>([
+        ["users/user123/document1", {action: "merge", dstPath: "users/user123/document1", doc: {field1: "value1", field2: "value2"}}],
+        ["users/user123/document2", {action: "merge", dstPath: "users/user123/document2", doc: {field3: "value3", field6: "value6"}}],
+      ]),
+      otherUsersDocsByDstPath: new Map<string, LogicResultDoc>([
+        ["users/user456/document3", {action: "merge", dstPath: "users/user456/document3", doc: {field4: "value4"}}],
+        ["users/user789/document4", {action: "delete", dstPath: "users/user789/document4"}],
+        ["othercollection/document5", {action: "merge", dstPath: "othercollection/document5", doc: {field5: "value5"}}],
+      ]),
     };
 
-
-    const results = groupDocsByUserAndDstPath(logicResults, userId);
+    const results = groupDocsByUserAndDstPath(docsByDstPath, userId);
 
     expect(results).toEqual(expectedResults);
+  });
+});
+
+
+describe("consolidateLogicResultsDocs", () => {
+  it("should consolidate logic results documents correctly", () => {
+    // Arrange
+    const logicResults: LogicResult[] = [
+      {
+        name: "logic 1",
+        timeFinished: firestore.Timestamp.now(),
+        status: "finished",
+        documents: [
+          {action: "merge", dstPath: "path1", doc: {field1: "value1"}, instructions: {field2: "++"}},
+          {action: "delete", dstPath: "path2"},
+        ],
+      },
+      {
+        name: "logic 2",
+        timeFinished: firestore.Timestamp.now(),
+        status: "finished",
+        documents: [
+          {action: "merge", dstPath: "path1", doc: {field1: "value1a"}, instructions: {field2: "--"}},
+          {action: "merge", dstPath: "path1", doc: {field3: "value3"}, instructions: {field4: "--"}},
+          {action: "copy", srcPath: "path3", dstPath: "path4"},
+          {action: "merge", dstPath: "path2", doc: {field4: "value4"}},
+          {action: "merge", dstPath: "path7", doc: {field6: "value7"}},
+        ],
+      },
+      {
+        name: "logic 3",
+        timeFinished: firestore.Timestamp.now(),
+        status: "finished",
+        documents: [
+          {action: "copy", srcPath: "path5", dstPath: "path6"},
+          {action: "delete", dstPath: "path7"},
+          {action: "delete", dstPath: "path7"},
+          {action: "copy", srcPath: "path3", dstPath: "path4"},
+        ],
+      },
+      {
+        name: "logic 4",
+        timeFinished: firestore.Timestamp.now(),
+        status: "finished",
+        documents: [
+          {action: "delete", dstPath: "path2"},
+          {action: "copy", srcPath: "path3", dstPath: "path7"},
+        ],
+      },
+    ];
+
+    // Mock console.warn
+    const consoleWarnSpy = jest.spyOn(console, "warn").mockImplementation(jest.fn());
+
+    // Act
+    const result = consolidateAndGroupByDstPath(logicResults);
+
+    // Assert
+    const expectedResult = new Map<string, LogicResultDoc>([
+      ["path1", {action: "merge", dstPath: "path1", doc: {field1: "value1a", field3: "value3"}, instructions: {field2: "--", field4: "--"}}],
+      ["path2", {action: "delete", dstPath: "path2"}],
+      ["path4", {action: "copy", srcPath: "path3", dstPath: "path4"}],
+      ["path6", {action: "copy", srcPath: "path5", dstPath: "path6"}],
+      ["path7", {action: "copy", srcPath: "path3", dstPath: "path7"}],
+    ]);
+
+    expect(result).toEqual(expectedResult);
+    // Verify that console.warn was called
+    expect(consoleWarnSpy).toHaveBeenCalledTimes(8);
+
+    // Verify that console.warn was called with the correct message
+    expect(consoleWarnSpy.mock.calls[0][0]).toBe("Overwriting key \"field1\" in doc for dstPath \"path1\"");
+    expect(consoleWarnSpy.mock.calls[1][0]).toBe("Overwriting key \"field2\" in instructions for dstPath \"path1\"");
+    expect(consoleWarnSpy.mock.calls[2][0]).toBe("Action \"merge\" ignored because a \"delete\" for dstPath \"path2\" already exists");
+    expect(consoleWarnSpy.mock.calls[3][0]).toBe("Action \"merge\" for dstPath \"path7\" is being overwritten by action \"delete\"");
+    expect(consoleWarnSpy.mock.calls[4][0]).toBe("Action \"delete\" ignored because a \"delete\" for dstPath \"path7\" already exists");
+    expect(consoleWarnSpy.mock.calls[5][0]).toBe("Action \"copy\" ignored because \"copy\" for dstPath \"path4\" already exists");
+    expect(consoleWarnSpy.mock.calls[6][0]).toBe("Action \"delete\" ignored because a \"delete\" for dstPath \"path2\" already exists");
+    expect(consoleWarnSpy.mock.calls[7][0]).toBe("Action \"delete\" for dstPath \"path7\" is being replaced by action \"copy\"");
+
+    // Cleanup
+    consoleWarnSpy.mockRestore();
+  });
+});
+
+
+describe("runViewLogics", () => {
+  // Define mock functions
+  const viewLogicFn1 = jest.fn();
+  const viewLogicFn2 = jest.fn();
+  const customViewLogicsConfig: ViewLogicConfig[] = [
+    {
+      name: "logic 1",
+      entity: "user",
+      modifiedFields: ["sampleField1", "sampleField2"],
+      viewLogicFn: viewLogicFn1,
+    },
+    {
+      name: "logic 2",
+      entity: "user",
+      modifiedFields: ["sampleField3"],
+      viewLogicFn: viewLogicFn2,
+    },
+  ];
+
+  beforeEach(() => {
+    jest.spyOn(_mockable, "getViewLogicsConfig").mockReturnValue(customViewLogicsConfig);
+  });
+
+  it("should run view logics properly", async () => {
+    const dstPathLogicDocsMap: Map<string, LogicResultDoc> = new Map();
+    const logicResult1 = {
+      action: "merge" as LogicResultAction,
+      doc: {name: "value1", sampleField2: "value2"},
+      dstPath: "users/user123",
+    };
+    const logicResult2 = {
+      action: "delete" as LogicResultAction,
+      dstPath: "users/user124",
+    };
+    dstPathLogicDocsMap.set(logicResult1.dstPath, logicResult1);
+    dstPathLogicDocsMap.set(logicResult2.dstPath, logicResult2);
+    viewLogicFn1.mockResolvedValue({});
+    viewLogicFn2.mockResolvedValue({});
+
+    const results = await runViewLogics(dstPathLogicDocsMap);
+
+    expect(viewLogicFn1).toHaveBeenCalledTimes(2);
+    expect(viewLogicFn1.mock.calls[0][0]).toBe(logicResult1);
+    expect(viewLogicFn1.mock.calls[1][0]).toBe(logicResult2);
+    expect(viewLogicFn2).toHaveBeenCalledTimes(1);
+    expect(viewLogicFn2).toHaveBeenCalledWith(logicResult2);
+    expect(results).toHaveLength(3);
   });
 });
