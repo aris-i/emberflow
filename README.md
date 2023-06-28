@@ -6,18 +6,18 @@ Emberflow is a library for Firebase Functions that simplifies the process of set
 
 To use Emberflow in your Firebase Functions project, follow these steps:
 
-1. Install Emberflow:
+1. Install Emberflow in your 'functions' folder:
 
 ```sh
-npm install @primeiq/emberflow
+npm install emberflow
 ```
 
-2. Import and initialize Emberflow in your Firebase Functions `view-logics.ts` file:
+2. Import and initialize Emberflow in your Firebase Functions `index.ts` file:
 
 ```typescript
 import * as admin from "firebase-admin";
 import {dbStructure, Entity} from "./db-structure";
-import {initializeEmberFlow} from "@primeiq/emberflow";
+import {initializeEmberFlow} from "emberflow";
 import {securityConfig} from "./security";
 import {validatorConfig} from "./validators";
 import {logics} from "./business-logics";

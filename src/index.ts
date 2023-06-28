@@ -23,6 +23,7 @@ import {
 } from "./index-utils";
 import {initDbStructure} from "./init-db-structure";
 import {createViewLogicFn} from "./logics/view-logics";
+import {useBillProtect} from "./utils/bill-protect";
 
 export let admin: FirebaseAdmin;
 export let dbStructure: Record<string, object>;
@@ -74,6 +75,8 @@ export function initializeEmberFlow(
     };
   });
 
+  const _onDocChange = useBillProtect(onDocChange);
+
   Object.values(docPaths).forEach((path) => {
     const parts = path.split("/");
     const entity = parts[parts.length - 1].replace(/{(\w+)Id}$/, "$1");
@@ -81,19 +84,19 @@ export function initializeEmberFlow(
     functionsConfig[`on${entity.charAt(0).toUpperCase() + entity.slice(1)}Create`] = functions.firestore
       .document(path)
       .onCreate(async (snapshot, context) => {
-        await onDocChange(entity, {before: null, after: snapshot}, context, "create");
+        await _onDocChange(entity, {before: null, after: snapshot}, context, "create");
       });
 
     functionsConfig[`on${entity.charAt(0).toUpperCase() + entity.slice(1)}Update`] = functions.firestore
       .document(path)
       .onUpdate(async (change, context) => {
-        await onDocChange(entity, change, context, "update");
+        await _onDocChange(entity, change, context, "update");
       });
 
     functionsConfig[`on${entity.charAt(0).toUpperCase() + entity.slice(1)}Delete`] = functions.firestore
       .document(path)
       .onDelete(async (snapshot, context) => {
-        await onDocChange(entity, {before: snapshot, after: null}, context, "delete");
+        await _onDocChange(entity, {before: snapshot, after: null}, context, "delete");
       });
   });
 
