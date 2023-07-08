@@ -4,6 +4,7 @@ import {
   FirebaseAdmin,
   LogicConfig,
   LogicResultDoc,
+  ProjectConfig,
   SecurityConfig,
   ValidatorConfig,
   ViewDefinition,
@@ -16,16 +17,22 @@ import {
   getFormModifiedFields,
   getSecurityFn,
   groupDocsByUserAndDstPath,
+  onDeleteFunction,
+  processScheduledEntities,
   revertModificationsOutsideForm,
-  runBusinessLogics, runPeerSyncViews,
+  runBusinessLogics,
+  runPeerSyncViews,
   runViewLogics,
   validateForm,
 } from "./index-utils";
 import {initDbStructure} from "./init-db-structure";
 import {createViewLogicFn} from "./logics/view-logics";
-import {useBillProtect} from "./utils/bill-protect";
+import {resetUsageStats, stopBillingIfBudgetExceeded, useBillProtect} from "./utils/bill-protect";
+import {Firestore} from "firebase-admin/firestore";
+
 
 export let admin: FirebaseAdmin;
+export let db: Firestore;
 export let dbStructure: Record<string, object>;
 export let Entity: Record<string, string>;
 export let securityConfig: SecurityConfig;
@@ -35,33 +42,42 @@ export let docPaths: Record<string, string>;
 export let colPaths: Record<string, string>;
 export let docPathsRegex: Record<string, RegExp>;
 export let viewLogicConfigs: ViewLogicConfig[];
+export let projectConfig: ProjectConfig;
 export const functionsConfig: Record<string, any> = {};
 
 export const _mockable = {
   createNowTimestamp: () => admin.firestore.Timestamp.now(),
+  initActionRef,
 };
 
 export function initializeEmberFlow(
+  customProjectConfig: ProjectConfig,
   adminInstance: FirebaseAdmin,
   customDbStructure: Record<string, object>,
   CustomEntity: Record<string, string>,
   customSecurityConfig: SecurityConfig,
   customValidatorConfig: ValidatorConfig,
-  customLogicConfigs: LogicConfig[],
-) : {
-  docPaths: Record<string, string>,
-  colPaths: Record<string, string>,
-  docPathsRegex: Record<string, RegExp>,
+  customLogicConfigs: LogicConfig[]) : {
+  docPaths: Record<string, string>;
+  colPaths: Record<string, string>;
+  docPathsRegex: Record<string, RegExp>;
   functionsConfig: Record<string, any>
 } {
+  projectConfig = customProjectConfig;
   admin = adminInstance;
+  db = admin.firestore();
   dbStructure = customDbStructure;
   Entity = CustomEntity;
   securityConfig = customSecurityConfig;
   validatorConfig = customValidatorConfig;
   logicConfigs = customLogicConfigs;
 
-  const {docPaths: dp, colPaths: cp, docPathsRegex: dbr, viewDefinitions: vd} = initDbStructure(dbStructure, Entity);
+  const {
+    docPaths: dp,
+    colPaths: cp,
+    docPathsRegex: dbr,
+    viewDefinitions: vd,
+  } = initDbStructure(dbStructure, Entity);
   docPaths = dp;
   colPaths = cp;
   docPathsRegex = dbr;
@@ -81,29 +97,46 @@ export function initializeEmberFlow(
     const parts = path.split("/");
     const entity = parts[parts.length - 1].replace(/{(\w+)Id}$/, "$1");
 
-    functionsConfig[`on${entity.charAt(0).toUpperCase() + entity.slice(1)}Create`] = functions.firestore
+    const onCreateFuncName = `on${entity.charAt(0).toUpperCase() + entity.slice(1)}Create`;
+    functionsConfig[onCreateFuncName] = functions.firestore
       .document(path)
       .onCreate(async (snapshot, context) => {
-        await _onDocChange(entity, {before: null, after: snapshot}, context, "create");
+        await _onDocChange(onCreateFuncName, entity, {before: null, after: snapshot}, context, "create");
       });
 
-    functionsConfig[`on${entity.charAt(0).toUpperCase() + entity.slice(1)}Update`] = functions.firestore
+    const onEditFuncName = `on${entity.charAt(0).toUpperCase() + entity.slice(1)}Update`;
+    functionsConfig[onEditFuncName] = functions.firestore
       .document(path)
       .onUpdate(async (change, context) => {
-        await _onDocChange(entity, change, context, "update");
+        await _onDocChange(onEditFuncName, entity, change, context, "update");
       });
 
-    functionsConfig[`on${entity.charAt(0).toUpperCase() + entity.slice(1)}Delete`] = functions.firestore
+    const onDeleteFuncName = `on${entity.charAt(0).toUpperCase() + entity.slice(1)}Delete`;
+    functionsConfig[onDeleteFuncName] = functions.firestore
       .document(path)
       .onDelete(async (snapshot, context) => {
-        await _onDocChange(entity, {before: snapshot, after: null}, context, "delete");
+        await _onDocChange(onDeleteFuncName, entity, {before: snapshot, after: null}, context, "delete");
       });
   });
+
+  functionsConfig["onBudgetAlert"] =
+      functions.pubsub.topic(projectConfig.budgetAlertTopicName).onPublish(stopBillingIfBudgetExceeded);
+  functionsConfig["hourlyFunctions"] = functions.pubsub.schedule("every 1 hours")
+    .onRun(resetUsageStats);
+  functionsConfig["minuteFunctions"] = functions.pubsub.schedule("every 1 minute")
+    .onRun(processScheduledEntities);
+  functionsConfig["onDeleteFunctions"] = functions.firestore.document("/@server/delete/functions").onCreate(
+    onDeleteFunction);
 
   return {docPaths, colPaths, docPathsRegex, functionsConfig};
 }
 
+async function initActionRef(eventId: string) {
+  return db.collection("actions").doc(eventId);
+}
+
 export async function onDocChange(
+  funcName: string,
   entity: string,
   change: functions.Change<functions.firestore.DocumentSnapshot | null>,
   context: functions.EventContext,
@@ -113,6 +146,7 @@ export async function onDocChange(
     console.log("Auth is null, then this change is initiated by the service account and should be ignored");
     return;
   }
+  const eventId = context.eventId;
   const userId = context.auth.uid;
   const afterDocument = change.after ? change.after.data() : null;
   const beforeDocument = change.before ? change.before.data() : null;
@@ -194,19 +228,23 @@ export async function onDocChange(
     timeCreated,
     modifiedFields: formModifiedFields,
   };
-  const actionRef = await admin.firestore().collection("actions").add(action);
+  const actionRef = await _mockable.initActionRef(eventId);
+  await actionRef.set(action);
 
   await snapshot.ref.update({"@form.@status": "submitted"});
 
   const logicResults = await runBusinessLogics(actionType, formModifiedFields, entity, action);
   // Save all logic results under logicResults collection of action document
-  await Promise.all(logicResults.map(async (result) => {
-    const {documents, ...logicResult} = result;
-    const logicResultRef = await actionRef.collection("logicResults").add(logicResult);
-    await Promise.all(documents.map(async (doc) => {
-      await logicResultRef.collection("documents").add(doc);
-    }));
-  }));
+  for (let i = 0; i < logicResults.length; i++) {
+    const {documents, ...logicResult} = logicResults[i];
+    const logicResultRef = await actionRef.collection("logicResults")
+      .doc(`${actionRef.id}-${i}`);
+    await logicResultRef.set(logicResult);
+    for (let j = 0; j < documents.length; j++) {
+      await logicResultRef.collection("documents")
+        .doc(`${logicResultRef.id}-${j}`).set(document[j]);
+    }
+  }
 
   const errorLogicResults = logicResults.filter((result) => result.status === "error");
   if (errorLogicResults.length > 0) {

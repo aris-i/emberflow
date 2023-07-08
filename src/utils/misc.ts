@@ -53,3 +53,16 @@ export function deepEqual(a: any, b: any): boolean {
 
   return false;
 }
+
+export function computeHashCode(str: string) {
+  let hashCode = 0;
+  if (str.length === 0) {
+    return hashCode.toString(16).padStart(8, "0"); // Pad with leading zeros to achieve 20 characters
+  }
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hashCode = ((hashCode << 5) - hashCode + char) >>> 0; // Convert to unsigned 32-bit integer
+  }
+  return hashCode.toString(16).padStart(8, "0"); // Pad with leading zeros to achieve 20 characters and truncate to first 20 characters
+}
+

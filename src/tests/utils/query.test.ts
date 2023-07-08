@@ -1,4 +1,4 @@
-import {admin} from "../../index";
+import {db} from "../../index";
 import {fetchIds} from "../../utils/query";
 import {firestore} from "firebase-admin";
 import DocumentSnapshot = firestore.DocumentSnapshot;
@@ -13,10 +13,8 @@ jest.mock("../../index", () => {
     docs: jest.fn().mockReturnThis(),
   };
   return {
-    admin: {
-      firestore: jest.fn().mockReturnValue({
-        collection: jest.fn().mockReturnValue(mockQuery),
-      }),
+    db: {
+      collection: jest.fn().mockReturnValue(mockQuery),
     },
   };
 });
@@ -40,7 +38,7 @@ describe("fetchIds", () => {
       size: testDocSnapshots.length,
     } as any;
 
-    (admin.firestore().collection as jest.Mock).mockReturnValue({
+    (db.collection as jest.Mock).mockReturnValue({
       select: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       get: jest.fn().mockResolvedValue(testQuerySnapshot),
@@ -49,7 +47,7 @@ describe("fetchIds", () => {
     const ids = await fetchIds(collectionPath);
 
     expect(ids).toEqual(["doc1", "doc2"]);
-    expect(admin.firestore().collection).toHaveBeenCalledWith(collectionPath);
+    expect(db.collection).toHaveBeenCalledWith(collectionPath);
   });
 
   // You can add more test cases for different conditions and operators, such as "in", "not-in", and "array-contains-any"
@@ -70,7 +68,7 @@ describe("fetchIds", () => {
       docs: idsArray.slice(10).map((id) => ({id})),
     };
 
-    (admin.firestore().collection as jest.Mock).mockReturnValue({
+    (db.collection as jest.Mock).mockReturnValue({
       select: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       get: jest.fn().mockResolvedValueOnce(querySnapshot1).mockResolvedValueOnce(querySnapshot2),
@@ -81,7 +79,7 @@ describe("fetchIds", () => {
 
     // Check the result
     expect(fetchedIds).toEqual(idsArray);
-    expect(admin.firestore().collection("").where).toHaveBeenCalledTimes(2); // Two "in" conditions with 10 and 5 ids
+    expect(db.collection("").where).toHaveBeenCalledTimes(2); // Two "in" conditions with 10 and 5 ids
   });
 });
 

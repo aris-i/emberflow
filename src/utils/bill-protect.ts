@@ -1,4 +1,9 @@
-import {admin, docPaths, onDocChange} from "../index";
+import {admin, db, docPaths, onDocChange, projectConfig} from "../index";
+import {CloudBillingClient} from "@google-cloud/billing";
+import {firestore} from "firebase-admin";
+import * as batch from "../utils/batch";
+
+export const billing = new CloudBillingClient();
 
 export interface FuncConfigData {
   vCPU: number;
@@ -14,6 +19,21 @@ export interface FuncUsageData {
   totalInvocations: number;
 }
 
+export interface BillingAlertEvent {
+  budgetDisplayName: string;
+  alertThresholdExceeded: number;
+  costAmount: number;
+  costIntervalStart: string;
+  budgetAmount: number;
+  budgetAmountType: string;
+  currencyCode: string;
+}
+
+export interface PubSubEvent {
+  data: string;
+}
+
+
 type onDocChangeType = typeof onDocChange;
 
 async function fetchAndInitFuncConfig(db: FirebaseFirestore.Firestore, funcName: string) {
@@ -21,11 +41,12 @@ async function fetchAndInitFuncConfig(db: FirebaseFirestore.Firestore, funcName:
     .collection("functions").doc(funcName);
   const funcConfig = await funcConfigRef.get();
   let funcConfigData: FuncConfigData;
+  const {maxCostLimitPerFunction, specialCostLimitPerFunction} = projectConfig;
   if (!funcConfig.exists) {
     funcConfigData = {
       vCPU: 0.167,
       mem: 256,
-      costLimit: 10,
+      costLimit: specialCostLimitPerFunction[funcName] || maxCostLimitPerFunction,
       pricePer100ms: 0.000000648,
       pricePer1MInvocation: 0.40,
       enabled: true,
@@ -98,7 +119,7 @@ async function incrementTotalInvocations(funcUsageRef: FirebaseFirestore.Documen
 
 async function incrementTotalElapsedTimeInMs(funcUsageRef: FirebaseFirestore.DocumentReference<FirebaseFirestore.DocumentData>, totalElapsedTimeInMs: number) {
   await funcUsageRef.update({
-    totalElapsedTimeIn100Ms: admin.firestore.FieldValue.increment(totalElapsedTimeInMs),
+    totalElapsedTimeInMs: admin.firestore.FieldValue.increment(totalElapsedTimeInMs),
   });
 }
 
@@ -106,6 +127,10 @@ async function disableFunc(funcConfigRef: FirebaseFirestore.DocumentReference<Fi
   await funcConfigRef.update({enabled: false});
 }
 
+let hardDisabled = false;
+function isHardDisabled() {
+  return hardDisabled;
+}
 export const _mockable = {
   fetchAndInitFuncConfig,
   fetchAndInitFuncUsage,
@@ -115,18 +140,25 @@ export const _mockable = {
   incrementTotalInvocations,
   incrementTotalElapsedTimeInMs,
   disableFunc,
+  isHardDisabled,
+  isBillingEnabled,
+  disableBillingForProject,
 };
+
 
 export function useBillProtect(onDocChange: onDocChangeType) : onDocChangeType {
   return async (
+    funcName,
     entity,
     change,
     context,
     event
   ) => {
+    if (_mockable.isHardDisabled()) {
+      console.warn(`Function ${funcName} is hard disabled.  Returning immediately`);
+      return;
+    }
     const startTime =process.hrtime();
-    const db = admin.firestore();
-    const funcName = `on-${event}-${entity}`;
 
     const {
       funcUsageRef,
@@ -148,6 +180,7 @@ export function useBillProtect(onDocChange: onDocChangeType) : onDocChangeType {
 
       if (!enabled) {
         console.warn(`Function ${funcName} is disabled.  Returning`);
+        hardDisabled = true;
         return;
       }
 
@@ -164,10 +197,78 @@ export function useBillProtect(onDocChange: onDocChangeType) : onDocChangeType {
         return;
       }
 
-      return onDocChange(entity, change, context, event);
+      return onDocChange(funcName, entity, change, context, event);
     } finally {
       const endTime = process.hrtime();
       await _mockable.incrementTotalElapsedTimeInMs(funcUsageRef, _mockable.computeElapseTime(startTime, endTime));
     }
   };
+}
+
+export async function stopBillingIfBudgetExceeded(pubSubEvent: PubSubEvent): Promise<string> {
+  const PROJECT_ID = projectConfig.projectId;
+  const PROJECT_NAME = `projects/${PROJECT_ID}`;
+
+  const pubsubData: BillingAlertEvent = JSON.parse(
+    Buffer.from(pubSubEvent.data, "base64").toString()
+  );
+  if (pubsubData.costAmount <= pubsubData.budgetAmount) {
+    console.log(`No action necessary. (Current cost: ${pubsubData.costAmount})`);
+    return `No action necessary. (Current cost: ${pubsubData.costAmount})`;
+  }
+
+  const billingEnabled = await _mockable.isBillingEnabled(PROJECT_NAME);
+  if (billingEnabled) {
+    console.log("Disabling billing");
+    return _mockable.disableBillingForProject(PROJECT_NAME);
+  } else {
+    console.log("Billing already disabled");
+    return "Billing already disabled";
+  }
+}
+
+/**
+ * Determine whether billing is enabled for a project
+ * @param {string} projectName Name of project to check if billing is enabled
+ * @return {Promise<boolean>} Whether project has billing enabled or not
+ */
+async function isBillingEnabled(projectName: string): Promise<boolean> {
+  try {
+    const [res] = await billing.getProjectBillingInfo({name: projectName});
+    return res.billingEnabled || true;
+  } catch (e) {
+    console.log(
+      "Unable to determine if billing is enabled on specified project, assuming billing is enabled"
+    );
+    return true;
+  }
+}
+
+/**
+ * Disable billing for a project by removing its billing account
+ * @param {string} projectName Name of project to disable billing on
+ * @return {Promise<string>} Text containing response from disabling billing
+ */
+async function disableBillingForProject(projectName: string): Promise<string> {
+  const [res] = await billing.updateProjectBillingInfo({
+    name: projectName,
+    projectBillingInfo: {
+      billingAccountName: "",
+    }, // Disable billing
+  });
+  console.log(`Billing disabled: ${JSON.stringify(res)}`);
+  return `Billing disabled: ${JSON.stringify(res)}`;
+}
+
+export async function resetUsageStats() {
+  const usageCollectionPath = "@server/usage/functions";
+  const collectionRef = db.collection(usageCollectionPath);
+  const querySnapshot = await collectionRef.select(firestore.FieldPath.documentId()).get();
+  querySnapshot.forEach((doc) => {
+    return batch.set(doc.ref, {
+      totalElapsedTimeInMs: 0,
+      totalInvocations: 0,
+    });
+  });
+  await batch.commit();
 }

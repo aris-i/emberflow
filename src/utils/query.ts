@@ -1,4 +1,4 @@
-import {admin} from "../index";
+import {db} from "../index";
 import {firestore} from "firebase-admin";
 import {QueryCondition} from "../types";
 import DocumentData = firestore.DocumentData;
@@ -6,7 +6,7 @@ import Query = firestore.Query;
 
 export async function fetchIds(collectionPath: string, condition?: QueryCondition) {
   const ids: string[] = [];
-  const baseQuery = admin.firestore().collection(collectionPath).select(firestore.FieldPath.documentId());
+  const baseQuery = db.collection(collectionPath).select(firestore.FieldPath.documentId());
 
   async function executeQuery(query: Query<DocumentData>) {
     const querySnapshot = await query.get();

@@ -3,18 +3,31 @@ import {
   LogicActionType,
   LogicResult,
   LogicResultDoc,
+  ScheduledEntity,
   SecurityFn,
   ValidateFormResult,
 } from "./types";
 import {firestore} from "firebase-admin";
-import {admin, docPaths, logicConfigs, securityConfig, validatorConfig, viewLogicConfigs} from "./index";
+import {
+  admin, db,
+  docPaths,
+  logicConfigs,
+  projectConfig,
+  securityConfig,
+  validatorConfig,
+  viewLogicConfigs,
+} from "./index";
 import {syncPeerViews} from "./logics/view-logics";
 import {expandAndGroupDocPaths, findMatchingDocPathRegex} from "./utils/paths";
 import {deepEqual} from "./utils/misc";
+import * as batch from "./utils/batch";
+import {CloudFunctionsServiceClient} from "@google-cloud/functions";
 import DocumentData = firestore.DocumentData;
+import QueryDocumentSnapshot = firestore.QueryDocumentSnapshot;
 
 export const _mockable = {
   getViewLogicsConfig: () => viewLogicConfigs,
+  createNowTimestamp: () => admin.firestore.Timestamp.now(),
 };
 
 async function commitBatchIfNeeded(
@@ -32,7 +45,6 @@ async function commitBatchIfNeeded(
 }
 
 export async function distribute(docsByDstPath: Map<string, LogicResultDoc>) {
-  const db = admin.firestore();
   let batch = db.batch();
   let writeCount = 0;
   const forCopy: LogicResultDoc[] = [];
@@ -83,20 +95,14 @@ export async function distribute(docsByDstPath: Map<string, LogicResultDoc>) {
       }
 
       // Merge document to dstPath
-      const dstColPath = dstPath.endsWith("/#") ? dstPath.slice(0, -2) : null;
-      let dstDocRef: FirebaseFirestore.DocumentReference;
-      if (dstColPath) {
-        const dstColRef = db.collection(dstColPath);
-        dstDocRef = dstColRef.doc();
-      } else {
-        dstDocRef = db.doc(dstPath);
-      }
+      const dstDocRef = db.doc(dstPath);
       batch.set(dstDocRef, updateData, {merge: true});
       [batch, writeCount] = await commitBatchIfNeeded(batch, db, writeCount);
       console.log(`Document merged to ${dstPath}`);
     }
   }
 
+  // TODO: Let's use the batch utils
   if (writeCount > 0) {
     console.log(`Committing final batch of ${writeCount} writes...`);
     await batch.commit();
@@ -365,3 +371,67 @@ export async function runPeerSyncViews(userDocsByDstPath: Map<string, LogicResul
   return logicResults;
 }
 
+export async function processScheduledEntities() {
+  // Query all documents inside @scheduled collection where runAt is less than now
+  const now = _mockable.createNowTimestamp();
+  const scheduledDocs = await db.collection("@scheduled")
+    .where("runAt", "<=", now).get();
+    // For each document, get path, data and docId.  Then copy data to the path
+  try {
+    scheduledDocs.forEach((doc) => {
+      const {
+        colPath,
+        data,
+      } = doc.data() as ScheduledEntity;
+      const docRef = db.collection(colPath).doc(doc.id);
+      batch.set(docRef, data);
+      batch.deleteDoc(doc.ref);
+    });
+  } finally {
+    await batch.commit();
+  }
+}
+
+export async function onDeleteFunction(snapshot: QueryDocumentSnapshot) {
+  const data = snapshot.data();
+  if (!data) {
+    console.error("Data should not be null");
+    return;
+  }
+  const {name} = data;
+  if (!name) {
+    console.error("name should not be null");
+    return;
+  }
+  return deleteFunction(projectConfig.projectId, name);
+}
+
+async function getFunctionLocation(projectId: string, functionName: string): Promise<string | undefined> {
+  const client = new CloudFunctionsServiceClient();
+
+  const [functionsResponse] = await client.listFunctions({
+    parent: `projects/${projectId}/locations/-`,
+  });
+
+  const targetFunction = functionsResponse.find((fn) => fn.name === functionName);
+
+  if (targetFunction && targetFunction.name) {
+    const locationParts = targetFunction.name.split("/");
+    return locationParts[3];
+  }
+
+  return undefined;
+}
+
+async function deleteFunction(projectId: string, functionName: string): Promise<void> {
+  const location = await getFunctionLocation(projectId, functionName);
+
+  if (location) {
+    const client = new CloudFunctionsServiceClient();
+    const name = `projects/${projectId}/locations/${location}/functions/${functionName}`;
+    await client.deleteFunction({name});
+    console.log(`Function '${functionName}' in location '${location}' deleted successfully.`);
+  } else {
+    console.log(`Function '${functionName}' not found or location not available.`);
+  }
+}

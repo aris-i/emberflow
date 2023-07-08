@@ -2,7 +2,7 @@ import {onDocChange, _mockable, initializeEmberFlow} from "../index";
 import * as indexutils from "../index-utils";
 import * as admin from "firebase-admin";
 
-import {LogicResult, LogicResultDoc, SecurityResult, ValidateFormResult} from "../types";
+import {LogicResult, LogicResultDoc, ProjectConfig, SecurityResult, ValidateFormResult} from "../types";
 import DocumentData = firestore.DocumentData;
 import {firestore} from "firebase-admin";
 import DocumentSnapshot = firestore.DocumentSnapshot;
@@ -13,7 +13,22 @@ import Timestamp = firestore.Timestamp;
 import {dbStructure, Entity} from "../sample-custom/db-structure";
 
 admin.initializeApp();
-initializeEmberFlow(admin, dbStructure, Entity, {}, {}, []);
+
+// TODO: Create unit test for all new functions and modified functions
+
+const projectConfig: ProjectConfig = {
+  projectId: "your-project-id",
+  budgetAlertTopicName: "budget-alerts",
+  maxCostLimitPerFunction: 100,
+  specialCostLimitPerFunction: {
+    function1: 50,
+    function2: 75,
+    function3: 120,
+  },
+};
+const funcName = "testFunction";
+
+initializeEmberFlow(projectConfig, admin, dbStructure, Entity, {}, {}, []);
 function createDocumentSnapshot(data: DocumentData|null, refPath: string, exists = true): DocumentSnapshot<DocumentData> {
   return {
     exists,
@@ -146,7 +161,7 @@ describe("onDocChange", () => {
 
   it("should not execute when auth is null", async () => {
     const change = createChange({}, {}, refPath);
-    await onDocChange(entity, change, contextWithoutAuth, "delete");
+    await onDocChange(funcName, entity, change, contextWithoutAuth, "delete");
     expect(console.log).toHaveBeenCalledWith("Auth is null, then this change is initiated by the service account and should be ignored");
     expect(console.log).toHaveBeenCalledTimes(1);
   });
@@ -157,7 +172,7 @@ describe("onDocChange", () => {
       field2: "value2",
     };
     const change = createChange(deletedDocumentData, null, refPath);
-    await onDocChange(entity, change, contextWithAuth, "delete");
+    await onDocChange(funcName, entity, change, contextWithAuth, "delete");
     expect(change.after.ref.set).toHaveBeenCalledWith(deletedDocumentData);
     expect(change.after.ref.set).toHaveBeenCalledTimes(1);
     expect(console.log).toHaveBeenCalledWith("Document re-added with ID test-id");
@@ -202,7 +217,7 @@ describe("onDocChange", () => {
       "revertModificationsOutsideForm"
     ).mockResolvedValue();
 
-    await onDocChange("user", change, contextWithAuth, "update");
+    await onDocChange(funcName, "user", change, contextWithAuth, "update");
 
     expect(revertModificationsOutsideFormMock).toHaveBeenCalledWith(afterData, beforeData, change.after);
     expect(indexutils.validateForm).toHaveBeenCalledWith("user", afterData, refPath);
@@ -255,7 +270,7 @@ describe("onDocChange", () => {
 
     const validateFormMock = jest.spyOn(indexutils, "validateForm");
     validateFormMock.mockResolvedValue([false, {}] as ValidateFormResult);
-    await onDocChange(entity, change, contextWithAuth, "update");
+    await onDocChange(funcName, entity, change, contextWithAuth, "update");
 
     expect(getSecurityFnMock).toHaveBeenCalledWith(entity);
     expect(validateFormMock).toHaveBeenCalledWith(entity, change.after.data(), refPath);
@@ -288,7 +303,7 @@ describe("onDocChange", () => {
 
     const change = createChange(null, doc, "/example/test-id");
     const event = "create";
-    await onDocChange("user", change, contextWithAuth, event);
+    await onDocChange(funcName, "user", change, contextWithAuth, event);
 
     // Test that the delayFormSubmissionAndCheckIfCancelled function is called with the correct parameters
     expect(delayFormSubmissionAndCheckIfCancelledSpy).toHaveBeenCalledWith(
@@ -321,7 +336,7 @@ describe("onDocChange", () => {
 
     const change = createChange(null, doc, "/example/test-id");
     const event = "create";
-    await onDocChange("user", change, contextWithAuth, event);
+    await onDocChange(funcName, "user", change, contextWithAuth, event);
 
     // Test that the delayFormSubmissionAndCheckIfCancelled function is NOT called
     expect(indexutils.revertModificationsOutsideForm).toHaveBeenCalled();
@@ -342,12 +357,17 @@ describe("onDocChange", () => {
     );
     jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(false);
 
-    const addActionSpy = jest.fn().mockResolvedValue({
+    const setActionSpy = jest.fn().mockResolvedValue({
       update: jest.fn(),
     });
 
-    jest.spyOn(admin.firestore(), "collection").mockReturnValue({
-      add: addActionSpy,
+    const updateActionSpy = jest.fn().mockResolvedValue({
+      update: jest.fn(),
+    });
+
+    jest.spyOn(_mockable, "initActionRef").mockResolvedValue({
+      set: setActionSpy,
+      update: updateActionSpy,
     } as any);
 
     const doc = {
@@ -361,14 +381,15 @@ describe("onDocChange", () => {
 
     const change = createChange(null, doc, "/example/test-id");
     const event = "create";
-    await onDocChange("user", change, contextWithAuth, event);
+    await onDocChange(funcName, "user", change, contextWithAuth, event);
 
     // Test that the snapshot.ref.update is called with the correct parameters
     expect(change.after.ref.update).toHaveBeenCalledWith({"@form.@status": "processing"});
     expect(change.after.ref.update).toHaveBeenCalledWith({"@form.@status": "submitted"});
 
     // Test that addActionSpy is called with the correct parameters
-    expect(addActionSpy).toHaveBeenCalled();
+    expect(setActionSpy).toHaveBeenCalled();
+    expect(updateActionSpy).toHaveBeenCalled();
   });
 
   it("should set @form.@status to 'logic-error' if there are logic error results", async () => {
@@ -389,14 +410,24 @@ describe("onDocChange", () => {
       },
     ]);
 
-    const actionRefUpdateSpy = jest.fn();
-    const collectionAddSpy = jest.fn().mockResolvedValue({
-      update: actionRefUpdateSpy,
-      collection: jest.fn().mockReturnValue({
-        add: jest.fn(),
-      }),
+    const setActionSpy = jest.fn().mockResolvedValue({
+      update: jest.fn(),
     });
-    jest.spyOn(admin.firestore(), "collection").mockReturnValue({add: collectionAddSpy} as any);
+
+    const updateActionSpy = jest.fn().mockResolvedValue({
+      update: jest.fn(),
+    });
+
+    jest.spyOn(_mockable, "initActionRef").mockResolvedValue({
+      set: setActionSpy,
+      update: updateActionSpy,
+      collection: jest.fn().mockReturnValue({
+        doc: jest.fn().mockReturnValue({
+          set: setActionSpy,
+          update: updateActionSpy,
+        }),
+      }),
+    } as any);
 
     const doc = {
       "@form": {
@@ -410,7 +441,7 @@ describe("onDocChange", () => {
     const change = createChange(null, doc, "/example/test-id");
     const event = "create";
 
-    await onDocChange("user", change, contextWithAuth, event);
+    await onDocChange(funcName, "user", change, contextWithAuth, event);
 
     // Test that the runBusinessLogics function was called with the correct parameters
     expect(runBusinessLogicsSpy).toHaveBeenCalledWith(
@@ -441,8 +472,7 @@ describe("onDocChange", () => {
     expect(updateMock.mock.calls[2][0]).toEqual({"@form.@status": "finished"});
 
     // Test that collectionAddSpy is not called if there are logic errors
-    expect(collectionAddSpy).toHaveBeenCalledTimes(1);
-    expect(collectionAddSpy).toHaveBeenCalledWith(expect.objectContaining({
+    expect(setActionSpy).toHaveBeenCalledWith(expect.objectContaining({
       actionType: "create",
       document: {
         "@form": {
@@ -457,8 +487,8 @@ describe("onDocChange", () => {
       status: "processing",
       // TimeCreated is not specified because it's dynamic
     }));
-    expect(actionRefUpdateSpy).toHaveBeenCalledTimes(2);
-    expect(actionRefUpdateSpy.mock.calls[0][0]).toEqual({status: "finished-with-error", message: errorMessage});
+    expect(updateActionSpy).toHaveBeenCalledTimes(2);
+    expect(updateActionSpy.mock.calls[0][0]).toEqual({status: "finished-with-error", message: errorMessage});
   });
 
   // ... existing test code ...
@@ -481,14 +511,24 @@ describe("onDocChange", () => {
     const runBusinessLogicsSpy =
         jest.spyOn(indexutils, "runBusinessLogics").mockResolvedValue(businessLogicResults);
 
-    const actionRefUpdateSpy = jest.fn();
-    const collectionAddSpy = jest.fn().mockResolvedValue({
-      update: actionRefUpdateSpy,
-      collection: jest.fn().mockReturnValue({
-        add: jest.fn(),
-      }),
+    const setActionSpy = jest.fn().mockResolvedValue({
+      update: jest.fn(),
     });
-    jest.spyOn(admin.firestore(), "collection").mockReturnValue({add: collectionAddSpy} as any);
+
+    const updateActionSpy = jest.fn().mockResolvedValue({
+      update: jest.fn(),
+    });
+
+    jest.spyOn(_mockable, "initActionRef").mockResolvedValue({
+      set: setActionSpy,
+      update: updateActionSpy,
+      collection: jest.fn().mockReturnValue({
+        doc: jest.fn().mockReturnValue({
+          set: setActionSpy,
+          update: updateActionSpy,
+        }),
+      }),
+    } as any);
 
     const doc = {
       "@form": {
@@ -534,14 +574,14 @@ describe("onDocChange", () => {
     jest.spyOn(indexutils, "runPeerSyncViews").mockResolvedValue(peerSyncViewLogicResults);
     jest.spyOn(indexutils, "distribute");
 
-    await onDocChange("user", change, contextWithAuth, event);
+    await onDocChange(funcName, "user", change, contextWithAuth, event);
 
     // Test that the runBusinessLogics function was called with the correct parameters
     expect(runBusinessLogicsSpy).toHaveBeenCalled();
     // Test that the snapshot.ref.update is called with the correct parameters
     expect(change.after.ref.update).toHaveBeenCalledTimes(3);
 
-    expect(collectionAddSpy).toHaveBeenCalledTimes(1);
+    expect(setActionSpy).toHaveBeenCalledTimes(2);
 
     // Test that the functions are called in the correct sequence
     expect(indexutils.consolidateAndGroupByDstPath).toHaveBeenNthCalledWith(1, businessLogicResults);
@@ -558,7 +598,7 @@ describe("onDocChange", () => {
     expect(indexutils.distribute).toHaveBeenCalledWith(otherUsersDocsByDstPath);
     expect(indexutils.distribute).toHaveBeenCalledWith(otherUsersViewDocsByDstPath);
     expect(indexutils.distribute).toHaveBeenCalledWith(otherUsersPeerSyncViewDocsByDstPath);
-    expect(actionRefUpdateSpy).toHaveBeenCalledTimes(1);
-    expect(actionRefUpdateSpy.mock.calls[0][0]).toEqual({status: "finished"});
+    expect(updateActionSpy).toHaveBeenCalledTimes(1);
+    expect(updateActionSpy.mock.calls[0][0]).toEqual({status: "finished"});
   });
 });

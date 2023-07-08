@@ -1,4 +1,4 @@
-import {deepEqual} from "../../utils/misc";
+import {computeHashCode, deepEqual} from "../../utils/misc";
 import {firestore} from "firebase-admin";
 import Timestamp = firestore.Timestamp;
 import GeoPoint = firestore.GeoPoint;
@@ -32,5 +32,31 @@ describe("deepEqual", () => {
 
     expect(deepEqual(obj1, obj2)).toBe(true);
     expect(deepEqual(obj1, obj3)).toBe(false);
+  });
+});
+
+describe("computeHashCode", () => {
+  it("should compute the hash code correctly for an empty string", () => {
+    const input = "";
+    const expectedOutput = "00000000";
+    const result = computeHashCode(input);
+    expect(result).toBe(expectedOutput);
+    expect(result.length).toBe(8); // Assert the length of the output string
+  });
+
+  it("should compute the hash code correctly for a very long string", () => {
+    // Generate a very long string
+    const str = "a".repeat(1000000); // 1 million 'a' characters
+    // Manually calculate the expected hash code using the same logic
+    let hashCode = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hashCode = ((hashCode << 5) - hashCode + char) >>> 0; // Convert to unsigned 32-bit integer
+    }
+    const hexString = hashCode.toString(16);
+    const expectedOutput = hexString.padStart(8, "0");
+    const result = computeHashCode(str);
+    expect(result).toBe(expectedOutput);
+    expect(result.length).toBe(8); // Assert the length of the output string
   });
 });

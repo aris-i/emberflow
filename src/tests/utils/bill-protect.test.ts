@@ -1,24 +1,28 @@
 import {
+  stopBillingIfBudgetExceeded,
   useBillProtect,
   FuncConfigData,
   FuncUsageData,
   _mockable,
   computeTotalCost,
   computeElapseTime,
+  PubSubEvent,
 } from "../../utils/bill-protect";
-import {admin} from "../../index";
+import {db} from "../../index";
 
+const funcName = "testFunc";
 jest.mock("../../index", () => ({
-  admin: {
-    firestore: jest.fn().mockReturnValue({
-      collection: jest.fn().mockReturnThis(),
-      doc: jest.fn().mockReturnThis(),
-      get: jest.fn().mockResolvedValue({}),
-      exists: true,
-      data: jest.fn().mockReturnValue({}),
-      set: jest.fn().mockResolvedValue({}),
-      update: jest.fn().mockResolvedValue({}),
-    }),
+  db: {
+    collection: jest.fn().mockReturnThis(),
+    doc: jest.fn().mockReturnThis(),
+    get: jest.fn().mockResolvedValue({}),
+    exists: true,
+    data: jest.fn().mockReturnValue({}),
+    set: jest.fn().mockResolvedValue({}),
+    update: jest.fn().mockResolvedValue({}),
+  },
+  projectConfig: {
+    projectId: "test-project",
   },
   docPaths: {
     // mock docPaths here
@@ -82,7 +86,7 @@ describe("computeTotalCost", () => {
   });
 });
 describe("useBillProtect", () => {
-  const funcConfigRef = admin.firestore().doc("");
+  const funcConfigRef = db.doc("");
   const mockFuncConfig: FuncConfigData = {
     vCPU: 1,
     mem: 256,
@@ -100,7 +104,7 @@ describe("useBillProtect", () => {
     enabled: false,
   };
 
-  const funcUsageRef = admin.firestore().doc("");
+  const funcUsageRef = db.doc("");
   const mockFuncUsage: FuncUsageData = {
     totalElapsedTimeInMs: 0,
     totalInvocations: 0,
@@ -153,11 +157,11 @@ describe("useBillProtect", () => {
     jest.spyOn(_mockable, "computeElapseTime").mockReturnValue(200);
     jest.spyOn(_mockable, "computeTotalCost").mockReturnValue(9);
 
-    await protectedFunction(entity, change, context, event);
+    await protectedFunction(funcName, entity, change, context, event);
 
-    expect(onDocChangeMock).toHaveBeenCalledWith(entity, change, context, event);
-    expect(_mockable.fetchAndInitFuncConfig).toHaveBeenCalledWith(admin.firestore(), "on-create-example");
-    expect(_mockable.fetchAndInitFuncUsage).toHaveBeenCalledWith(admin.firestore(), "on-create-example");
+    expect(onDocChangeMock).toHaveBeenCalledWith(funcName, entity, change, context, event);
+    expect(_mockable.fetchAndInitFuncConfig).toHaveBeenCalledWith(db, funcName);
+    expect(_mockable.fetchAndInitFuncUsage).toHaveBeenCalledWith(db, funcName);
     expect(_mockable.incrementTotalInvocations).toHaveBeenCalledWith(funcUsageRef);
     expect(_mockable.computeTotalCost).toHaveBeenCalledWith(
       mockFuncUsage.totalInvocations+1,
@@ -178,11 +182,11 @@ describe("useBillProtect", () => {
     jest.spyOn(_mockable, "computeElapseTime").mockReturnValue(200);
     jest.spyOn(_mockable, "computeTotalCost").mockReturnValue(10);
 
-    await protectedFunction(entity, change, context, event);
+    await protectedFunction(funcName, entity, change, context, event);
 
     expect(onDocChangeMock).not.toHaveBeenCalled();
-    expect(_mockable.fetchAndInitFuncConfig).toHaveBeenCalledWith(admin.firestore(), "on-create-example");
-    expect(_mockable.fetchAndInitFuncUsage).toHaveBeenCalledWith(admin.firestore(), "on-create-example");
+    expect(_mockable.fetchAndInitFuncConfig).toHaveBeenCalledWith(db, funcName);
+    expect(_mockable.fetchAndInitFuncUsage).toHaveBeenCalledWith(db, funcName);
     expect(_mockable.incrementTotalInvocations).toHaveBeenCalledWith(funcUsageRef);
     expect(_mockable.computeTotalCost).toHaveBeenCalledWith(
       mockFuncUsage.totalInvocations+1,
@@ -193,7 +197,7 @@ describe("useBillProtect", () => {
     expect(_mockable.lockdownCollection).toHaveBeenCalledWith(entity);
     expect(_mockable.computeElapseTime).toHaveBeenCalledWith(expect.arrayContaining([expect.any(Number)]), expect.arrayContaining([expect.any(Number)]));
     expect(_mockable.incrementTotalElapsedTimeInMs).toHaveBeenCalledWith(funcUsageRef, 200);
-    expect(console.warn).toHaveBeenCalledWith("Function on-create-example has exceeded the cost limit of $10");
+    expect(console.warn).toHaveBeenCalledWith(`Function ${funcName} has exceeded the cost limit of $10`);
   });
 
   it("should exit immediately if function is already disabled", async () => {
@@ -205,17 +209,109 @@ describe("useBillProtect", () => {
     });
 
     const protectedFunction = useBillProtect(onDocChangeMock);
-    await protectedFunction(entity, change, context, event);
+    await protectedFunction(funcName, entity, change, context, event);
 
     expect(onDocChangeMock).not.toHaveBeenCalled();
-    expect(_mockable.fetchAndInitFuncConfig).toHaveBeenCalledWith(admin.firestore(), "on-create-example");
-    expect(_mockable.fetchAndInitFuncUsage).toHaveBeenCalledWith(admin.firestore(), "on-create-example");
+    expect(_mockable.fetchAndInitFuncConfig).toHaveBeenCalledWith(db, funcName);
+    expect(_mockable.fetchAndInitFuncUsage).toHaveBeenCalledWith(db, funcName);
     expect(_mockable.incrementTotalInvocations).toHaveBeenCalledWith(funcUsageRef);
     expect(_mockable.computeTotalCost).not.toHaveBeenCalled();
     expect(_mockable.disableFunc).not.toHaveBeenCalledWith(funcConfigRef);
     expect(_mockable.lockdownCollection).not.toHaveBeenCalled();
     expect(_mockable.computeElapseTime).toHaveBeenCalledWith(expect.arrayContaining([expect.any(Number)]), expect.arrayContaining([expect.any(Number)]));
     expect(_mockable.incrementTotalElapsedTimeInMs).toHaveBeenCalledWith(funcUsageRef, 200);
-    expect(console.warn).toHaveBeenCalledWith("Function on-create-example is disabled.  Returning");
+    expect(console.warn).toHaveBeenCalledWith(`Function ${funcName} is disabled.  Returning`);
+  });
+
+  it("should return immediately when hardDisabled is true", async () => {
+    jest.spyOn(_mockable, "isHardDisabled").mockReturnValue(true);
+    jest.spyOn(_mockable, "computeTotalCost");
+    const protectedFunction = useBillProtect(onDocChangeMock);
+
+    await protectedFunction(funcName, entity, change, context, event);
+
+    expect(onDocChangeMock).not.toHaveBeenCalled();
+    expect(_mockable.fetchAndInitFuncConfig).not.toHaveBeenCalled();
+    expect(_mockable.fetchAndInitFuncUsage).not.toHaveBeenCalled();
+    expect(_mockable.incrementTotalInvocations).not.toHaveBeenCalled();
+    expect(_mockable.computeTotalCost).not.toHaveBeenCalled();
+    expect(_mockable.disableFunc).not.toHaveBeenCalled();
+    expect(_mockable.lockdownCollection).not.toHaveBeenCalled();
+    expect(_mockable.computeElapseTime).not.toHaveBeenCalled();
+    expect(_mockable.incrementTotalElapsedTimeInMs).not.toHaveBeenCalled();
+    expect(console.warn).toHaveBeenCalledWith(`Function ${funcName} is hard disabled.  Returning immediately`);
+  });
+});
+
+describe("stopBillingIfBudgetExceeded", () => {
+  const pubSubEvent: PubSubEvent = {
+    data: Buffer.from(
+      JSON.stringify({
+        budgetDisplayName: "Test Budget",
+        alertThresholdExceeded: 80,
+        costAmount: 100,
+        costIntervalStart: "2023-05-16T00:00:00Z",
+        budgetAmount: 120,
+        budgetAmountType: "SPECIFIED_AMOUNT",
+        currencyCode: "USD",
+      })
+    ).toString("base64"),
+  };
+
+  const pubSubEventOverBudget: PubSubEvent = {
+    data: Buffer.from(
+      JSON.stringify({
+        budgetDisplayName: "Test Budget",
+        alertThresholdExceeded: 80,
+        costAmount: 150,
+        costIntervalStart: "2023-05-16T00:00:00Z",
+        budgetAmount: 120,
+        budgetAmountType: "SPECIFIED_AMOUNT",
+        currencyCode: "USD",
+      })
+    ).toString("base64"),
+  };
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.spyOn(_mockable, "isBillingEnabled").mockResolvedValue(true);
+    jest.spyOn(_mockable, "disableBillingForProject").mockResolvedValue("Billing disabled");
+    console.log = jest.fn();
+  });
+
+  it("should return 'No action necessary' if costAmount <= budgetAmount", async () => {
+    const result = await stopBillingIfBudgetExceeded(pubSubEvent);
+
+    expect(result).toBe(
+      "No action necessary. (Current cost: 100)"
+    );
+    expect(console.log).toHaveBeenCalledWith(
+      "No action necessary. (Current cost: 100)"
+    );
+    expect(_mockable.isBillingEnabled).not.toHaveBeenCalled();
+    expect(_mockable.disableBillingForProject).not.toHaveBeenCalled();
+  });
+
+  it("should disable billing if costAmount > budgetAmount and billing is enabled", async () => {
+    const mockBillingEnabled = true;
+    jest.spyOn(_mockable, "isBillingEnabled").mockResolvedValue(mockBillingEnabled);
+
+    const result = await stopBillingIfBudgetExceeded(pubSubEventOverBudget);
+
+    expect(result).toBe("Billing disabled");
+    expect(console.log).toHaveBeenCalledWith("Disabling billing");
+    expect(_mockable.isBillingEnabled).toHaveBeenCalledWith("projects/test-project");
+    expect(_mockable.disableBillingForProject).toHaveBeenCalledWith("projects/test-project");
+  });
+
+  it("should return 'Billing already disabled' if billing is already disabled", async () => {
+    const mockBillingEnabled = false;
+    jest.spyOn(_mockable, "isBillingEnabled").mockResolvedValue(mockBillingEnabled);
+
+    const result = await stopBillingIfBudgetExceeded(pubSubEventOverBudget);
+
+    expect(result).toBe("Billing already disabled");
+    expect(console.log).toHaveBeenCalledWith("Billing already disabled");
+    expect(_mockable.isBillingEnabled).toHaveBeenCalledWith("projects/test-project");
+    expect(_mockable.disableBillingForProject).not.toHaveBeenCalled();
   });
 });

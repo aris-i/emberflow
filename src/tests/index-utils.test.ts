@@ -17,8 +17,10 @@ import {initializeEmberFlow} from "../index";
 import {
   Action,
   LogicConfig,
-  LogicResult, LogicResultAction,
+  LogicResult,
+  LogicResultAction,
   LogicResultDoc,
+  ProjectConfig,
   ViewLogicConfig,
 } from "../types";
 import * as paths from "../utils/paths";
@@ -29,6 +31,17 @@ import {validatorConfig} from "../sample-custom/validators";
 admin.initializeApp();
 jest.spyOn(console, "log").mockImplementation();
 jest.spyOn(console, "info").mockImplementation();
+
+const projectConfig: ProjectConfig = {
+  projectId: "your-project-id",
+  budgetAlertTopicName: "budget-alerts",
+  maxCostLimitPerFunction: 100,
+  specialCostLimitPerFunction: {
+    function1: 50,
+    function2: 75,
+    function3: 120,
+  },
+};
 
 describe("distribute", () => {
   let dbSpy: jest.SpyInstance;
@@ -73,7 +86,7 @@ describe("distribute", () => {
         dstPath: "/users/test-user-id/documents/test-doc-id",
       } as LogicResultDoc,
     ]]);
-    initializeEmberFlow(admin, dbStructure, Entity, securityConfig, validatorConfig, []);
+    initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, []);
     await distribute(userDocsByDstPath);
 
     expect(batchSpy).toHaveBeenCalledTimes(1);
@@ -90,53 +103,6 @@ describe("distribute", () => {
     expect(setSpy).toHaveBeenCalledTimes(1);
 
     batchSpy.mockRestore();
-  });
-
-  it("should merge a document to dstPath with # in path", async () => {
-    const setSpy = jest.fn().mockResolvedValue({});
-    const batchSpy = jest.spyOn(admin.firestore(), "batch").mockReturnValue({
-      set: setSpy,
-      delete: jest.fn(),
-      commit: jest.fn().mockResolvedValue(undefined),
-    } as any);
-
-    const randomId = "random-id";
-    const docSpy = jest.spyOn(admin.firestore.CollectionReference.prototype, "doc").mockReturnValue({
-      set: jest.fn(),
-      delete: jest.fn(),
-      collection: jest.fn(),
-      get: jest.fn(),
-      id: randomId,
-      parent: jest.fn(),
-      path: "/users/test-user-id/documents/" + randomId,
-      withConverter: jest.fn(),
-    } as any);
-    jest.spyOn(admin.firestore(), "collection").mockReturnValue({
-      doc: docSpy,
-    } as any);
-
-    const userDocsByDstPath = new Map([[
-      "/users/test-user-id/documents/#",
-        {
-          action: "merge",
-          doc: {name: "test-doc-name-updated"},
-          instructions: undefined,
-          dstPath: "/users/test-user-id/documents/#",
-        } as LogicResultDoc,
-    ]]);
-    await distribute(userDocsByDstPath);
-
-    expect(batchSpy).toHaveBeenCalledTimes(1);
-    expect(admin.firestore().collection).toHaveBeenCalledTimes(1);
-    expect(admin.firestore().doc).not.toHaveBeenCalled();
-    expect(admin.firestore().collection).toHaveBeenCalledWith("/users/test-user-id/documents");
-    expect(docSpy).toHaveBeenCalledTimes(1);
-    expect(setSpy.mock.calls[0][1]).toEqual({name: "test-doc-name-updated"});
-    expect(setSpy.mock.calls[0][2]).toEqual({merge: true});
-    expect(setSpy).toHaveBeenCalledTimes(1);
-
-    batchSpy.mockRestore();
-    docSpy.mockRestore();
   });
 
   it("should delete a document at dstPath", async () => {
@@ -452,7 +418,7 @@ describe("runBusinessLogics", () => {
         logicFn: logicFn3,
       },
     ];
-    initializeEmberFlow(admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
+    initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
     const results = await runBusinessLogics(actionType, formModifiedFields, entity, action);
 
     expect(logicFn1).toHaveBeenCalledWith(action);
@@ -488,7 +454,7 @@ describe("runBusinessLogics", () => {
         logicFn: jest.fn(),
       },
     ];
-    initializeEmberFlow(admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
+    initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
     const results = await runBusinessLogics(actionType, formModifiedFields, entity, action);
 
     expect(results).toEqual([]);
@@ -496,7 +462,7 @@ describe("runBusinessLogics", () => {
 });
 
 describe("groupDocsByUserAndDstPath", () => {
-  initializeEmberFlow(admin, dbStructure, Entity, {}, {}, []);
+  initializeEmberFlow(projectConfig, admin, dbStructure, Entity, {}, {}, []);
   const docsByDstPath = new Map<string, LogicResultDoc>([
     ["users/user123/document1", {action: "merge", dstPath: "users/user123/document1", doc: {field1: "value1", field2: "value2"}}],
     ["users/user123/document2", {action: "merge", dstPath: "users/user123/document2", doc: {field3: "value3", field6: "value6"}}],

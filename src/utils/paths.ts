@@ -1,25 +1,10 @@
 import {QueryCondition} from "../types";
 import {fetchIds} from "./query";
-import {docPaths, docPathsRegex, admin} from "../index";
+import {docPaths, docPathsRegex, db} from "../index";
 
 export const _mockable = {
-  filterSubDocPathsByEntity: (entity: string, excludeEntities?: string[]): string[] => {
-    const path = docPaths[entity];
-    const paths = Object.values(docPaths);
-
-    // Find the doc paths of the excluded entities
-    const excludePaths = excludeEntities?.map((excludeEntity) => docPaths[excludeEntity]);
-
-    return paths.filter((p) => {
-      // Check if the path starts with the given entity's doc path
-      const startsWithPath = p.startsWith(path);
-
-      // Check if the path starts with any of the excluded entity's doc paths
-      const startsWithExcludedPath = excludePaths?.some((excludePath) => p.startsWith(excludePath));
-
-      return startsWithPath && !startsWithExcludedPath;
-    });
-  },
+  filterSubDocPathsByEntity,
+  doesPathExists,
 };
 
 export function findMatchingDocPathRegex(docPath: string) {
@@ -32,7 +17,21 @@ export function findMatchingDocPathRegex(docPath: string) {
 }
 
 export function filterSubDocPathsByEntity(entity: string, excludeEntities?: string[]): string[] {
-  return _mockable.filterSubDocPathsByEntity(entity, excludeEntities);
+  const path = docPaths[entity];
+  const paths = Object.values(docPaths);
+
+  // Find the doc paths of the excluded entities
+  const excludePaths = excludeEntities?.map((excludeEntity) => docPaths[excludeEntity]);
+
+  return paths.filter((p) => {
+    // Check if the path starts with the given entity's doc path
+    const startsWithPath = p.startsWith(path);
+
+    // Check if the path starts with any of the excluded entity's doc paths
+    const startsWithExcludedPath = excludePaths?.some((excludePath) => p.startsWith(excludePath));
+
+    return startsWithPath && !startsWithExcludedPath;
+  });
 }
 
 export async function expandAndGroupDocPaths(
@@ -45,7 +44,7 @@ export async function expandAndGroupDocPaths(
     return groupedPaths;
   }
   const entityDocPath = docPaths[entity];
-  const subDocPaths = filterSubDocPathsByEntity(entity, excludeEntities);
+  const subDocPaths = _mockable.filterSubDocPathsByEntity(entity, excludeEntities);
 
   const values = Object.values(subDocPaths).map((p) => p.replace(entityDocPath, startingDocPath));
   const sortedValues = values.sort();
@@ -95,6 +94,11 @@ export async function expandAndGroupDocPaths(
   return groupedPaths;
 }
 
+async function doesPathExists(path: string) {
+  const doc = await db.doc(path).get();
+  return doc.exists;
+}
+
 export async function hydrateDocPath(destDocPath: string, entityCondition: Record<string, QueryCondition>): Promise<string[]> {
   const pathSegments = destDocPath.split("/");
   const documentPaths: string[] = [];
@@ -120,8 +124,7 @@ export async function hydrateDocPath(destDocPath: string, entityCondition: Recor
       const path = segments.join("/");
       if (idx < segments.length - 1) {
         // This means that the path contains hard coded ids, so we need to check if that pat exists in the database
-        const doc = await admin.firestore().doc(path).get();
-        if (!doc.exists) {
+        if (!await _mockable.doesPathExists(path)) {
           console.error(`Document ${path} does not exist. Skipping...`);
           continue;
         }
