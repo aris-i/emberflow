@@ -57,11 +57,12 @@ export function initializeEmberFlow(
   CustomEntity: Record<string, string>,
   customSecurityConfig: SecurityConfig,
   customValidatorConfig: ValidatorConfig,
-  customLogicConfigs: LogicConfig[]) : {
+  customLogicConfigs: LogicConfig[],
+) : {
   docPaths: Record<string, string>;
   colPaths: Record<string, string>;
   docPathsRegex: Record<string, RegExp>;
-  functionsConfig: Record<string, any>
+  functionsConfig: Record<string, any>,
 } {
   projectConfig = customProjectConfig;
   admin = adminInstance;
@@ -120,12 +121,12 @@ export function initializeEmberFlow(
   });
 
   functionsConfig["onBudgetAlert"] =
-      functions.pubsub.topic(projectConfig.budgetAlertTopicName).onPublish(stopBillingIfBudgetExceeded);
+        functions.pubsub.topic(projectConfig.budgetAlertTopicName).onPublish(stopBillingIfBudgetExceeded);
   functionsConfig["hourlyFunctions"] = functions.pubsub.schedule("every 1 hours")
     .onRun(resetUsageStats);
-  functionsConfig["minuteFunctions"] = functions.pubsub.schedule("every 1 minute")
+  functionsConfig["minuteFunctions"] = functions.pubsub.schedule("every 1 minutes")
     .onRun(processScheduledEntities);
-  functionsConfig["onDeleteFunctions"] = functions.firestore.document("/@server/delete/functions").onCreate(
+  functionsConfig["onDeleteFunctions"] = functions.firestore.document("@server/delete/functions/{deleteFuncId}").onCreate(
     onDeleteFunction);
 
   return {docPaths, colPaths, docPathsRegex, functionsConfig};
@@ -250,6 +251,7 @@ export async function onDocChange(
   if (errorLogicResults.length > 0) {
     const errorMessage = errorLogicResults.map((result) => result.message).join("\n");
     await actionRef.update({status: "finished-with-error", message: errorMessage});
+    // TODO:  Need to cancel everything if there's an error.
   }
 
   const dstPathLogicDocsMap: Map<string, LogicResultDoc> = consolidateAndGroupByDstPath(logicResults);

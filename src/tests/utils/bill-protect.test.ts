@@ -6,7 +6,6 @@ import {
   _mockable,
   computeTotalCost,
   computeElapseTime,
-  PubSubEvent,
 } from "../../utils/bill-protect";
 import {db} from "../../index";
 
@@ -244,7 +243,7 @@ describe("useBillProtect", () => {
 });
 
 describe("stopBillingIfBudgetExceeded", () => {
-  const pubSubEvent: PubSubEvent = {
+  const pubSubEvent = {
     data: Buffer.from(
       JSON.stringify({
         budgetDisplayName: "Test Budget",
@@ -256,9 +255,13 @@ describe("stopBillingIfBudgetExceeded", () => {
         currencyCode: "USD",
       })
     ).toString("base64"),
-  };
+    attributes: {},
+    _json: "mockJson",
+    json: "mockJson",
+    toJSON: jest.fn(),
+  } as any;
 
-  const pubSubEventOverBudget: PubSubEvent = {
+  const pubSubEventOverBudget= {
     data: Buffer.from(
       JSON.stringify({
         budgetDisplayName: "Test Budget",
@@ -268,9 +271,13 @@ describe("stopBillingIfBudgetExceeded", () => {
         budgetAmount: 120,
         budgetAmountType: "SPECIFIED_AMOUNT",
         currencyCode: "USD",
-      })
+      } as any)
     ).toString("base64"),
-  };
+    attributes: {},
+    _json: "mockJson",
+    json: "mockJson",
+    toJSON: jest.fn(),
+  } as any;
   beforeEach(() => {
     jest.clearAllMocks();
     jest.spyOn(_mockable, "isBillingEnabled").mockResolvedValue(true);

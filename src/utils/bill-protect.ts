@@ -2,6 +2,7 @@ import {admin, db, docPaths, onDocChange, projectConfig} from "../index";
 import {CloudBillingClient} from "@google-cloud/billing";
 import {firestore} from "firebase-admin";
 import * as batch from "../utils/batch";
+import {Message} from "firebase-functions/lib/v1/providers/pubsub";
 
 export const billing = new CloudBillingClient();
 
@@ -28,11 +29,6 @@ export interface BillingAlertEvent {
   budgetAmountType: string;
   currencyCode: string;
 }
-
-export interface PubSubEvent {
-  data: string;
-}
-
 
 type onDocChangeType = typeof onDocChange;
 
@@ -205,12 +201,12 @@ export function useBillProtect(onDocChange: onDocChangeType) : onDocChangeType {
   };
 }
 
-export async function stopBillingIfBudgetExceeded(pubSubEvent: PubSubEvent): Promise<string> {
+export async function stopBillingIfBudgetExceeded(message: Message): Promise<string> {
   const PROJECT_ID = projectConfig.projectId;
   const PROJECT_NAME = `projects/${PROJECT_ID}`;
 
   const pubsubData: BillingAlertEvent = JSON.parse(
-    Buffer.from(pubSubEvent.data, "base64").toString()
+    Buffer.from(message.data, "base64").toString()
   );
   if (pubsubData.costAmount <= pubsubData.budgetAmount) {
     console.log(`No action necessary. (Current cost: ${pubsubData.costAmount})`);
