@@ -7,9 +7,10 @@ import {
   SecurityFn,
   ValidateFormResult,
 } from "./types";
-import {firestore} from "firebase-admin";
+import {database, firestore} from "firebase-admin";
 import {
-  admin, db,
+  admin,
+  db,
   docPaths,
   logicConfigs,
   projectConfig,
@@ -22,31 +23,16 @@ import {expandAndGroupDocPaths, findMatchingDocPathRegex} from "./utils/paths";
 import {deepEqual} from "./utils/misc";
 import * as batch from "./utils/batch";
 import {CloudFunctionsServiceClient} from "@google-cloud/functions";
-import DocumentData = firestore.DocumentData;
 import QueryDocumentSnapshot = firestore.QueryDocumentSnapshot;
+import DocumentData = FirebaseFirestore.DocumentData;
+import Reference = database.Reference;
 
 export const _mockable = {
   getViewLogicsConfig: () => viewLogicConfigs,
   createNowTimestamp: () => admin.firestore.Timestamp.now(),
 };
 
-async function commitBatchIfNeeded(
-  batch: FirebaseFirestore.WriteBatch,
-  db: FirebaseFirestore.Firestore,
-  writeCount: number): Promise<[FirebaseFirestore.WriteBatch, number]> {
-  writeCount++; // Increment writeCount for each write operation
-  if (writeCount === 500) { // Commit batch every 500 writes
-    console.log("Committing batch of 500 writes...");
-    await batch.commit();
-    batch = db.batch();
-    writeCount = 0;
-  }
-  return [batch, writeCount];
-}
-
 export async function distribute(docsByDstPath: Map<string, LogicResultDoc>) {
-  let batch = db.batch();
-  let writeCount = 0;
   const forCopy: LogicResultDoc[] = [];
 
   for (const dstPath of Array.from(docsByDstPath.keys()).sort()) {
@@ -63,8 +49,7 @@ export async function distribute(docsByDstPath: Map<string, LogicResultDoc>) {
     } else if (action === "delete") {
       // Delete document at dstPath
       const dstDocRef = db.doc(dstPath);
-      batch.delete(dstDocRef);
-      [batch, writeCount] = await commitBatchIfNeeded(batch, db, writeCount);
+      await batch.deleteDoc(dstDocRef);
       console.log(`Document deleted at ${dstPath}`);
     } else if (action === "merge") {
       const updateData: { [key: string]: any } = {...doc};
@@ -96,17 +81,14 @@ export async function distribute(docsByDstPath: Map<string, LogicResultDoc>) {
 
       // Merge document to dstPath
       const dstDocRef = db.doc(dstPath);
-      batch.set(dstDocRef, updateData, {merge: true});
-      [batch, writeCount] = await commitBatchIfNeeded(batch, db, writeCount);
+      await batch.set(dstDocRef, updateData);
       console.log(`Document merged to ${dstPath}`);
     }
   }
 
-  // TODO: Let's use the batch utils
-  if (writeCount > 0) {
-    console.log(`Committing final batch of ${writeCount} writes...`);
+  if (batch.writeCount > 0) {
+    console.log(`Committing final batch of ${batch.writeCount} writes...`);
     await batch.commit();
-    writeCount = 0;
   }
 
   // Do copy after all other operations
@@ -122,8 +104,12 @@ export async function distribute(docsByDstPath: Map<string, LogicResultDoc>) {
     }
     const srcDocRef = db.doc(srcPath);
     const dstDocRef = db.doc(dstPath);
-    batch.set(dstDocRef, (await srcDocRef.get()).data()!);
-    [batch, writeCount] = await commitBatchIfNeeded(batch, db, writeCount);
+    const srcData = (await srcDocRef.get()).data();
+    if (!srcData) {
+      console.warn("Copy src doesn't exists");
+      continue;
+    }
+    await batch.set(dstDocRef, srcData);
     console.log(`Document copied from ${srcPath} to ${dstPath}`);
 
     if (copyMode === "recursive") {
@@ -137,47 +123,30 @@ export async function distribute(docsByDstPath: Map<string, LogicResultDoc>) {
       for (const path of pathsToCopy) {
         const srcDocRef = db.doc(path);
         const dstDocRef = db.doc(path.replace(srcPath, dstPath));
-        batch.set(dstDocRef, (await srcDocRef.get()).data()!);
-        [batch, writeCount] = await commitBatchIfNeeded(batch, db, writeCount);
+        const srcData = (await srcDocRef.get()).data();
+        if (!srcData) {
+          console.warn("Copy src doesn't exists");
+          continue;
+        }
+        await batch.set(dstDocRef, srcData);
         console.log(`Document copied from ${path} to ${dstDocRef.path}`);
       }
     }
   }
 
-  if (writeCount > 0) {
-    console.log(`Committing final batch of ${writeCount} writes...`);
+  if (batch.writeCount > 0) {
+    console.log(`Committing final batch of ${batch.writeCount} writes...`);
     await batch.commit();
-    writeCount = 0;
-  }
-}
-
-export async function revertModificationsOutsideForm(document: FirebaseFirestore.DocumentData, beforeDocument: FirebaseFirestore.DocumentData | null | undefined, snapshot: FirebaseFirestore.DocumentSnapshot) {
-  // Revert any changes made to document other than @form
-  const revertedValues: Record<string, any> = {};
-
-  if (beforeDocument) {
-    const modifiedFields = Object.keys(document ?? {}).filter((key) => !key.startsWith("@form"));
-    modifiedFields.forEach((field) => {
-      if ( !deepEqual(document?.[field], beforeDocument[field]) ) {
-        revertedValues[field] = beforeDocument[field];
-      }
-    });
-  }
-  // if revertedValues is not empty, update the document
-  if (Object.keys(revertedValues).length > 0) {
-    console.log("Reverting document:\n", revertedValues);
-    await snapshot.ref.update(revertedValues);
   }
 }
 
 export async function validateForm(
   entity: string,
-  document: FirebaseFirestore.DocumentData,
-  docPath: string
+  form: FirebaseFirestore.DocumentData
 ): Promise<ValidateFormResult> {
   let hasValidationError = false;
   const validate = validatorConfig[entity];
-  const validationResult = await validate(document, docPath);
+  const validationResult = await validate(form);
 
   // Check if validation failed
   if (validationResult && Object.keys(validationResult).length > 0) {
@@ -187,23 +156,22 @@ export async function validateForm(
   return [hasValidationError, validationResult];
 }
 
-export function getFormModifiedFields(document: DocumentData) {
-  const formFields = Object.keys(document?.["@form"] ?? {}).filter((key) => !key.startsWith("@"));
-  // compare value of each @form field with the value of the same field in the document to get modified fields
-  return formFields.filter((field) => !deepEqual(document?.[field], document?.["@form"]?.[field]));
+export function getFormModifiedFields(form: DocumentData, document: DocumentData) {
+  const formFields = Object.keys(form).filter((key) => !key.startsWith("@"));
+  return formFields.filter((field) => !deepEqual(document[field], form[field]));
 }
 
-export async function delayFormSubmissionAndCheckIfCancelled(delay: number, snapshot: firestore.DocumentSnapshot) {
+export async function delayFormSubmissionAndCheckIfCancelled(delay: number, formResponseRef: Reference) {
   let cancelFormSubmission = false;
   console.log(`Delaying document for ${delay}ms...`);
-  await snapshot.ref.update({"@form.@status": "delay"});
+  await formResponseRef.update({"@status": "delay"});
   await new Promise((resolve) => setTimeout(resolve, delay));
   // Re-fetch document from Firestore
-  const updatedSnapshot = await snapshot.ref.get();
-  const updatedDocument = updatedSnapshot.data();
+  const updatedSnapshot = await formResponseRef.get();
+  const updatedDocument = updatedSnapshot.val();
   console.log("Re-fetched document from Firestore after delay:\n", updatedDocument);
   // Check if form status is "cancel"
-  if (updatedDocument?.["@form"]?.["@status"] === "cancel") {
+  if (updatedDocument["@status"] === "cancel") {
     cancelFormSubmission = true;
   }
   return cancelFormSubmission;

@@ -1,7 +1,6 @@
 import * as admin from "firebase-admin";
 import {
   distribute,
-  revertModificationsOutsideForm,
   validateForm,
   getFormModifiedFields,
   delayFormSubmissionAndCheckIfCancelled,
@@ -12,7 +11,6 @@ import {
   _mockable,
 } from "../index-utils";
 import {firestore} from "firebase-admin";
-import DocumentSnapshot = firestore.DocumentSnapshot;
 import {initializeEmberFlow} from "../index";
 import {
   Action,
@@ -27,13 +25,15 @@ import * as paths from "../utils/paths";
 import {Entity, dbStructure} from "../sample-custom/db-structure";
 import {securityConfig} from "../sample-custom/security";
 import {validatorConfig} from "../sample-custom/validators";
+import * as batch from "../utils/batch";
 
-admin.initializeApp();
 jest.spyOn(console, "log").mockImplementation();
 jest.spyOn(console, "info").mockImplementation();
 
 const projectConfig: ProjectConfig = {
   projectId: "your-project-id",
+  region: "asia-southeast1",
+  rtdbName: "your-rtdb-name",
   budgetAlertTopicName: "budget-alerts",
   maxCostLimitPerFunction: 100,
   specialCostLimitPerFunction: {
@@ -42,6 +42,10 @@ const projectConfig: ProjectConfig = {
     function3: 120,
   },
 };
+
+admin.initializeApp({
+  databaseURL: "https://test-project.firebaseio.com",
+});
 
 describe("distribute", () => {
   let dbSpy: jest.SpyInstance;
@@ -65,12 +69,7 @@ describe("distribute", () => {
   });
 
   it("should merge a document to dstPath with instructions", async () => {
-    const setSpy = jest.fn().mockResolvedValue({});
-    const batchSpy = jest.spyOn(admin.firestore(), "batch").mockReturnValue({
-      set: setSpy,
-      delete: jest.fn(),
-      commit: jest.fn().mockResolvedValue(undefined),
-    } as any);
+    const batchSetSpy = jest.spyOn(batch, "set").mockResolvedValue(undefined);
 
     const userDocsByDstPath = new Map([[
       "/users/test-user-id/documents/test-doc-id",
@@ -89,29 +88,21 @@ describe("distribute", () => {
     initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, []);
     await distribute(userDocsByDstPath);
 
-    expect(batchSpy).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
-    expect(setSpy.mock.calls[0][1]).toEqual({
-      name: "test-doc-name-updated",
-      count: admin.firestore.FieldValue.increment(1),
-      score: admin.firestore.FieldValue.increment(5),
-      minusCount: admin.firestore.FieldValue.increment(-1),
-      minusScore: admin.firestore.FieldValue.increment(-3),
+    expect(batchSetSpy.mock.calls[0][1]).toEqual({
+      "name": "test-doc-name-updated",
+      "count": admin.firestore.FieldValue.increment(1),
+      "score": admin.firestore.FieldValue.increment(5),
+      "minusCount": admin.firestore.FieldValue.increment(-1),
+      "minusScore": admin.firestore.FieldValue.increment(-3),
     });
-    expect(setSpy.mock.calls[0][2]).toEqual({merge: true});
-    expect(setSpy).toHaveBeenCalledTimes(1);
-
-    batchSpy.mockRestore();
+    expect(batchSetSpy).toHaveBeenCalledTimes(1);
+    batchSetSpy.mockRestore();
   });
 
   it("should delete a document at dstPath", async () => {
-    const deleteSpy = jest.fn().mockResolvedValue({});
-    const batchSpy = jest.spyOn(admin.firestore(), "batch").mockReturnValue({
-      set: jest.fn(),
-      delete: deleteSpy,
-      commit: jest.fn().mockResolvedValue(undefined),
-    } as any);
+    const batchDeleteSpy = jest.spyOn(batch, "deleteDoc").mockResolvedValue(undefined);
 
     const userDocsByDstPath = new Map([[
       "/users/test-user-id/documents/test-doc-id",
@@ -122,21 +113,15 @@ describe("distribute", () => {
     ]]);
     await distribute(userDocsByDstPath);
 
-    expect(batchSpy).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
-    expect(deleteSpy).toHaveBeenCalledTimes(1);
+    expect(batchDeleteSpy).toHaveBeenCalledTimes(1);
 
-    batchSpy.mockRestore();
+    batchDeleteSpy.mockRestore();
   });
 
   it("should copy a document to dstPath with shallow copy mode", async () => {
-    const setSpy = jest.fn().mockResolvedValue({});
-    const batchSpy = jest.spyOn(admin.firestore(), "batch").mockReturnValue({
-      set: setSpy,
-      delete: jest.fn(),
-      commit: jest.fn().mockResolvedValue(undefined),
-    } as any);
+    const batchSetSpy = jest.spyOn(batch, "set").mockResolvedValue(undefined);
 
     const userDocsByDstPath = new Map([[
       "/users/test-user-id/documents/test-doc-id",
@@ -149,23 +134,17 @@ describe("distribute", () => {
     ]]);
     await distribute(userDocsByDstPath);
 
-    expect(batchSpy).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledTimes(2);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id-1/documents/test-doc-id");
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id-2/documents/test-doc-id");
-    expect(setSpy.mock.calls[0][1]).toEqual({});
-    expect(setSpy).toHaveBeenCalledTimes(1);
+    expect(batchSetSpy.mock.calls[0][1]).toEqual({});
+    expect(batchSetSpy).toHaveBeenCalledTimes(1);
 
-    batchSpy.mockRestore();
+    batchSetSpy.mockRestore();
   });
 
   it("should copy a document to dstPath with recursive copy mode", async () => {
-    const setSpy = jest.fn().mockResolvedValue({});
-    const batchSpy = jest.spyOn(admin.firestore(), "batch").mockReturnValue({
-      set: setSpy,
-      delete: jest.fn(),
-      commit: jest.fn().mockResolvedValue(undefined),
-    } as any);
+    const batchSetSpy = jest.spyOn(batch, "set").mockResolvedValue(undefined);
 
     const srcDocMock = ({
       get: jest.fn().mockResolvedValue({
@@ -190,90 +169,19 @@ describe("distribute", () => {
     await distribute(userDocsByDstPath);
 
     expect(mockExpandAndGroupDocPaths).toHaveBeenCalledTimes(1);
-    expect(batchSpy).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledTimes(2);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id-1/documents/test-doc-id");
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id-2/documents/test-doc-id");
-    expect(setSpy.mock.calls[0][1]).toEqual({field: "value"});
-    expect(setSpy).toHaveBeenCalledTimes(1);
+    expect(batchSetSpy.mock.calls[0][1]).toEqual({field: "value"});
+    expect(batchSetSpy).toHaveBeenCalledTimes(1);
 
-    batchSpy.mockRestore();
+    batchSetSpy.mockRestore();
     mockDoc.mockRestore();
     mockExpandAndGroupDocPaths.mockRestore();
   });
 });
 
-describe("revertModificationsOutsideForm", () => {
-  let dbSpy: jest.SpyInstance;
-  let mockSnapshot: DocumentSnapshot;
-
-  beforeEach(() => {
-    dbSpy = jest.spyOn(admin.firestore(), "doc").mockReturnValue({
-      get: jest.fn().mockResolvedValue(mockSnapshot),
-      update: jest.fn().mockResolvedValue({}),
-    } as any);
-
-    mockSnapshot = {
-      ref: {
-        update: jest.fn().mockResolvedValue({}),
-      },
-      data: jest.fn().mockReturnValue({}),
-    } as any;
-  });
-
-  afterEach(() => {
-    dbSpy.mockRestore();
-  });
-
-  const mockDocument = {
-    "name": "Alice",
-    "age": 25,
-    "@form": {
-      "name": "Alicia",
-      "age": 26,
-      "@status": "submit",
-    },
-  };
-  const mockBeforeDocument = {
-    "name": "Alice",
-    "age": 26,
-    "@form": {
-      "name": "Alice",
-      "age": 26,
-      "@status": "finished",
-    },
-  };
-
-  it("should revert modifications to fields outside the @form object", async () => {
-    const updateSpy = jest.spyOn(mockSnapshot.ref, "update");
-    await revertModificationsOutsideForm(mockDocument, mockBeforeDocument, mockSnapshot);
-    expect(updateSpy).toHaveBeenCalledWith({age: 26});
-  });
-
-  it("should not revert modifications to fields inside the @form object", async () => {
-    const updateSpy = jest.spyOn(mockSnapshot.ref, "update");
-    await revertModificationsOutsideForm(mockDocument, mockBeforeDocument, mockSnapshot);
-    expect(updateSpy).not.toHaveBeenCalledWith({"@form": {"name": "Alice"}});
-  });
-
-  it("should not update the snapshot if there are no modifications to revert", async () => {
-    const mockDocument = {
-      "name": "Alice",
-      "age": 26,
-      "@form": {
-        "name": "Alicia",
-        "age": 25,
-        "@status": "processing",
-      },
-    };
-    const updateSpy = jest.spyOn(mockSnapshot.ref, "update");
-    await revertModificationsOutsideForm(mockDocument, mockBeforeDocument, mockSnapshot);
-    expect(updateSpy).not.toHaveBeenCalled();
-  });
-});
-
 describe("validateForm", () => {
-  const docPath = "users/1";
   it("returns an object with empty validationResult when document is valid", async () => {
     const entity = "user";
     const document = {
@@ -281,7 +189,7 @@ describe("validateForm", () => {
       email: "johndoe@example.com",
       password: "abc123",
     };
-    const [hasValidationError, validationResult] = await validateForm(entity, document, docPath);
+    const [hasValidationError, validationResult] = await validateForm(entity, document);
     expect(hasValidationError).toBe(false);
     expect(validationResult).toEqual({});
   });
@@ -293,7 +201,7 @@ describe("validateForm", () => {
       email: "johndoe@example.com",
       password: "abc",
     };
-    const [hasValidationError, validationResult] = await validateForm(entity, document, docPath);
+    const [hasValidationError, validationResult] = await validateForm(entity, document);
     expect(hasValidationError).toBe(true);
     expect(validationResult).toEqual({name: ["Name is required"]});
   });
@@ -302,7 +210,7 @@ describe("validateForm", () => {
 describe("getFormModifiedFields", () => {
   it("should return an empty array when there are no form fields", () => {
     const document = {name: "John Doe", age: 30};
-    const modifiedFields = getFormModifiedFields(document);
+    const modifiedFields = getFormModifiedFields({}, document);
     expect(modifiedFields).toEqual([]);
   });
 
@@ -310,13 +218,12 @@ describe("getFormModifiedFields", () => {
     const document = {
       "name": "John Doe",
       "age": 30,
-      "@form": {
-        "name": "Jane Doe",
-        "address": "123 Main St",
-        "@status": "submit",
-      },
     };
-    const modifiedFields = getFormModifiedFields(document);
+    const modifiedFields = getFormModifiedFields({
+      "name": "Jane Doe",
+      "address": "123 Main St",
+      "@status": "submit",
+    }, document);
     expect(modifiedFields).toEqual(["name", "address"]);
   });
 
@@ -324,11 +231,8 @@ describe("getFormModifiedFields", () => {
     const document = {
       "name": "John Doe",
       "age": 30,
-      "@form": {
-        "@status": "submit",
-      },
     };
-    const modifiedFields = getFormModifiedFields(document);
+    const modifiedFields = getFormModifiedFields({"@status": "submit"}, document);
     expect(modifiedFields).toEqual([]);
   });
 });
@@ -336,38 +240,34 @@ describe("getFormModifiedFields", () => {
 describe("delayFormSubmissionAndCheckIfCancelled", () => {
   test("should delay form submission for 500 ms and not cancel form submission", async () => {
     const delay = 500;
-    const snapshot = {
-      ref: {
-        update: jest.fn(),
-        get: jest.fn().mockResolvedValue({
-          data: () => ({"@form": {"@status": "delay"}}),
-        }),
-      },
+    const formResponseRef = {
+      update: jest.fn(),
+      get: jest.fn().mockResolvedValue({
+        val: () => ({"@form": {"@status": "delay"}}),
+      }),
     };
-    const cancelFormSubmission = await delayFormSubmissionAndCheckIfCancelled(delay, snapshot as any);
+    const cancelFormSubmission = await delayFormSubmissionAndCheckIfCancelled(delay, formResponseRef as any);
     expect(cancelFormSubmission).toBe(false);
-    expect(snapshot.ref.update).toHaveBeenCalledTimes(1);
-    expect(snapshot.ref.update).toHaveBeenCalledWith({"@form.@status": "delay"});
-    expect(snapshot.ref.get).toHaveBeenCalledTimes(1);
-    expect(snapshot.ref.get).toHaveBeenCalledWith();
+    expect(formResponseRef.update).toHaveBeenCalledTimes(1);
+    expect(formResponseRef.update).toHaveBeenCalledWith({"@status": "delay"});
+    expect(formResponseRef.get).toHaveBeenCalledTimes(1);
+    expect(formResponseRef.get).toHaveBeenCalledWith();
   });
 
   test("should delay form submission for 2000 ms and cancel form submission", async () => {
     const delay = 2000;
-    const snapshot = {
-      ref: {
-        update: jest.fn(),
-        get: jest.fn().mockResolvedValue({
-          data: () => ({"@form": {"@status": "cancel"}}),
-        }),
-      },
+    const formResponseRef = {
+      update: jest.fn(),
+      get: jest.fn().mockResolvedValue({
+        val: () => ({"@status": "cancel"}),
+      }),
     };
-    const cancelFormSubmission = await delayFormSubmissionAndCheckIfCancelled(delay, snapshot as any);
+    const cancelFormSubmission = await delayFormSubmissionAndCheckIfCancelled(delay, formResponseRef as any);
     expect(cancelFormSubmission).toBe(true);
-    expect(snapshot.ref.update).toHaveBeenCalledTimes(1);
-    expect(snapshot.ref.update).toHaveBeenCalledWith({"@form.@status": "delay"});
-    expect(snapshot.ref.get).toHaveBeenCalledTimes(1);
-    expect(snapshot.ref.get).toHaveBeenCalledWith();
+    expect(formResponseRef.update).toHaveBeenCalledTimes(1);
+    expect(formResponseRef.update).toHaveBeenCalledWith({"@status": "delay"});
+    expect(formResponseRef.get).toHaveBeenCalledTimes(1);
+    expect(formResponseRef.get).toHaveBeenCalledWith();
   });
 });
 
@@ -376,15 +276,21 @@ describe("runBusinessLogics", () => {
   const formModifiedFields = ["field1", "field2"];
   const entity = "user";
   const action:Action = {
+    eventContext: {
+      id: "123",
+      uid: "user123",
+      docId: "document123",
+      formId: "form123",
+      docPath: "users/user123",
+    },
     actionType,
-    path: "users/user123",
     document: {
-      "@form": {
-        "@actionType": actionType,
-      },
       "field1": "value1",
       "field2": "value2",
       "field3": "value3",
+    },
+    form: {
+      "@actionType": actionType,
     },
     status: "processing",
     timeCreated: firestore.Timestamp.now(),

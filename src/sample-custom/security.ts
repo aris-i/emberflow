@@ -21,13 +21,13 @@ const allAllowed: SecurityFn = async (
 };
 
 const userSecurityFn: SecurityFn =
-    async (entity, doc, actionType, modifiedFields):
+    async (entity, form, doc, actionType, modifiedFields):
         Promise<SecurityResult> => {
       switch (actionType) {
       case "create": {
         // Example: allow the user to create a new account only
         // if they are registering from a whitelisted domain
-        const email = doc["@form"].email;
+        const email = form.email;
         const domain = email.split("@")[1];
         const allowedDomains = ["example.com", "example.org"];
         let result: SecurityResult;

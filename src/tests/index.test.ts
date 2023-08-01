@@ -2,23 +2,24 @@ import {onDocChange, _mockable, initializeEmberFlow} from "../index";
 import * as indexutils from "../index-utils";
 import * as admin from "firebase-admin";
 
-import {LogicResult, LogicResultDoc, ProjectConfig, SecurityResult, ValidateFormResult} from "../types";
+import {EventContext, LogicResult, LogicResultDoc, ProjectConfig, SecurityResult, ValidateFormResult} from "../types";
 import DocumentData = firestore.DocumentData;
-import {firestore} from "firebase-admin";
-import DocumentSnapshot = firestore.DocumentSnapshot;
+import {database, firestore} from "firebase-admin";
 import * as functions from "firebase-functions";
 import DocumentReference = firestore.DocumentReference;
 import CollectionReference = firestore.CollectionReference;
 import Timestamp = firestore.Timestamp;
 import {dbStructure, Entity} from "../sample-custom/db-structure";
-
-admin.initializeApp();
+import Database = database.Database;
+import {Firestore} from "firebase-admin/firestore";
 
 // TODO: Create unit test for all new functions and modified functions
 
 const projectConfig: ProjectConfig = {
   projectId: "your-project-id",
   budgetAlertTopicName: "budget-alerts",
+  region: "us-central1",
+  rtdbName: "rtdb",
   maxCostLimitPerFunction: 100,
   specialCostLimitPerFunction: {
     function1: 50,
@@ -28,29 +29,63 @@ const projectConfig: ProjectConfig = {
 };
 const funcName = "testFunction";
 
+jest.spyOn(admin, "initializeApp").mockImplementation();
+
+const dataMock = jest.fn().mockReturnValue({});
+
+const getMock: CollectionReference = {
+  data: dataMock,
+} as unknown as CollectionReference;
+
+const docMock: DocumentReference = {
+  set: jest.fn(),
+  get: jest.fn().mockResolvedValue(getMock),
+  update: jest.fn(),
+  collection: jest.fn(),
+} as unknown as DocumentReference;
+
+const collectionMock: CollectionReference = {
+  doc: jest.fn(() => docMock),
+} as unknown as CollectionReference;
+
+const firestoreMock = jest.spyOn(admin, "firestore")
+  .mockImplementation(() => {
+    return {
+      collection: jest.fn(() => collectionMock),
+      doc: jest.fn(() => docMock),
+    } as unknown as Firestore;
+  });
+
+const refMock = {
+  update: jest.fn(),
+};
+
+const rtdbMock = jest.spyOn(admin, "database")
+  .mockImplementation(() => {
+    return {
+      ref: jest.fn(() => refMock),
+    } as unknown as Database;
+  });
+console.log(firestoreMock, rtdbMock);
+
+admin.initializeApp();
+
 initializeEmberFlow(projectConfig, admin, dbStructure, Entity, {}, {}, []);
-function createDocumentSnapshot(data: DocumentData|null, refPath: string, exists = true): DocumentSnapshot<DocumentData> {
+function createDocumentSnapshot(data: DocumentData|null, refPath: string, exists = true)
+    : functions.database.DataSnapshot {
   return {
     exists,
     id: "test-id",
     ref: {
-      id: "test-id",
-      path: refPath,
       set: jest.fn(),
       update: jest.fn(),
-      delete: jest.fn(),
-      get: jest.fn(),
+      remove: jest.fn(),
     },
-    data: () => data,
-    get: jest.fn(),
-    isEqual: jest.fn(),
-    create_time: _mockable.createNowTimestamp(),
-    update_time: _mockable.createNowTimestamp(),
-    readTime: _mockable.createNowTimestamp(),
-  } as unknown as DocumentSnapshot<DocumentData>;
+    val: () => data,
+  } as unknown as functions.database.DataSnapshot;
 }
 
-function createChange(beforeData: DocumentData|null, afterData: DocumentData|null, refPath: string): functions.Change<functions.firestore.DocumentSnapshot> {
+function createChange(beforeData: DocumentData|null, afterData: DocumentData|null, refPath: string): functions.Change<functions.database.DataSnapshot> {
   return {
     before: createDocumentSnapshot(beforeData, refPath),
     after: createDocumentSnapshot(afterData, refPath),
@@ -60,173 +95,23 @@ function createChange(beforeData: DocumentData|null, afterData: DocumentData|nul
 
 describe("onDocChange", () => {
   const entity = "user";
-  const refPath = "/example/test-id";
+  const refPath = "/forms/test-id";
 
-  const contextWithoutAuth: functions.EventContext = {
-    auth: undefined,
-    authType: "ADMIN",
-    eventId: "test-event-id",
-    eventType: "test-event-type",
-    params: {},
-    resource: {
-      name: "projects/test-project/databases/(default)/documents/test",
-      service: "firestore.googleapis.com",
-      type: "type",
-    },
-    timestamp: "2022-03-15T18:52:04.369Z",
-  };
-  const contextWithAuth: functions.EventContext = {
-    auth: {
-      uid: "test-uid",
-      token: {
-        email: "test-email",
-        email_verified: true,
-        name: "test-name",
-        picture: "test-picture",
-        sub: "test-sub",
-      },
-    },
-    authType: "ADMIN",
-    eventId: "test-event-id",
-    eventType: "test-event-type",
-    params: {},
-    resource: {
-      name: "projects/test-project/databases/(default)/documents/test",
-      service: "firestore.googleapis.com",
-      type: "type",
-    },
-    timestamp: "2022-03-15T18:52:04.369Z",
+  const eventContext: EventContext = {
+    id: "test-id",
+    uid: "test-uid",
+    formId: "test-form-id",
+    docId: "test-doc-id",
+    docPath: "/users/test-uid/test/doc-path",
   };
 
   beforeEach(() => {
-    // ...
-    jest.spyOn(admin, "initializeApp").mockImplementation();
-
-    const docMock: DocumentReference = {
-      set: jest.fn(),
-      get: jest.fn(),
-      update: jest.fn(),
-      delete: jest.fn(),
-      parent: {} as CollectionReference,
-      path: "",
-      firestore: {} as FirebaseFirestore.Firestore,
-      id: "",
-      isEqual: jest.fn(),
-
-      // Add the missing properties and methods
-      collection: jest.fn(),
-      listCollections: jest.fn(),
-      create: jest.fn(),
-      onSnapshot: jest.fn(),
-      withConverter: jest.fn(),
-      // Add other required properties/methods as needed
-    };
-
-
-    const collectionMock: CollectionReference = {
-      doc: jest.fn(() => docMock),
-      // Add other required properties/methods as needed
-    } as unknown as CollectionReference;
-
-    // Mock admin.firestore
-    const firestoreMock = jest.spyOn(admin, "firestore");
-
-    const firestoreInstance: FirebaseFirestore.Firestore = {
-      collection: jest.fn(() => collectionMock),
-      settings: jest.fn(),
-      doc: jest.fn(),
-      collectionGroup: jest.fn(),
-      getAll: jest.fn(),
-      runTransaction: jest.fn(),
-      batch: jest.fn(),
-      terminate: jest.fn(),
-      // Add the missing methods
-      recursiveDelete: jest.fn(),
-      listCollections: jest.fn(),
-      bulkWriter: jest.fn(),
-      bundle: jest.fn(),
-    };
-
-    firestoreMock.mockImplementation(() => firestoreInstance);
-
     // Add the spy for _mockable
     jest.spyOn(_mockable, "createNowTimestamp").mockReturnValue(Timestamp.now());
     jest.spyOn(console, "log").mockImplementation();
+    refMock.update.mockReset();
   });
 
-  afterEach(() => {
-    jest.restoreAllMocks();
-  });
-
-
-  it("should not execute when auth is null", async () => {
-    const change = createChange({}, {}, refPath);
-    await onDocChange(funcName, entity, change, contextWithoutAuth, "delete");
-    expect(console.log).toHaveBeenCalledWith("Auth is null, then this change is initiated by the service account and should be ignored");
-    expect(console.log).toHaveBeenCalledTimes(1);
-  });
-
-  it("should re-add deleted document", async () => {
-    const deletedDocumentData = {
-      field1: "value1",
-      field2: "value2",
-    };
-    const change = createChange(deletedDocumentData, null, refPath);
-    await onDocChange(funcName, entity, change, contextWithAuth, "delete");
-    expect(change.after.ref.set).toHaveBeenCalledWith(deletedDocumentData);
-    expect(change.after.ref.set).toHaveBeenCalledTimes(1);
-    expect(console.log).toHaveBeenCalledWith("Document re-added with ID test-id");
-    expect(console.log).toHaveBeenCalledTimes(4);
-  });
-
-  it("should revert modifications outside form", async () => {
-    const beforeData = {
-      field1: "oldValue",
-      field2: "oldValue",
-      field3: {
-        nestedField1: "oldValue",
-        nestedField2: "oldValue",
-      },
-    };
-    const afterData = {
-      "field1": "newValue",
-      "field2": "oldValue",
-      "field3": {
-        nestedField1: "newValue",
-        nestedField2: "oldValue",
-      },
-      "@form": {
-        "@actionType": "update",
-        "@status": "submit",
-      },
-    };
-
-    const change = createChange(beforeData, afterData, refPath);
-
-    // Mock validateForm to return a validation error
-    jest.spyOn(indexutils, "validateForm").mockResolvedValue([
-      true,
-      {
-        field1: ["error message 1"],
-        field2: ["error message 2"],
-      },
-    ]);
-
-    const revertModificationsOutsideFormMock = jest.spyOn(
-      indexutils,
-      "revertModificationsOutsideForm"
-    ).mockResolvedValue();
-
-    await onDocChange(funcName, "user", change, contextWithAuth, "update");
-
-    expect(revertModificationsOutsideFormMock).toHaveBeenCalledWith(afterData, beforeData, change.after);
-    expect(indexutils.validateForm).toHaveBeenCalledWith("user", afterData, refPath);
-    expect(change.after.ref.update).toHaveBeenCalledWith({
-      "@form.@status": "form-validation-failed",
-      "@form.@message": {"field1": ["error message 1"], "field2": ["error message 2"]},
-    });
-    expect(change.after.ref.update).toHaveBeenCalledTimes(1);
-  });
 
   it("should return on security check failure", async () => {
     const getSecurityFnMock = jest.spyOn(indexutils, "getSecurityFn");
@@ -237,89 +122,82 @@ describe("onDocChange", () => {
     const securityFnMock = jest.fn().mockResolvedValue(rejectedSecurityResult);
     getSecurityFnMock.mockReturnValue(securityFnMock);
 
-    const beforeData = {
+    const beforeFormData = {
+      "field1": "oldValue",
+      "field2": "oldValue",
+      "@status": "submit",
+    };
+
+    const afterFormData = {
+      "field1": "newValue",
+      "field2": "oldValue",
+      "@actionType": "update",
+      "@status": "submit",
+    };
+
+    const change = createChange(beforeFormData, afterFormData, refPath);
+
+    const document = {
       "field1": "oldValue",
       "field2": "oldValue",
       "field3": {
         nestedField1: "oldValue",
         nestedField2: "oldValue",
       },
-      "@form": {
-        "field1": "oldValue",
-        "field2": "oldValue",
-        "@status": "submit",
-      },
     };
-
-    const afterData = {
-      "field1": "oldValue",
-      "field2": "oldValue",
-      "field3": {
-        nestedField1: "oldValue",
-        nestedField2: "oldValue",
-      },
-      "@form": {
-        "field1": "newValue",
-        "field2": "oldValue",
-        "@actionType": "update",
-        "@status": "submit",
-      },
-    };
-
-    const change = createChange(beforeData, afterData, refPath);
+    dataMock.mockReturnValue(document);
 
     const validateFormMock = jest.spyOn(indexutils, "validateForm");
     validateFormMock.mockResolvedValue([false, {}] as ValidateFormResult);
-    await onDocChange(funcName, entity, change, contextWithAuth, "update");
+    await onDocChange(funcName, entity, change, eventContext, "update");
 
     expect(getSecurityFnMock).toHaveBeenCalledWith(entity);
-    expect(validateFormMock).toHaveBeenCalledWith(entity, change.after.data(), refPath);
-    expect(securityFnMock).toHaveBeenCalledWith(entity, change.after.data(), "update", ["field1"]);
-    expect(change.after.ref.update).toHaveBeenCalledWith({
-      "@form.@status": "security-error",
-      "@form.@message": "Unauthorized access",
+    expect(validateFormMock).toHaveBeenCalledWith(entity, change.after.val());
+    expect(securityFnMock).toHaveBeenCalledWith(entity, change.after.val(), document, "update", ["field1"]);
+    expect(refMock.update).toHaveBeenCalledWith({
+      "@status": "security-error",
+      "@message": "Unauthorized access",
     });
     expect(console.log).toHaveBeenCalledWith(`Security check failed: ${rejectedSecurityResult.message}`);
+    getSecurityFnMock.mockReset();
   });
 
   it("should call delayFormSubmissionAndCheckIfCancelled with correct parameters", async () => {
-    jest.spyOn(indexutils, "revertModificationsOutsideForm").mockResolvedValue();
-    jest.spyOn(indexutils, "validateForm").mockResolvedValue([false, {}]);
-    jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue(["field1", "field2"]);
-    jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() =>
+    const validateFormMock = jest.spyOn(indexutils, "validateForm").mockResolvedValue([false, {}]);
+    const getFormModifiedFieldsMock = jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue(["field1", "field2"]);
+    const getSecurityFnMock = jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() =>
       Promise.resolve({status: "allowed"})
     );
-
     const delayFormSubmissionAndCheckIfCancelledSpy = jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(true);
 
     const doc = {
-      "@form": {
-        "@delay": 1000,
-        "@status": "submit",
-        "@actionType": "create",
-      },
+      "@delay": 1000,
+      "@status": "submit",
+      "@actionType": "create",
       "someField": "exampleValue",
     };
 
     const change = createChange(null, doc, "/example/test-id");
     const event = "create";
-    await onDocChange(funcName, "user", change, contextWithAuth, event);
+    await onDocChange(funcName, "user", change, eventContext, event);
 
     // Test that the delayFormSubmissionAndCheckIfCancelled function is called with the correct parameters
     expect(delayFormSubmissionAndCheckIfCancelledSpy).toHaveBeenCalledWith(
       1000,
-      change.after,
+      refMock,
     );
 
-    // Test that snapshot.ref.update is called with the correct parameters
-    expect(change.after.ref.update).toHaveBeenCalledWith({"@form.@status": "cancelled"});
+    expect(refMock.update).toHaveBeenCalledWith({"@status": "cancelled"});
+    validateFormMock.mockReset();
+    getFormModifiedFieldsMock.mockReset();
+    getSecurityFnMock.mockReset();
+    delayFormSubmissionAndCheckIfCancelledSpy.mockReset();
   });
 
-  it("should not process the form if @form.@status is not 'submit'", async () => {
-    jest.spyOn(indexutils, "revertModificationsOutsideForm").mockResolvedValue();
-    jest.spyOn(indexutils, "validateForm").mockResolvedValue([false, {}]);
-    jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue(["field1", "field2"]);
-    jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() =>
+  it("should not process the form if @status is not 'submit'", async () => {
+    const validateFormMock = jest.spyOn(indexutils, "validateForm").mockResolvedValue([false, {}]);
+    const getFormModifiedFieldsMock = jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue(["field1", "field2"]);
+    const getSecurityFnMock = jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() =>
       Promise.resolve({status: "allowed"})
     );
 
@@ -336,71 +214,74 @@ describe("onDocChange", () => {
 
     const change = createChange(null, doc, "/example/test-id");
     const event = "create";
-    await onDocChange(funcName, "user", change, contextWithAuth, event);
+    await onDocChange(funcName, "user", change, eventContext, event);
 
     // Test that the delayFormSubmissionAndCheckIfCancelled function is NOT called
-    expect(indexutils.revertModificationsOutsideForm).toHaveBeenCalled();
     expect(indexutils.getFormModifiedFields).not.toHaveBeenCalled();
     expect(indexutils.getSecurityFn).not.toHaveBeenCalled();
     expect(delayFormSubmissionAndCheckIfCancelledSpy).not.toHaveBeenCalled();
+    expect(refMock.update).not.toHaveBeenCalled();
 
-    // Test that snapshot.ref.update is NOT called
-    expect(change.after.ref.update).not.toHaveBeenCalled();
+    validateFormMock.mockReset();
+    getFormModifiedFieldsMock.mockReset();
+    getSecurityFnMock.mockReset();
   });
 
-  it("should set @form.@status to 'submitted' after passing all checks", async () => {
-    jest.spyOn(indexutils, "revertModificationsOutsideForm").mockResolvedValue();
-    jest.spyOn(indexutils, "validateForm").mockResolvedValue([false, {}]);
-    jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue(["field1", "field2"]);
-    jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() =>
+  it("should set form @status to 'submitted' after passing all checks", async () => {
+    const validateFormMock = jest.spyOn(indexutils, "validateForm").mockResolvedValue([false, {}]);
+    const getFormModifiedFieldsMock = jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue(["field1", "field2"]);
+    const getSecurityFnMock = jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() =>
       Promise.resolve({status: "allowed"})
     );
-    jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(false);
+    const delayFormSubmissionAndCheckIfCancelledMock = jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(false);
 
-    const setActionSpy = jest.fn().mockResolvedValue({
+    const setActionMock = jest.fn().mockResolvedValue({
       update: jest.fn(),
     });
 
-    const updateActionSpy = jest.fn().mockResolvedValue({
+    const updateActionMock = jest.fn().mockResolvedValue({
       update: jest.fn(),
     });
 
-    jest.spyOn(_mockable, "initActionRef").mockResolvedValue({
-      set: setActionSpy,
-      update: updateActionSpy,
+    const initActionRefMock = jest.spyOn(_mockable, "initActionRef").mockResolvedValue({
+      set: setActionMock,
+      update: updateActionMock,
     } as any);
 
     const doc = {
-      "@form": {
-        "@actionType": "create",
-        "name": "test",
-        "@status": "submit",
-      },
-      "someField": "exampleValue",
+      "@actionType": "create",
+      "name": "test",
+      "@status": "submit",
     };
 
     const change = createChange(null, doc, "/example/test-id");
     const event = "create";
-    await onDocChange(funcName, "user", change, contextWithAuth, event);
+    await onDocChange(funcName, "user", change, eventContext, event);
 
-    // Test that the snapshot.ref.update is called with the correct parameters
-    expect(change.after.ref.update).toHaveBeenCalledWith({"@form.@status": "processing"});
-    expect(change.after.ref.update).toHaveBeenCalledWith({"@form.@status": "submitted"});
+    expect(refMock.update).toHaveBeenCalledWith({"@status": "processing"});
+    expect(refMock.update).toHaveBeenCalledWith({"@status": "submitted"});
 
     // Test that addActionSpy is called with the correct parameters
-    expect(setActionSpy).toHaveBeenCalled();
-    expect(updateActionSpy).toHaveBeenCalled();
+    expect(setActionMock).toHaveBeenCalled();
+    expect(updateActionMock).toHaveBeenCalled();
+
+    validateFormMock.mockReset();
+    getFormModifiedFieldsMock.mockReset();
+    getSecurityFnMock.mockReset();
+    delayFormSubmissionAndCheckIfCancelledMock.mockReset();
+    setActionMock.mockReset();
+    updateActionMock.mockReset();
+    initActionRefMock.mockReset();
   });
 
   it("should set @form.@status to 'logic-error' if there are logic error results", async () => {
-    jest.spyOn(indexutils, "revertModificationsOutsideForm").mockResolvedValue();
-    jest.spyOn(indexutils, "validateForm").mockResolvedValue([false, {}]);
-    jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue(["field1", "field2"]);
-    jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() => Promise.resolve({status: "allowed"}));
-    jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(false);
+    const validateFormMock = jest.spyOn(indexutils, "validateForm").mockResolvedValue([false, {}]);
+    const getFormModifiedFieldsMock = jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue(["field1", "field2"]);
+    const getSecurityFnMock = jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() => Promise.resolve({status: "allowed"}));
+    const delayFormSubmissionAndCheckIfCancelledMock = jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(false);
 
     const errorMessage = "logic error message";
-    const runBusinessLogicsSpy = jest.spyOn(indexutils, "runBusinessLogics").mockResolvedValue([
+    const runBusinessLogicsMock = jest.spyOn(indexutils, "runBusinessLogics").mockResolvedValue([
       {
         name: "testLogic",
         status: "error",
@@ -410,91 +291,94 @@ describe("onDocChange", () => {
       },
     ]);
 
-    const setActionSpy = jest.fn().mockResolvedValue({
+    const setActionMock = jest.fn().mockResolvedValue({
       update: jest.fn(),
     });
 
-    const updateActionSpy = jest.fn().mockResolvedValue({
+    const updateActionMock = jest.fn().mockResolvedValue({
       update: jest.fn(),
     });
 
-    jest.spyOn(_mockable, "initActionRef").mockResolvedValue({
-      set: setActionSpy,
-      update: updateActionSpy,
+    const initActionRefMock = jest.spyOn(_mockable, "initActionRef").mockResolvedValue({
+      set: setActionMock,
+      update: updateActionMock,
       collection: jest.fn().mockReturnValue({
         doc: jest.fn().mockReturnValue({
-          set: setActionSpy,
-          update: updateActionSpy,
+          set: setActionMock,
+          update: updateActionMock,
         }),
       }),
     } as any);
 
-    const doc = {
-      "@form": {
-        "@actionType": "create",
-        "name": "test",
-        "@status": "submit",
-      },
-      "someField": "exampleValue",
+    const form = {
+      "@actionType": "create",
+      "name": "test",
+      "@status": "submit",
     };
+    const doc = {
+      name: "test",
+      description: "test description",
+    };
+    dataMock.mockReturnValue(doc);
 
-    const change = createChange(null, doc, "/example/test-id");
+    const change = createChange(null, form, "/example/test-id");
     const event = "create";
 
-    await onDocChange(funcName, "user", change, contextWithAuth, event);
+    await onDocChange(funcName, "user", change, eventContext, event);
 
     // Test that the runBusinessLogics function was called with the correct parameters
-    expect(runBusinessLogicsSpy).toHaveBeenCalledWith(
+    expect(runBusinessLogicsMock).toHaveBeenCalledWith(
       "create",
       ["field1", "field2"],
       "user",
       expect.objectContaining({
+        eventContext,
         actionType: "create",
-        document: {
-          "@form": {
-            "@actionType": "create",
-            "@status": "submit",
-            "name": "test",
-          },
-          "someField": "exampleValue",
-        },
-        modifiedFields: ["field1", "field2"],
-        path: "/example/test-id",
-        status: "processing",
-        // TimeCreated is not specified because it's dynamic
-      })
-    );
-    // Test that the snapshot.ref.update is called with the correct parameters
-    expect(change.after.ref.update).toHaveBeenCalledTimes(3);
-    const updateMock = change.after.ref.update as jest.Mock;
-    expect(updateMock.mock.calls[0][0]).toEqual({"@form.@status": "processing"});
-    expect(updateMock.mock.calls[1][0]).toEqual({"@form.@status": "submitted"});
-    expect(updateMock.mock.calls[2][0]).toEqual({"@form.@status": "finished"});
-
-    // Test that collectionAddSpy is not called if there are logic errors
-    expect(setActionSpy).toHaveBeenCalledWith(expect.objectContaining({
-      actionType: "create",
-      document: {
-        "@form": {
+        document: doc,
+        form: {
           "@actionType": "create",
           "@status": "submit",
           "name": "test",
         },
-        "someField": "exampleValue",
+        modifiedFields: ["field1", "field2"],
+        status: "processing",
+        // TimeCreated is not specified because it's dynamic
+      })
+    );
+    expect(refMock.update).toHaveBeenCalledTimes(3);
+    expect(refMock.update.mock.calls[0][0]).toEqual({"@status": "processing"});
+    expect(refMock.update.mock.calls[1][0]).toEqual({"@status": "submitted"});
+    expect(refMock.update.mock.calls[2][0]).toEqual({"@status": "finished"});
+
+    // Test that collectionAddSpy is not called if there are logic errors
+    expect(setActionMock).toHaveBeenCalledWith(expect.objectContaining({
+      eventContext,
+      actionType: "create",
+      document: doc,
+      form: {
+        "@actionType": "create",
+        "@status": "submit",
+        "name": "test",
       },
       modifiedFields: ["field1", "field2"],
-      path: "/example/test-id",
       status: "processing",
       // TimeCreated is not specified because it's dynamic
     }));
-    expect(updateActionSpy).toHaveBeenCalledTimes(2);
-    expect(updateActionSpy.mock.calls[0][0]).toEqual({status: "finished-with-error", message: errorMessage});
+    expect(updateActionMock).toHaveBeenCalledTimes(2);
+    expect(updateActionMock.mock.calls[0][0]).toEqual({status: "finished-with-error", message: errorMessage});
+
+    validateFormMock.mockReset();
+    getFormModifiedFieldsMock.mockReset();
+    getSecurityFnMock.mockReset();
+    delayFormSubmissionAndCheckIfCancelledMock.mockReset();
+    runBusinessLogicsMock.mockReset();
+    setActionMock.mockReset();
+    updateActionMock.mockReset();
+    initActionRefMock.mockReset();
   });
 
-  // ... existing test code ...
 
   it("should execute the sequence of operations correctly", async () => {
-    jest.spyOn(indexutils, "revertModificationsOutsideForm").mockResolvedValue();
     jest.spyOn(indexutils, "validateForm").mockResolvedValue([false, {}]);
     jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue(["field1", "field2"]);
     jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() => Promise.resolve({status: "allowed"}));
@@ -530,16 +414,13 @@ describe("onDocChange", () => {
       }),
     } as any);
 
-    const doc = {
-      "@form": {
-        "@actionType": "create",
-        "name": "test",
-        "@status": "submit",
-      },
-      "someField": "exampleValue",
+    const form = {
+      "@actionType": "create",
+      "name": "test",
+      "@status": "submit",
     };
 
-    const change = createChange(null, doc, "/example/test-id");
+    const change = createChange(null, form, "/example/test-id");
     const event = "create";
 
     const consolidatedLogicResults = new Map<string, LogicResultDoc>();
@@ -574,12 +455,11 @@ describe("onDocChange", () => {
     jest.spyOn(indexutils, "runPeerSyncViews").mockResolvedValue(peerSyncViewLogicResults);
     jest.spyOn(indexutils, "distribute");
 
-    await onDocChange(funcName, "user", change, contextWithAuth, event);
+    await onDocChange(funcName, "user", change, eventContext, event);
 
     // Test that the runBusinessLogics function was called with the correct parameters
     expect(runBusinessLogicsSpy).toHaveBeenCalled();
-    // Test that the snapshot.ref.update is called with the correct parameters
-    expect(change.after.ref.update).toHaveBeenCalledTimes(3);
+    expect(refMock.update).toHaveBeenCalledTimes(3);
 
     expect(setActionSpy).toHaveBeenCalledTimes(2);
 
@@ -591,7 +471,7 @@ describe("onDocChange", () => {
     expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(2, consolidatedViewLogicResults, "test-uid");
     expect(indexutils.distribute).toHaveBeenNthCalledWith(1, userDocsByDstPath);
     expect(indexutils.distribute).toHaveBeenNthCalledWith(2, userViewDocsByDstPath);
-    expect(change.after.ref.update).toHaveBeenCalledWith({"@form.@status": "finished"});
+    expect(refMock.update).toHaveBeenCalledWith({"@status": "finished"});
     expect(indexutils.runPeerSyncViews).toHaveBeenCalledWith(userDocsByDstPath);
     expect(indexutils.consolidateAndGroupByDstPath).toHaveBeenNthCalledWith(3, peerSyncViewLogicResults);
     expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(3, consolidatedPeerSyncViewLogicResults, "test-uid");

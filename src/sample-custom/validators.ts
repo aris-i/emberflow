@@ -8,10 +8,9 @@ import {ValidationResult, ValidatorConfig} from "../types";
  * Validates the user document.
  *
  * @param {DocumentData} document - The document data to validate.
- * @param {string} docPath - The path to the document.
  * @return {Promise<ValidationResult>} An object containing validation errors, if any.
  */
-async function userValidator(document: DocumentData, docPath: string): Promise<ValidationResult> {
+async function userValidator(document: DocumentData): Promise<ValidationResult> {
   const data = document;
   const result: ValidationResult = {};
   if (!data || !data.name) {
@@ -24,10 +23,9 @@ async function userValidator(document: DocumentData, docPath: string): Promise<V
  * A blank validator that always returns an empty ValidationResult object.
  *
  * @param {DocumentData} document - The document data to validate.
- * @param {string} docPath - The path to the document.
  * @return {Promise<ValidationResult>} An empty ValidationResult object.
  */
-async function blankValidator(document: DocumentData, docPath: string): Promise<ValidationResult> {
+async function blankValidator(document: DocumentData): Promise<ValidationResult> {
   return Promise.resolve({});
 }
 

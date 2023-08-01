@@ -5,8 +5,9 @@ import DocumentData = firestore.DocumentData;
 import {LogicConfig, LogicFn} from "../types";
 
 const echoLogic: LogicFn = async (action) => {
-  const {document, timeCreated, path, modifiedFields} = action;
-  console.log(`Executing EchoLogic on document at ${path}...`);
+  const {document, timeCreated,
+    eventContext: {docPath}, modifiedFields} = action;
+  console.log(`Executing EchoLogic on document at ${docPath}...`);
 
   const updatedDoc: DocumentData = {};
 
@@ -28,7 +29,7 @@ const echoLogic: LogicFn = async (action) => {
     documents: [
       {
         action: "merge",
-        dstPath: path,
+        dstPath: docPath,
         doc: updatedDoc,
         instructions: {},
       },

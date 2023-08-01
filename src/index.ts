@@ -1,6 +1,7 @@
 import * as functions from "firebase-functions";
 import {
   Action,
+  EventContext,
   FirebaseAdmin,
   LogicConfig,
   LogicResultDoc,
@@ -19,7 +20,6 @@ import {
   groupDocsByUserAndDstPath,
   onDeleteFunction,
   processScheduledEntities,
-  revertModificationsOutsideForm,
   runBusinessLogics,
   runPeerSyncViews,
   runViewLogics,
@@ -29,10 +29,15 @@ import {initDbStructure} from "./init-db-structure";
 import {createViewLogicFn} from "./logics/view-logics";
 import {resetUsageStats, stopBillingIfBudgetExceeded, useBillProtect} from "./utils/bill-protect";
 import {Firestore} from "firebase-admin/firestore";
+import {DataSnapshot, onValueCreated, onValueUpdated} from "firebase-functions/lib/v2/providers/database";
+import {parseUserAndEntity} from "./utils/paths";
+import {database} from "firebase-admin";
+import Database = database.Database;
 
 
 export let admin: FirebaseAdmin;
 export let db: Firestore;
+export let rtdb: Database;
 export let dbStructure: Record<string, object>;
 export let Entity: Record<string, string>;
 export let securityConfig: SecurityConfig;
@@ -67,6 +72,7 @@ export function initializeEmberFlow(
   projectConfig = customProjectConfig;
   admin = adminInstance;
   db = admin.firestore();
+  rtdb = admin.database();
   dbStructure = customDbStructure;
   Entity = CustomEntity;
   securityConfig = customSecurityConfig;
@@ -94,31 +100,67 @@ export function initializeEmberFlow(
 
   const _onDocChange = useBillProtect(onDocChange);
 
-  Object.values(docPaths).forEach((path) => {
-    const parts = path.split("/");
-    const entity = parts[parts.length - 1].replace(/{(\w+)Id}$/, "$1");
+  functionsConfig["onFormCreate"] = onValueCreated(
+    {
+      ref: "forms/{userId}/{formId}",
+      region: projectConfig.region,
+      instance: projectConfig.rtdbName,
+    }, async (event) => {
+      const snapshot = event.data;
+      if (!snapshot) {
+        console.log("Snapshot is undefined onValueCreated. Returning");
+        return;
+      }
+      const {userId, formId} = event.params;
+      // Get user id from path
+      const docPath = snapshot.val()["@docPath"] as string;
+      const {userId: docPathUserId, entity, docId} = parseUserAndEntity(docPath);
+      if (docPathUserId !== userId) {
+        console.warn("User id from path does not match user id from event params");
+        return;
+      }
+      const eventContext: EventContext = {
+        id: event.id,
+        uid: userId,
+        formId,
+        docId,
+        docPath,
+      };
+      const onCreateFuncName = `on${entity.charAt(0).toUpperCase() + entity.slice(1)}Create`;
+      await _onDocChange(onCreateFuncName, entity, {before: undefined, after: snapshot}, eventContext, "create");
+    }
+  );
 
-    const onCreateFuncName = `on${entity.charAt(0).toUpperCase() + entity.slice(1)}Create`;
-    functionsConfig[onCreateFuncName] = functions.firestore
-      .document(path)
-      .onCreate(async (snapshot, context) => {
-        await _onDocChange(onCreateFuncName, entity, {before: null, after: snapshot}, context, "create");
-      });
-
-    const onEditFuncName = `on${entity.charAt(0).toUpperCase() + entity.slice(1)}Update`;
-    functionsConfig[onEditFuncName] = functions.firestore
-      .document(path)
-      .onUpdate(async (change, context) => {
-        await _onDocChange(onEditFuncName, entity, change, context, "update");
-      });
-
-    const onDeleteFuncName = `on${entity.charAt(0).toUpperCase() + entity.slice(1)}Delete`;
-    functionsConfig[onDeleteFuncName] = functions.firestore
-      .document(path)
-      .onDelete(async (snapshot, context) => {
-        await _onDocChange(onDeleteFuncName, entity, {before: snapshot, after: null}, context, "delete");
-      });
-  });
+  functionsConfig["onFormUpdate"] = onValueUpdated(
+    {
+      ref: "forms/{userId}/{formId}",
+      region: projectConfig.region,
+      instance: projectConfig.rtdbName,
+    }, async (event) => {
+      const change = event.data;
+      if (!change) {
+        console.log("changeSnapshot is undefined onValueUpdated. Returning");
+        return;
+      }
+      const {userId, formId} = event.params;
+      // Get user id from path
+      const docPath = change.after.val()["@docPath"];
+      const {userId: docPathUserId, entity, docId} = parseUserAndEntity(docPath);
+      if (docPathUserId !== userId) {
+        console.warn("User id from path does not match user id from event params");
+        return;
+      }
+      const eventContext: EventContext = {
+        id: event.id,
+        uid: userId,
+        formId,
+        docId,
+        docPath,
+      };
+      const onEditFuncName = `on${entity.charAt(0).toUpperCase() + entity.slice(1)}Create`;
+      await _onDocChange(onEditFuncName, entity, change, eventContext, "update");
+    }
+  );
 
   functionsConfig["onBudgetAlert"] =
         functions.pubsub.topic(projectConfig.budgetAlertTopicName).onPublish(stopBillingIfBudgetExceeded);
@@ -139,92 +181,71 @@ async function initActionRef(eventId: string) {
 export async function onDocChange(
   funcName: string,
   entity: string,
-  change: functions.Change<functions.firestore.DocumentSnapshot | null>,
-  context: functions.EventContext,
+  change: functions.Change<DataSnapshot | undefined>,
+  eventContext: EventContext,
   event: "create" | "update" | "delete"
 ) {
-  if (!context.auth) {
-    console.log("Auth is null, then this change is initiated by the service account and should be ignored");
+  console.log(`Running ${funcName} for ${entity} on ${event} event`);
+  const {id: eventId, uid: userId, formId, docPath} = eventContext;
+  const afterDocument = change.after ? change.after.val() : null;
+  const beforeDocument = change.before ? change.before.val() : null;
+  const form = afterDocument || beforeDocument;
+  const formSnapshot = (change.after || change.before);
+  const formResponseRef = rtdb.ref(`forms-response/${formId}`);
+  if (!formSnapshot || !form) {
+    console.error("Snapshot or form should not be null");
     return;
   }
-  const eventId = context.eventId;
-  const userId = context.auth.uid;
-  const afterDocument = change.after ? change.after.data() : null;
-  const beforeDocument = change.before ? change.before.data() : null;
-  const document = afterDocument || beforeDocument;
-  const snapshot = change.after || change.before;
-  if (!snapshot || !document) {
-    console.error("Snapshot or document should not be null");
-    return;
-  }
-  const documentId = snapshot.ref.id;
-  console.log(`Document ${event}d in ${context.resource.service.split("/")[6]} collection with ID ${documentId}`);
+  console.log(`Document ${event}d in ${docPath}`);
   console.log("After Document data: ", afterDocument);
-  console.log("Before document data: ", beforeDocument);
+  console.log("Before form data: ", beforeDocument);
 
-  // Re save document if deleted
-  if (event === "delete") {
-    // Re-add deleted document
-    await snapshot.ref.set(document);
-    console.log(`Document re-added with ID ${documentId}`);
-    return;
-  }
-
-  if (afterDocument) {
-    await revertModificationsOutsideForm(afterDocument, beforeDocument, snapshot);
-  }
-
-  // if not form.@status is submit then return
-  if (document?.["@form"]?.["@status"] !== "submit") {
-    console.log("Form is not submitted");
-    return;
-  }
-
-  // Create Action document
-  const actionType = document["@form"]?.["@actionType"];
+  // Create Action form
+  const actionType = form["@actionType"];
   if (!actionType) {
     console.log("No actionType found");
     return;
   }
 
-  // Validate the document
-  const [hasValidationError, validationResult] = await validateForm(entity, document, snapshot.ref.path);
+  // Validate the form
+  const [hasValidationError, validationResult] = await validateForm(entity, form);
   if (hasValidationError) {
-    await snapshot.ref.update({"@form.@status": "form-validation-failed", "@form.@message": validationResult});
+    await formResponseRef.update({"@status": "validation-error", "@message": validationResult});
     return;
   }
 
-  const formModifiedFields = getFormModifiedFields(document);
+  const document = (await db.doc(docPath).get()).data() || {};
+  const formModifiedFields = getFormModifiedFields(form, document);
   // Run security check
   const securityFn = getSecurityFn(entity);
   if (securityFn) {
-    const securityResult = await securityFn(entity, document, event, formModifiedFields);
+    const securityResult = await securityFn(entity, form, document, event, formModifiedFields);
     if (securityResult.status === "rejected") {
       console.log(`Security check failed: ${securityResult.message}`);
-      await snapshot.ref.update({"@form.@status": "security-error", "@form.@message": securityResult.message});
+      await formResponseRef.update({"@status": "security-error", "@message": securityResult.message});
       return;
     }
   }
 
   // Check for delay
-  const delay = document?.["@form"]?.["@delay"];
+  const delay = form["@delay"];
   if (delay) {
-    if (await delayFormSubmissionAndCheckIfCancelled(delay, snapshot)) {
-      await snapshot.ref.update({"@form.@status": "cancelled"});
+    if (await delayFormSubmissionAndCheckIfCancelled(delay, formResponseRef)) {
+      await formResponseRef.update({"@status": "cancelled"});
       return;
     }
   }
 
-  await snapshot.ref.update({"@form.@status": "processing"});
+  await formResponseRef.update({"@status": "processing"});
 
-  const path = snapshot.ref.path;
   const status = "processing";
   const timeCreated = _mockable.createNowTimestamp();
 
   const action: Action = {
+    eventContext,
     actionType,
-    path,
     document,
+    form,
     status,
     timeCreated,
     modifiedFields: formModifiedFields,
@@ -232,13 +253,13 @@ export async function onDocChange(
   const actionRef = await _mockable.initActionRef(eventId);
   await actionRef.set(action);
 
-  await snapshot.ref.update({"@form.@status": "submitted"});
+  await formResponseRef.update({"@status": "submitted"});
 
   const logicResults = await runBusinessLogics(actionType, formModifiedFields, entity, action);
-  // Save all logic results under logicResults collection of action document
+  // Save all logic results under logicResults collection of action form
   for (let i = 0; i < logicResults.length; i++) {
     const {documents, ...logicResult} = logicResults[i];
-    const logicResultRef = await actionRef.collection("logicResults")
+    const logicResultRef = actionRef.collection("logicResults")
       .doc(`${actionRef.id}-${i}`);
     await logicResultRef.set(logicResult);
     for (let j = 0; j < documents.length; j++) {
@@ -251,7 +272,6 @@ export async function onDocChange(
   if (errorLogicResults.length > 0) {
     const errorMessage = errorLogicResults.map((result) => result.message).join("\n");
     await actionRef.update({status: "finished-with-error", message: errorMessage});
-    // TODO:  Need to cancel everything if there's an error.
   }
 
   const dstPathLogicDocsMap: Map<string, LogicResultDoc> = consolidateAndGroupByDstPath(logicResults);
@@ -269,7 +289,7 @@ export async function onDocChange(
 
   await distribute(userDocsByDstPath);
   await distribute(userViewDocsByDstPath);
-  await snapshot.ref.update({"@form.@status": "finished"});
+  await formResponseRef.update({"@status": "finished"});
 
   const peerSyncViewLogicResults = await runPeerSyncViews(userDocsByDstPath);
   const dstPathPeerSyncViewLogicDocsMap: Map<string, LogicResultDoc> = consolidateAndGroupByDstPath(peerSyncViewLogicResults);

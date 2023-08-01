@@ -7,15 +7,18 @@ export type FirebaseAdmin = typeof admin;
 
 export interface ProjectConfig {
     projectId: string;
+    region: string;
+    rtdbName: string;
     budgetAlertTopicName: string;
     maxCostLimitPerFunction: number;
     specialCostLimitPerFunction: { [key: string]: number };
 }
 
 export interface Action{
+    eventContext: EventContext,
     actionType: string;
-    path: string;
     document: FirebaseFirestore.DocumentData;
+    form: FirebaseFirestore.DocumentData;
     modifiedFields?: string[];
     status: "new" | "processing" | "processed" | "processed-with-errors";
     timeCreated: Timestamp;
@@ -65,12 +68,12 @@ export interface SecurityResult {
     message?: string;
 }
 
-export type SecurityFn = (entity: string, doc: DocumentData, actionType: LogicActionType, modifiedFields?: string[]) => Promise<SecurityResult>;
+export type SecurityFn = (entity: string, form: FirebaseFirestore.DocumentData, document: FirebaseFirestore.DocumentData, actionType: LogicActionType, modifiedFields?: string[]) => Promise<SecurityResult>;
 export type SecurityConfig = Record<string, SecurityFn>;
 export interface ValidationResult {
     [key: string]: string[];
 }
-export type ValidatorFn = (document: DocumentData, docPath: string) => Promise<ValidationResult>;
+export type ValidatorFn = (document: DocumentData) => Promise<ValidationResult>;
 export type ValidatorConfig = Record<string, ValidatorFn>;
 export type ValidateFormResult = [hasValidationErrors: boolean, validationResult: ValidationResult];
 
@@ -95,4 +98,12 @@ export interface ScheduledEntity {
     colPath: string;
     data: { [key: string]: any };
     runAt: Timestamp;
+}
+
+export interface EventContext {
+    id: string;
+    uid: string;
+    formId: string;
+    docId: string;
+    docPath: string;
 }

@@ -8,6 +8,7 @@ import {
   computeElapseTime,
 } from "../../utils/bill-protect";
 import {db} from "../../index";
+import {EventContext} from "../../types";
 
 const funcName = "testFunc";
 jest.mock("../../index", () => ({
@@ -132,19 +133,15 @@ describe("useBillProtect", () => {
 
   const entity = "example";
   const change = {
-    before: null,
-    after: null,
+    before: undefined,
+    after: undefined,
   };
-  const context = {
-    eventId: "12345",
-    eventType: "create",
-    params: {}, // Add any necessary parameters
-    resource: {
-      name: "projects/my-project-id/databases/(default)/documents",
-      type: "cloud.firestore",
-      service: "firestore",
-    },
-    timestamp: "2023-05-16T00:00:00Z",
+  const context: EventContext = {
+    id: "12345",
+    uid: "u12345",
+    formId: "f12345",
+    docId: "d12345",
+    docPath: "users/u12345/friends/f12345",
   };
   const event = "create";
   const onDocChangeMock = jest.fn().mockResolvedValue({});

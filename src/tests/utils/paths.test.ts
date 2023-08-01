@@ -9,6 +9,8 @@ import {dbStructure, Entity} from "../../sample-custom/db-structure";
 const projectConfig: ProjectConfig = {
   projectId: "your-project-id",
   budgetAlertTopicName: "budget-alerts",
+  region: "asia-southeast1",
+  rtdbName: "your-rtdb-name",
   maxCostLimitPerFunction: 100,
   specialCostLimitPerFunction: {
     function1: 50,
@@ -17,7 +19,9 @@ const projectConfig: ProjectConfig = {
   },
 };
 
-admin.initializeApp();
+admin.initializeApp({
+  databaseURL: `https://${projectConfig.rtdbName}.${projectConfig.region}.firebasedatabase.app/`,
+});
 initializeEmberFlow(projectConfig, admin, dbStructure, Entity, {}, {}, []);
 
 // Mock fetchIds function

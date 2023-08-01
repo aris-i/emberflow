@@ -13,6 +13,8 @@ module.exports = {
     // Add a moduleNameMapper for custom aliases
     moduleNameMapper: {
         '^@/(.*)$': '<rootDir>/src/$1',
+        'firebase-functions/lib/v2/providers/database':
+            '<rootDir>/node_modules/firebase-functions/lib/v2/providers/database.js',
     },
 
     // Add a testRegex to specify the location of your test files

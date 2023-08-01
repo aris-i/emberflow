@@ -7,12 +7,25 @@ export enum Entity {
     Feed = "feed",
     Friend = "friend",
     Game = "game",
+    Algolia = "algolia",
+    Topic = "topic",
+    TopicAlgolia = "topic-algolia",
 }
 
 // Map your custom entities to dbStructure below.
 // Do not remove users and [Entity.User]
 // by default, view matches the id attribute of the view so make the sure that a view has an id
 export const dbStructure = {
+  // TODO: Implement view Options i.e. autoCreate
+  push: {
+    [Entity.Algolia]: {
+      topics: {
+        [Entity.TopicAlgolia]: {
+          [view(Entity.Topic, ["name", "summary", "type"], {autoCreate: true})]: {},
+        },
+      },
+    },
+  },
   users: {
     [Entity.User]: {
       feeds: {

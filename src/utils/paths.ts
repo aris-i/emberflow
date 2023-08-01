@@ -153,3 +153,10 @@ export async function hydrateDocPath(destDocPath: string, entityCondition: Recor
   return documentPaths;
 }
 
+export function parseUserAndEntity(docPath: string) {
+  const parts = docPath.split("/");
+  const userId = parts[1];
+  const docId = parts[parts.length - 1];
+  const entity = docId.replace(/{(\w+)Id}$/, "$1");
+  return {userId, docId, entity};
+}
