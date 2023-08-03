@@ -282,6 +282,7 @@ describe("runBusinessLogics", () => {
       docId: "document123",
       formId: "form123",
       docPath: "users/user123",
+      entity: "user",
     },
     actionType,
     document: {

@@ -1,4 +1,4 @@
-import {admin, db, docPaths, onDocChange, projectConfig} from "../index";
+import {admin, db, onFormSubmit, projectConfig} from "../index";
 import {CloudBillingClient} from "@google-cloud/billing";
 import {firestore} from "firebase-admin";
 import * as batch from "../utils/batch";
@@ -30,7 +30,7 @@ export interface BillingAlertEvent {
   currencyCode: string;
 }
 
-type onDocChangeType = typeof onDocChange;
+type onFormSubmitType = typeof onFormSubmit;
 
 async function fetchAndInitFuncConfig(db: FirebaseFirestore.Firestore, funcName: string) {
   const funcConfigRef = db.collection("@server").doc("config")
@@ -78,7 +78,8 @@ export function computeTotalCost(totalInvocations: number, pricePer1MInvocation:
   return invocationCost + computeTimeCost;
 }
 
-async function lockdownCollection(entity: string) {
+// TODO:  Convert this to firebase rules
+async function lockdownCollection(docPath: string) {
   const app = admin.app();
 
   // Get the current Firestore rules.
@@ -86,7 +87,6 @@ async function lockdownCollection(entity: string) {
   let currentRules = ruleset.source[0].content;
 
   // Define the new match block.
-  const docPath = docPaths[entity];
   const newMatchBlock = `
       match /databases/{database}/${docPath} {
         allow write: if false;
@@ -141,15 +141,11 @@ export const _mockable = {
   disableBillingForProject,
 };
 
-
-export function useBillProtect(onDocChange: onDocChangeType) : onDocChangeType {
-  return async (
-    funcName,
-    entity,
-    change,
-    context,
-    event
-  ) => {
+export function useBillProtect(onFormSubmit: onFormSubmitType) : onFormSubmitType {
+  return async (event) => {
+    const formColPath = event.data.ref.parent?.toString();
+    const {userId} = event.params;
+    const funcName = `onFormSubmittedBy${userId}`;
     if (_mockable.isHardDisabled()) {
       console.warn(`Function ${funcName} is hard disabled.  Returning immediately`);
       return;
@@ -187,13 +183,15 @@ export function useBillProtect(onDocChange: onDocChangeType) : onDocChangeType {
         await _mockable.disableFunc(funcConfigRef);
 
         // Update firestore rules to lockdown collection
-        await _mockable.lockdownCollection(entity);
+        if (formColPath) {
+          await _mockable.lockdownCollection(formColPath);
+        }
 
         // TODO: Send email to all devs
         return;
       }
 
-      return onDocChange(funcName, entity, change, context, event);
+      return onFormSubmit(event);
     } finally {
       const endTime = process.hrtime();
       await _mockable.incrementTotalElapsedTimeInMs(funcUsageRef, _mockable.computeElapseTime(startTime, endTime));

@@ -27,10 +27,10 @@ import {
 } from "./index-utils";
 import {initDbStructure} from "./init-db-structure";
 import {createViewLogicFn} from "./logics/view-logics";
-import {resetUsageStats, stopBillingIfBudgetExceeded, useBillProtect} from "./utils/bill-protect";
+import {resetUsageStats, stopBillingIfBudgetExceeded} from "./utils/bill-protect";
 import {Firestore} from "firebase-admin/firestore";
-import {DataSnapshot, onValueCreated, onValueUpdated} from "firebase-functions/lib/v2/providers/database";
-import {parseUserAndEntity} from "./utils/paths";
+import {DatabaseEvent, DataSnapshot, onValueCreated} from "firebase-functions/lib/v2/providers/database";
+import {parseEntity} from "./utils/paths";
 import {database} from "firebase-admin";
 import Database = database.Database;
 
@@ -98,69 +98,15 @@ export function initializeEmberFlow(
     };
   });
 
-  const _onDocChange = useBillProtect(onDocChange);
-
-  functionsConfig["onFormCreate"] = onValueCreated(
+  functionsConfig["onFormSubmit"] = onValueCreated(
     {
       ref: "forms/{userId}/{formId}",
       region: projectConfig.region,
       instance: projectConfig.rtdbName,
-    }, async (event) => {
-      const snapshot = event.data;
-      if (!snapshot) {
-        console.log("Snapshot is undefined onValueCreated. Returning");
-        return;
-      }
-      const {userId, formId} = event.params;
-      // Get user id from path
-      const docPath = snapshot.val()["@docPath"] as string;
-      const {userId: docPathUserId, entity, docId} = parseUserAndEntity(docPath);
-      if (docPathUserId !== userId) {
-        console.warn("User id from path does not match user id from event params");
-        return;
-      }
-      const eventContext: EventContext = {
-        id: event.id,
-        uid: userId,
-        formId,
-        docId,
-        docPath,
-      };
-      const onCreateFuncName = `on${entity.charAt(0).toUpperCase() + entity.slice(1)}Create`;
-      await _onDocChange(onCreateFuncName, entity, {before: undefined, after: snapshot}, eventContext, "create");
-    }
+    },
+    onFormSubmit
   );
 
-  functionsConfig["onFormUpdate"] = onValueUpdated(
-    {
-      ref: "forms/{userId}/{formId}",
-      region: projectConfig.region,
-      instance: projectConfig.rtdbName,
-    }, async (event) => {
-      const change = event.data;
-      if (!change) {
-        console.log("changeSnapshot is undefined onValueUpdated. Returning");
-        return;
-      }
-      const {userId, formId} = event.params;
-      // Get user id from path
-      const docPath = change.after.val()["@docPath"];
-      const {userId: docPathUserId, entity, docId} = parseUserAndEntity(docPath);
-      if (docPathUserId !== userId) {
-        console.warn("User id from path does not match user id from event params");
-        return;
-      }
-      const eventContext: EventContext = {
-        id: event.id,
-        uid: userId,
-        formId,
-        docId,
-        docPath,
-      };
-      const onEditFuncName = `on${entity.charAt(0).toUpperCase() + entity.slice(1)}Create`;
-      await _onDocChange(onEditFuncName, entity, change, eventContext, "update");
-    }
-  );
 
   functionsConfig["onBudgetAlert"] =
         functions.pubsub.topic(projectConfig.budgetAlertTopicName).onPublish(stopBillingIfBudgetExceeded);
@@ -174,36 +120,43 @@ export function initializeEmberFlow(
   return {docPaths, colPaths, docPathsRegex, functionsConfig};
 }
 
-async function initActionRef(eventId: string) {
-  return db.collection("actions").doc(eventId);
+async function initActionRef(actionId: string) {
+  return db.collection("actions").doc(actionId);
 }
 
-export async function onDocChange(
-  funcName: string,
-  entity: string,
-  change: functions.Change<DataSnapshot | undefined>,
-  eventContext: EventContext,
-  event: "create" | "update" | "delete"
+export async function onFormSubmit(
+  event: DatabaseEvent<DataSnapshot>,
 ) {
-  console.log(`Running ${funcName} for ${entity} on ${event} event`);
-  const {id: eventId, uid: userId, formId, docPath} = eventContext;
-  const afterDocument = change.after ? change.after.val() : null;
-  const beforeDocument = change.before ? change.before.val() : null;
-  const form = afterDocument || beforeDocument;
-  const formSnapshot = (change.after || change.before);
+  console.log("Running onFormSubmit");
+
+  const formSnapshot = event.data;
+  const form = formSnapshot.val();
+  const {userId, formId} = event.params;
   const formResponseRef = rtdb.ref(`forms-response/${formId}`);
-  if (!formSnapshot || !form) {
-    console.error("Snapshot or form should not be null");
+
+  const docPath = form["@docPath"] as string;
+  const {entity, entityId} = parseEntity(docPath);
+  if (!entity) {
+    const message = "docPath does not match any known Entity";
+    console.warn(message);
+    await formResponseRef.update({"@status": "error", "@message": message});
     return;
   }
-  console.log(`Document ${event}d in ${docPath}`);
-  console.log("After Document data: ", afterDocument);
-  console.log("Before form data: ", beforeDocument);
+
+  // Get user id from path
+  if (!docPath.startsWith(`users/${userId}`)) {
+    const message = "User id from path does not match user id from event params";
+    console.warn(message);
+    await formResponseRef.update({"@status": "error", "@message": message});
+    return;
+  }
 
   // Create Action form
   const actionType = form["@actionType"];
   if (!actionType) {
-    console.log("No actionType found");
+    const message = "No @actionType found";
+    console.warn(message);
+    await formResponseRef.update({"@status": "error", "@message": message});
     return;
   }
 
@@ -219,7 +172,7 @@ export async function onDocChange(
   // Run security check
   const securityFn = getSecurityFn(entity);
   if (securityFn) {
-    const securityResult = await securityFn(entity, form, document, event, formModifiedFields);
+    const securityResult = await securityFn(entity, form, document, actionType, formModifiedFields);
     if (securityResult.status === "rejected") {
       console.log(`Security check failed: ${securityResult.message}`);
       await formResponseRef.update({"@status": "security-error", "@message": securityResult.message});
@@ -241,6 +194,15 @@ export async function onDocChange(
   const status = "processing";
   const timeCreated = _mockable.createNowTimestamp();
 
+  const eventContext: EventContext = {
+    id: event.id,
+    uid: userId,
+    formId,
+    docId: entityId,
+    docPath,
+    entity,
+  };
+
   const action: Action = {
     eventContext,
     actionType,
@@ -250,7 +212,7 @@ export async function onDocChange(
     timeCreated,
     modifiedFields: formModifiedFields,
   };
-  const actionRef = await _mockable.initActionRef(eventId);
+  const actionRef = await _mockable.initActionRef(formId);
   await actionRef.set(action);
 
   await formResponseRef.update({"@status": "submitted"});

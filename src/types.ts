@@ -68,7 +68,9 @@ export interface SecurityResult {
     message?: string;
 }
 
-export type SecurityFn = (entity: string, form: FirebaseFirestore.DocumentData, document: FirebaseFirestore.DocumentData, actionType: LogicActionType, modifiedFields?: string[]) => Promise<SecurityResult>;
+export type SecurityFn = (entity: string, form: FirebaseFirestore.DocumentData,
+                          document: FirebaseFirestore.DocumentData, actionType: LogicActionType,
+                          modifiedFields?: string[]) => Promise<SecurityResult>;
 export type SecurityConfig = Record<string, SecurityFn>;
 export interface ValidationResult {
     [key: string]: string[];
@@ -106,4 +108,5 @@ export interface EventContext {
     formId: string;
     docId: string;
     docPath: string;
+    entity: string;
 }

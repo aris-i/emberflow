@@ -8,9 +8,9 @@ import {
   computeElapseTime,
 } from "../../utils/bill-protect";
 import {db} from "../../index";
-import {EventContext} from "../../types";
+import {DatabaseEvent, DataSnapshot} from "firebase-functions/lib/v2/providers/database";
 
-const funcName = "testFunc";
+const funcName = "onFormSubmittedByu12345";
 jest.mock("../../index", () => ({
   db: {
     collection: jest.fn().mockReturnThis(),
@@ -27,7 +27,7 @@ jest.mock("../../index", () => ({
   docPaths: {
     // mock docPaths here
   },
-  onDocChange: jest.fn().mockResolvedValue({}),
+  onFormSubmit: jest.fn().mockResolvedValue({}),
 }));
 
 describe("computeElapseTime", () => {
@@ -131,31 +131,35 @@ describe("useBillProtect", () => {
     jest.spyOn(console, "warn").mockImplementation();
   });
 
-  const entity = "example";
-  const change = {
-    before: undefined,
-    after: undefined,
-  };
-  const context: EventContext = {
-    id: "12345",
-    uid: "u12345",
-    formId: "f12345",
-    docId: "d12345",
-    docPath: "users/u12345/friends/f12345",
-  };
-  const event = "create";
-  const onDocChangeMock = jest.fn().mockResolvedValue({});
+  const formColPath = "forms/u12345";
+  const event = {
+    data: {
+      "@actionType": "create",
+      "someField": "someValue",
+      "ref": {
+        parent: {
+          toString: () => formColPath,
+        },
+      },
+    },
+    params: {
+      formId: "f12345",
+      userId: "u12345",
+    },
+  } as unknown as DatabaseEvent<DataSnapshot>;
 
-  it("should invoke onDocChange and update Firestore", async () => {
-    const protectedFunction = useBillProtect(onDocChangeMock);
+  const onFormSubmitMock = jest.fn().mockResolvedValue({});
+
+  it("should invoke onFormSubmit and update Firestore", async () => {
+    const protectedFunction = useBillProtect(onFormSubmitMock);
 
     // Mock the computeElapseTime function to return a specific value
     jest.spyOn(_mockable, "computeElapseTime").mockReturnValue(200);
     jest.spyOn(_mockable, "computeTotalCost").mockReturnValue(9);
 
-    await protectedFunction(funcName, entity, change, context, event);
+    await protectedFunction(event);
 
-    expect(onDocChangeMock).toHaveBeenCalledWith(funcName, entity, change, context, event);
+    expect(onFormSubmitMock).toHaveBeenCalledWith(event);
     expect(_mockable.fetchAndInitFuncConfig).toHaveBeenCalledWith(db, funcName);
     expect(_mockable.fetchAndInitFuncUsage).toHaveBeenCalledWith(db, funcName);
     expect(_mockable.incrementTotalInvocations).toHaveBeenCalledWith(funcUsageRef);
@@ -172,15 +176,15 @@ describe("useBillProtect", () => {
   });
 
   it("should disable function and lockdown collection when budget exceeded", async () => {
-    const protectedFunction = useBillProtect(onDocChangeMock);
+    const protectedFunction = useBillProtect(onFormSubmitMock);
 
     // Mock the computeElapseTime function to return a specific value
     jest.spyOn(_mockable, "computeElapseTime").mockReturnValue(200);
     jest.spyOn(_mockable, "computeTotalCost").mockReturnValue(10);
 
-    await protectedFunction(funcName, entity, change, context, event);
+    await protectedFunction(event);
 
-    expect(onDocChangeMock).not.toHaveBeenCalled();
+    expect(onFormSubmitMock).not.toHaveBeenCalled();
     expect(_mockable.fetchAndInitFuncConfig).toHaveBeenCalledWith(db, funcName);
     expect(_mockable.fetchAndInitFuncUsage).toHaveBeenCalledWith(db, funcName);
     expect(_mockable.incrementTotalInvocations).toHaveBeenCalledWith(funcUsageRef);
@@ -190,7 +194,7 @@ describe("useBillProtect", () => {
       mockFuncUsage.totalElapsedTimeInMs,
       mockFuncConfig.pricePer100ms);
     expect(_mockable.disableFunc).toHaveBeenCalledWith(funcConfigRef);
-    expect(_mockable.lockdownCollection).toHaveBeenCalledWith(entity);
+    expect(_mockable.lockdownCollection).toHaveBeenCalledWith(formColPath);
     expect(_mockable.computeElapseTime).toHaveBeenCalledWith(expect.arrayContaining([expect.any(Number)]), expect.arrayContaining([expect.any(Number)]));
     expect(_mockable.incrementTotalElapsedTimeInMs).toHaveBeenCalledWith(funcUsageRef, 200);
     expect(console.warn).toHaveBeenCalledWith(`Function ${funcName} has exceeded the cost limit of $10`);
@@ -204,10 +208,10 @@ describe("useBillProtect", () => {
       funcConfig: mockFuncDisabledConfig,
     });
 
-    const protectedFunction = useBillProtect(onDocChangeMock);
-    await protectedFunction(funcName, entity, change, context, event);
+    const protectedFunction = useBillProtect(onFormSubmitMock);
+    await protectedFunction(event);
 
-    expect(onDocChangeMock).not.toHaveBeenCalled();
+    expect(onFormSubmitMock).not.toHaveBeenCalled();
     expect(_mockable.fetchAndInitFuncConfig).toHaveBeenCalledWith(db, funcName);
     expect(_mockable.fetchAndInitFuncUsage).toHaveBeenCalledWith(db, funcName);
     expect(_mockable.incrementTotalInvocations).toHaveBeenCalledWith(funcUsageRef);
@@ -222,11 +226,11 @@ describe("useBillProtect", () => {
   it("should return immediately when hardDisabled is true", async () => {
     jest.spyOn(_mockable, "isHardDisabled").mockReturnValue(true);
     jest.spyOn(_mockable, "computeTotalCost");
-    const protectedFunction = useBillProtect(onDocChangeMock);
+    const protectedFunction = useBillProtect(onFormSubmitMock);
 
-    await protectedFunction(funcName, entity, change, context, event);
+    await protectedFunction(event);
 
-    expect(onDocChangeMock).not.toHaveBeenCalled();
+    expect(onFormSubmitMock).not.toHaveBeenCalled();
     expect(_mockable.fetchAndInitFuncConfig).not.toHaveBeenCalled();
     expect(_mockable.fetchAndInitFuncUsage).not.toHaveBeenCalled();
     expect(_mockable.incrementTotalInvocations).not.toHaveBeenCalled();

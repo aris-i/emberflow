@@ -13,7 +13,7 @@ export function findMatchingDocPathRegex(docPath: string) {
       return {entity: key, regex: docPathsRegex[key]};
     }
   }
-  return {entity: null, regex: null};
+  return {entity: undefined, regex: undefined};
 }
 
 export function filterSubDocPathsByEntity(entity: string, excludeEntities?: string[]): string[] {
@@ -153,10 +153,9 @@ export async function hydrateDocPath(destDocPath: string, entityCondition: Recor
   return documentPaths;
 }
 
-export function parseUserAndEntity(docPath: string) {
+export function parseEntity(docPath: string) {
   const parts = docPath.split("/");
-  const userId = parts[1];
-  const docId = parts[parts.length - 1];
-  const entity = docId.replace(/{(\w+)Id}$/, "$1");
-  return {userId, docId, entity};
+  const entityId = parts[parts.length - 1];
+  const {entity} = findMatchingDocPathRegex(docPath);
+  return {entityId, entity};
 }
