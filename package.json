@@ -1,6 +1,6 @@
 {
   "name": "emberflow",
-  "version": "1.0.22",
+  "version": "1.0.37",
   "description": "A Firebase Cloud Functions library for handling document changes in a structured way",
   "main": "lib/index.js",
   "types": "lib/index.d.js",

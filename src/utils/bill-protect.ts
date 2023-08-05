@@ -78,28 +78,6 @@ export function computeTotalCost(totalInvocations: number, pricePer1MInvocation:
   return invocationCost + computeTimeCost;
 }
 
-// TODO:  Convert this to firebase rules
-async function lockdownCollection(docPath: string) {
-  const app = admin.app();
-
-  // Get the current Firestore rules.
-  const ruleset = await app.securityRules().getFirestoreRuleset();
-  let currentRules = ruleset.source[0].content;
-
-  // Define the new match block.
-  const newMatchBlock = `
-      match /databases/{database}/${docPath} {
-        allow write: if false;
-      }`;
-
-  // Insert the new match block before the last closing brace of the `match /databases/{database}/documents` block.
-  const insertionIndex = currentRules.lastIndexOf("}");
-  currentRules = currentRules.substring(0, insertionIndex) + newMatchBlock + currentRules.substring(insertionIndex);
-
-  // Update the Firestore rules with the new rules.
-  await app.securityRules().releaseFirestoreRulesetFromSource(currentRules);
-}
-
 export function computeElapseTime(startTime: [number, number], endTime: [number, number]) {
   const startTimeInMs = (startTime[0] * 1e9 + startTime[1]) / 1e6; // Convert to milliseconds
   const endTimeInMs = (endTime[0] * 1e9 + endTime[1]) / 1e6; // Convert to milliseconds
@@ -131,7 +109,6 @@ export const _mockable = {
   fetchAndInitFuncConfig,
   fetchAndInitFuncUsage,
   computeTotalCost,
-  lockdownCollection,
   computeElapseTime,
   incrementTotalInvocations,
   incrementTotalElapsedTimeInMs,
@@ -143,14 +120,13 @@ export const _mockable = {
 
 export function useBillProtect(onFormSubmit: onFormSubmitType) : onFormSubmitType {
   return async (event) => {
-    const formColPath = event.data.ref.parent?.toString();
-    const {userId} = event.params;
-    const funcName = `onFormSubmittedBy${userId}`;
+    const colName = event.data.val()["@docPath"].split("/").slice(-2)[0];
+    const funcName = `onFormSubmittedFor${colName[0].toUpperCase()}${colName.slice(1)}`;
     if (_mockable.isHardDisabled()) {
       console.warn(`Function ${funcName} is hard disabled.  Returning immediately`);
       return;
     }
-    const startTime =process.hrtime();
+    const startTime = process.hrtime();
 
     const {
       funcUsageRef,
@@ -178,14 +154,10 @@ export function useBillProtect(onFormSubmit: onFormSubmitType) : onFormSubmitTyp
 
       const totalCost = _mockable.computeTotalCost(
         totalInvocations+1, pricePer1MInvocation, totalElapsedTimeInMs, pricePer100ms);
+      await funcUsageRef.update({totalCost});
       if (totalCost >= costLimit) {
         console.warn(`Function ${funcName} has exceeded the cost limit of $${costLimit}`);
         await _mockable.disableFunc(funcConfigRef);
-
-        // Update firestore rules to lockdown collection
-        if (formColPath) {
-          await _mockable.lockdownCollection(formColPath);
-        }
 
         // TODO: Send email to all devs
         return;

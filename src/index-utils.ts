@@ -161,13 +161,13 @@ export function getFormModifiedFields(form: DocumentData, document: DocumentData
   return formFields.filter((field) => !deepEqual(document[field], form[field]));
 }
 
-export async function delayFormSubmissionAndCheckIfCancelled(delay: number, formResponseRef: Reference) {
+export async function delayFormSubmissionAndCheckIfCancelled(delay: number, formRef: Reference) {
   let cancelFormSubmission = false;
   console.log(`Delaying document for ${delay}ms...`);
-  await formResponseRef.update({"@status": "delay"});
+  await formRef.update({"@status": "delay"});
   await new Promise((resolve) => setTimeout(resolve, delay));
   // Re-fetch document from Firestore
-  const updatedSnapshot = await formResponseRef.get();
+  const updatedSnapshot = await formRef.get();
   const updatedDocument = updatedSnapshot.val();
   console.log("Re-fetched document from Firestore after delay:\n", updatedDocument);
   // Check if form status is "cancel"

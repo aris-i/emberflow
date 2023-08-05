@@ -41,14 +41,14 @@ const docMock: DocumentReference = {
   set: jest.fn(),
   get: jest.fn().mockResolvedValue(getMock),
   update: jest.fn(),
-  collection: jest.fn(),
+  collection: jest.fn(() => collectionMock),
 } as unknown as DocumentReference;
 
 const collectionMock: CollectionReference = {
   doc: jest.fn(() => docMock),
 } as unknown as CollectionReference;
 
-const firestoreMock = jest.spyOn(admin, "firestore")
+jest.spyOn(admin, "firestore")
   .mockImplementation(() => {
     return {
       collection: jest.fn(() => collectionMock),
@@ -56,17 +56,12 @@ const firestoreMock = jest.spyOn(admin, "firestore")
     } as unknown as Firestore;
   });
 
-const refMock = {
-  update: jest.fn(),
-};
-
-const rtdbMock = jest.spyOn(admin, "database")
+jest.spyOn(admin, "database")
   .mockImplementation(() => {
     return {
-      ref: jest.fn(() => refMock),
+      ref: jest.fn(),
     } as unknown as Database;
   });
-console.log(firestoreMock, rtdbMock);
 
 const parseEntityMock = jest.fn();
 jest.spyOn(paths, "parseEntity")
@@ -75,13 +70,16 @@ jest.spyOn(paths, "parseEntity")
 admin.initializeApp();
 
 initializeEmberFlow(projectConfig, admin, dbStructure, Entity, {}, {}, []);
+
+const refMock = {
+  update: jest.fn(),
+};
+
 function createDocumentSnapshot(form: FirebaseFirestore.DocumentData)
     : DataSnapshot {
   return {
     key: "test-id",
-    ref: {
-      update: jest.fn(),
-    },
+    ref: refMock,
     val: () => form,
   } as unknown as functions.database.DataSnapshot;
 }
@@ -355,25 +353,6 @@ describe("onDocChange", () => {
       },
     ]);
 
-    const setActionMock = jest.fn().mockResolvedValue({
-      update: jest.fn(),
-    });
-
-    const updateActionMock = jest.fn().mockResolvedValue({
-      update: jest.fn(),
-    });
-
-    const initActionRefMock = jest.spyOn(_mockable, "initActionRef").mockResolvedValue({
-      set: setActionMock,
-      update: updateActionMock,
-      collection: jest.fn().mockReturnValue({
-        doc: jest.fn().mockReturnValue({
-          set: setActionMock,
-          update: updateActionMock,
-        }),
-      }),
-    } as any);
-
     const formData = {
       "@actionType": "create",
       "name": "test",
@@ -416,7 +395,7 @@ describe("onDocChange", () => {
     expect(refMock.update.mock.calls[2][0]).toEqual({"@status": "finished"});
 
     // Test that collectionAddSpy is not called if there are logic errors
-    expect(setActionMock).toHaveBeenCalledWith(expect.objectContaining({
+    expect(docMock.set).toHaveBeenCalledWith(expect.objectContaining({
       eventContext,
       actionType: "create",
       document: doc,
@@ -430,17 +409,16 @@ describe("onDocChange", () => {
       status: "processing",
       // TimeCreated is not specified because it's dynamic
     }));
-    expect(updateActionMock).toHaveBeenCalledTimes(2);
-    expect(updateActionMock.mock.calls[0][0]).toEqual({status: "finished-with-error", message: errorMessage});
+    expect(docMock.update).toHaveBeenCalledTimes(2);
+    expect((docMock.update as jest.Mock).mock.calls[0][0]).toEqual({status: "finished-with-error", message: errorMessage});
 
     validateFormMock.mockReset();
     getFormModifiedFieldsMock.mockReset();
     getSecurityFnMock.mockReset();
     delayFormSubmissionAndCheckIfCancelledMock.mockReset();
     runBusinessLogicsMock.mockReset();
-    setActionMock.mockReset();
-    updateActionMock.mockReset();
-    initActionRefMock.mockReset();
+    (docMock.set as jest.Mock).mockReset();
+    (docMock.update as jest.Mock).mockReset();
   });
 
 
@@ -460,25 +438,6 @@ describe("onDocChange", () => {
     ];
     const runBusinessLogicsSpy =
         jest.spyOn(indexutils, "runBusinessLogics").mockResolvedValue(businessLogicResults);
-
-    const setActionSpy = jest.fn().mockResolvedValue({
-      update: jest.fn(),
-    });
-
-    const updateActionSpy = jest.fn().mockResolvedValue({
-      update: jest.fn(),
-    });
-
-    jest.spyOn(_mockable, "initActionRef").mockResolvedValue({
-      set: setActionSpy,
-      update: updateActionSpy,
-      collection: jest.fn().mockReturnValue({
-        doc: jest.fn().mockReturnValue({
-          set: setActionSpy,
-          update: updateActionSpy,
-        }),
-      }),
-    } as any);
 
     const formData = {
       "@actionType": "create",
@@ -527,7 +486,7 @@ describe("onDocChange", () => {
     expect(runBusinessLogicsSpy).toHaveBeenCalled();
     expect(refMock.update).toHaveBeenCalledTimes(3);
 
-    expect(setActionSpy).toHaveBeenCalledTimes(2);
+    expect(docMock.set).toHaveBeenCalledTimes(2);
 
     // Test that the functions are called in the correct sequence
     expect(indexutils.consolidateAndGroupByDstPath).toHaveBeenNthCalledWith(1, businessLogicResults);
@@ -544,7 +503,7 @@ describe("onDocChange", () => {
     expect(indexutils.distribute).toHaveBeenCalledWith(otherUsersDocsByDstPath);
     expect(indexutils.distribute).toHaveBeenCalledWith(otherUsersViewDocsByDstPath);
     expect(indexutils.distribute).toHaveBeenCalledWith(otherUsersPeerSyncViewDocsByDstPath);
-    expect(updateActionSpy).toHaveBeenCalledTimes(1);
-    expect(updateActionSpy.mock.calls[0][0]).toEqual({status: "finished"});
+    expect(docMock.update).toHaveBeenCalledTimes(1);
+    expect((docMock.update as jest.Mock).mock.calls[0][0]).toEqual({status: "finished"});
   });
 });

@@ -10,7 +10,7 @@ import {
 import {db} from "../../index";
 import {DatabaseEvent, DataSnapshot} from "firebase-functions/lib/v2/providers/database";
 
-const funcName = "onFormSubmittedByu12345";
+const funcName = "onFormSubmittedForUsers";
 jest.mock("../../index", () => ({
   db: {
     collection: jest.fn().mockReturnThis(),
@@ -122,25 +122,21 @@ describe("useBillProtect", () => {
       funcUsage: mockFuncUsage,
     });
 
-    jest.spyOn(_mockable, "lockdownCollection").mockResolvedValue();
     jest.spyOn(_mockable, "computeElapseTime").mockReturnValue(0);
     jest.spyOn(_mockable, "incrementTotalInvocations").mockResolvedValue();
     jest.spyOn(_mockable, "incrementTotalElapsedTimeInMs").mockResolvedValue();
     jest.spyOn(_mockable, "disableFunc").mockResolvedValue();
-    jest.spyOn(_mockable, "lockdownCollection").mockResolvedValue();
     jest.spyOn(console, "warn").mockImplementation();
   });
 
-  const formColPath = "forms/u12345";
   const event = {
     data: {
-      "@actionType": "create",
-      "someField": "someValue",
-      "ref": {
-        parent: {
-          toString: () => formColPath,
-        },
-      },
+      val: jest.fn().mockReturnValue({
+        "@docPath": "users/user12345",
+        "@actionType": "create",
+        "someField": "someValue",
+      }),
+      ref: {},
     },
     params: {
       formId: "f12345",
@@ -169,13 +165,12 @@ describe("useBillProtect", () => {
       mockFuncUsage.totalElapsedTimeInMs,
       mockFuncConfig.pricePer100ms);
     expect(_mockable.disableFunc).not.toHaveBeenCalled();
-    expect(_mockable.lockdownCollection).not.toHaveBeenCalled();
     expect(_mockable.computeElapseTime).toHaveBeenCalledWith(expect.arrayContaining([expect.any(Number)]), expect.arrayContaining([expect.any(Number)]));
     expect(_mockable.incrementTotalElapsedTimeInMs).toHaveBeenCalledWith(funcUsageRef, 200);
     expect(console.warn).not.toHaveBeenCalled();
   });
 
-  it("should disable function and lockdown collection when budget exceeded", async () => {
+  it("should disable function when budget exceeded", async () => {
     const protectedFunction = useBillProtect(onFormSubmitMock);
 
     // Mock the computeElapseTime function to return a specific value
@@ -194,7 +189,6 @@ describe("useBillProtect", () => {
       mockFuncUsage.totalElapsedTimeInMs,
       mockFuncConfig.pricePer100ms);
     expect(_mockable.disableFunc).toHaveBeenCalledWith(funcConfigRef);
-    expect(_mockable.lockdownCollection).toHaveBeenCalledWith(formColPath);
     expect(_mockable.computeElapseTime).toHaveBeenCalledWith(expect.arrayContaining([expect.any(Number)]), expect.arrayContaining([expect.any(Number)]));
     expect(_mockable.incrementTotalElapsedTimeInMs).toHaveBeenCalledWith(funcUsageRef, 200);
     expect(console.warn).toHaveBeenCalledWith(`Function ${funcName} has exceeded the cost limit of $10`);
@@ -217,7 +211,6 @@ describe("useBillProtect", () => {
     expect(_mockable.incrementTotalInvocations).toHaveBeenCalledWith(funcUsageRef);
     expect(_mockable.computeTotalCost).not.toHaveBeenCalled();
     expect(_mockable.disableFunc).not.toHaveBeenCalledWith(funcConfigRef);
-    expect(_mockable.lockdownCollection).not.toHaveBeenCalled();
     expect(_mockable.computeElapseTime).toHaveBeenCalledWith(expect.arrayContaining([expect.any(Number)]), expect.arrayContaining([expect.any(Number)]));
     expect(_mockable.incrementTotalElapsedTimeInMs).toHaveBeenCalledWith(funcUsageRef, 200);
     expect(console.warn).toHaveBeenCalledWith(`Function ${funcName} is disabled.  Returning`);
@@ -236,7 +229,6 @@ describe("useBillProtect", () => {
     expect(_mockable.incrementTotalInvocations).not.toHaveBeenCalled();
     expect(_mockable.computeTotalCost).not.toHaveBeenCalled();
     expect(_mockable.disableFunc).not.toHaveBeenCalled();
-    expect(_mockable.lockdownCollection).not.toHaveBeenCalled();
     expect(_mockable.computeElapseTime).not.toHaveBeenCalled();
     expect(_mockable.incrementTotalElapsedTimeInMs).not.toHaveBeenCalled();
     expect(console.warn).toHaveBeenCalledWith(`Function ${funcName} is hard disabled.  Returning immediately`);

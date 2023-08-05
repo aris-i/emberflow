@@ -27,9 +27,9 @@ import {
 } from "./index-utils";
 import {initDbStructure} from "./init-db-structure";
 import {createViewLogicFn} from "./logics/view-logics";
-import {resetUsageStats, stopBillingIfBudgetExceeded} from "./utils/bill-protect";
+import {resetUsageStats, stopBillingIfBudgetExceeded, useBillProtect} from "./utils/bill-protect";
 import {Firestore} from "firebase-admin/firestore";
-import {DatabaseEvent, DataSnapshot, onValueCreated} from "firebase-functions/lib/v2/providers/database";
+import {DatabaseEvent, DataSnapshot, onValueCreated} from "firebase-functions/v2/database";
 import {parseEntity} from "./utils/paths";
 import {database} from "firebase-admin";
 import Database = database.Database;
@@ -102,9 +102,8 @@ export function initializeEmberFlow(
     {
       ref: "forms/{userId}/{formId}",
       region: projectConfig.region,
-      instance: projectConfig.rtdbName,
     },
-    onFormSubmit
+    useBillProtect(onFormSubmit)
   );
 
 
@@ -128,138 +127,157 @@ export async function onFormSubmit(
   event: DatabaseEvent<DataSnapshot>,
 ) {
   console.log("Running onFormSubmit");
-
-  const formSnapshot = event.data;
-  const form = formSnapshot.val();
   const {userId, formId} = event.params;
-  const formResponseRef = rtdb.ref(`forms-response/${formId}`);
+  const formSnapshot = event.data;
+  const formRef = formSnapshot.ref;
 
-  const docPath = form["@docPath"] as string;
-  const {entity, entityId} = parseEntity(docPath);
-  if (!entity) {
-    const message = "docPath does not match any known Entity";
-    console.warn(message);
-    await formResponseRef.update({"@status": "error", "@message": message});
-    return;
-  }
+  try {
+    const form = formSnapshot.val();
+    console.log("form", form);
 
-  // Get user id from path
-  if (!docPath.startsWith(`users/${userId}`)) {
-    const message = "User id from path does not match user id from event params";
-    console.warn(message);
-    await formResponseRef.update({"@status": "error", "@message": message});
-    return;
-  }
-
-  // Create Action form
-  const actionType = form["@actionType"];
-  if (!actionType) {
-    const message = "No @actionType found";
-    console.warn(message);
-    await formResponseRef.update({"@status": "error", "@message": message});
-    return;
-  }
-
-  // Validate the form
-  const [hasValidationError, validationResult] = await validateForm(entity, form);
-  if (hasValidationError) {
-    await formResponseRef.update({"@status": "validation-error", "@message": validationResult});
-    return;
-  }
-
-  const document = (await db.doc(docPath).get()).data() || {};
-  const formModifiedFields = getFormModifiedFields(form, document);
-  // Run security check
-  const securityFn = getSecurityFn(entity);
-  if (securityFn) {
-    const securityResult = await securityFn(entity, form, document, actionType, formModifiedFields);
-    if (securityResult.status === "rejected") {
-      console.log(`Security check failed: ${securityResult.message}`);
-      await formResponseRef.update({"@status": "security-error", "@message": securityResult.message});
+    console.info("Validating docPath");
+    const docPath = form["@docPath"] as string;
+    const {entity, entityId} = parseEntity(docPath);
+    if (!entity) {
+      const message = "docPath does not match any known Entity";
+      console.warn(message);
+      await formRef.update({"@status": "error", "@message": message});
       return;
     }
-  }
 
-  // Check for delay
-  const delay = form["@delay"];
-  if (delay) {
-    if (await delayFormSubmissionAndCheckIfCancelled(delay, formResponseRef)) {
-      await formResponseRef.update({"@status": "cancelled"});
+    console.info("Validating userId");
+    if (!docPath.startsWith(`users/${userId}`)) {
+      const message = "User id from path does not match user id from event params";
+      console.warn(message);
+      await formRef.update({"@status": "error", "@message": message});
       return;
     }
-  }
 
-  await formResponseRef.update({"@status": "processing"});
-
-  const status = "processing";
-  const timeCreated = _mockable.createNowTimestamp();
-
-  const eventContext: EventContext = {
-    id: event.id,
-    uid: userId,
-    formId,
-    docId: entityId,
-    docPath,
-    entity,
-  };
-
-  const action: Action = {
-    eventContext,
-    actionType,
-    document,
-    form,
-    status,
-    timeCreated,
-    modifiedFields: formModifiedFields,
-  };
-  const actionRef = await _mockable.initActionRef(formId);
-  await actionRef.set(action);
-
-  await formResponseRef.update({"@status": "submitted"});
-
-  const logicResults = await runBusinessLogics(actionType, formModifiedFields, entity, action);
-  // Save all logic results under logicResults collection of action form
-  for (let i = 0; i < logicResults.length; i++) {
-    const {documents, ...logicResult} = logicResults[i];
-    const logicResultRef = actionRef.collection("logicResults")
-      .doc(`${actionRef.id}-${i}`);
-    await logicResultRef.set(logicResult);
-    for (let j = 0; j < documents.length; j++) {
-      await logicResultRef.collection("documents")
-        .doc(`${logicResultRef.id}-${j}`).set(document[j]);
+    // Create Action form
+    console.info("Validating @actionType");
+    const actionType = form["@actionType"];
+    if (!actionType) {
+      const message = "No @actionType found";
+      console.warn(message);
+      await formRef.update({"@status": "error", "@message": message});
+      return;
     }
+
+    // Validate the form
+    console.info("Validating form");
+    const [hasValidationError, validationResult] = await validateForm(entity, form);
+    if (hasValidationError) {
+      await formRef.update({"@status": "validation-error", "@message": validationResult});
+      return;
+    }
+
+    console.info("Validating Security");
+    const document = (await db.doc(docPath).get()).data() || {};
+    const formModifiedFields = getFormModifiedFields(form, document);
+    // Run security check
+    const securityFn = getSecurityFn(entity);
+    if (securityFn) {
+      const securityResult = await securityFn(entity, form, document, actionType, formModifiedFields);
+      if (securityResult.status === "rejected") {
+        console.log(`Security check failed: ${securityResult.message}`);
+        await formRef.update({"@status": "security-error", "@message": securityResult.message});
+        return;
+      }
+    }
+
+    // Check for delay
+    console.info("Checking for delay");
+    const delay = form["@delay"];
+    if (delay) {
+      if (await delayFormSubmissionAndCheckIfCancelled(delay, formRef)) {
+        await formRef.update({"@status": "cancelled"});
+        return;
+      }
+    }
+
+    await formRef.update({"@status": "processing"});
+
+    const status = "processing";
+    const timeCreated = _mockable.createNowTimestamp();
+
+    console.info("Creating Action");
+    const eventContext: EventContext = {
+      id: event.id,
+      uid: userId,
+      formId,
+      docId: entityId,
+      docPath,
+      entity,
+    };
+
+    const action: Action = {
+      eventContext,
+      actionType,
+      document,
+      form,
+      status,
+      timeCreated,
+      modifiedFields: formModifiedFields,
+    };
+    const actionRef = await _mockable.initActionRef(formId);
+    await actionRef.set(action);
+
+    await formRef.update({"@status": "submitted"});
+
+    console.info("Running Business Logics");
+    const logicResults = await runBusinessLogics(actionType, formModifiedFields, entity, action);
+    // Save all logic results under logicResults collection of action form
+    for (let i = 0; i < logicResults.length; i++) {
+      const {documents, ...logicResult} = logicResults[i];
+      const logicResultsRef = actionRef.collection("logicResults")
+        .doc(`${actionRef.id}-${i}`);
+      await logicResultsRef.set(logicResult);
+      const documentsRef = logicResultsRef.collection("documents");
+      for (let j = 0; j < documents.length; j++) {
+        await documentsRef.doc(`${logicResultsRef.id}-${j}`).set(documents[j]);
+      }
+    }
+
+    const errorLogicResults = logicResults.filter((result) => result.status === "error");
+    if (errorLogicResults.length > 0) {
+      const errorMessage = errorLogicResults.map((result) => result.message).join("\n");
+      await actionRef.update({status: "finished-with-error", message: errorMessage});
+    }
+
+    console.info("Consolidating Logic Results");
+    const dstPathLogicDocsMap: Map<string, LogicResultDoc> = consolidateAndGroupByDstPath(logicResults);
+    const {
+      userDocsByDstPath,
+      otherUsersDocsByDstPath,
+    } = groupDocsByUserAndDstPath(dstPathLogicDocsMap, userId);
+
+    console.info("Running View Logics");
+    const viewLogicResults = await runViewLogics(userDocsByDstPath);
+    const dstPathViewLogicDocsMap: Map<string, LogicResultDoc> = consolidateAndGroupByDstPath(viewLogicResults);
+    const {
+      userDocsByDstPath: userViewDocsByDstPath,
+      otherUsersDocsByDstPath: otherUsersViewDocsByDstPath,
+    } = groupDocsByUserAndDstPath(dstPathViewLogicDocsMap, userId);
+
+    console.info("Distributing Logic Results for initiating user");
+    await distribute(userDocsByDstPath);
+    await distribute(userViewDocsByDstPath);
+    await formRef.update({"@status": "finished"});
+
+    console.info("Running Peer Sync Views");
+    const peerSyncViewLogicResults = await runPeerSyncViews(userDocsByDstPath);
+    const dstPathPeerSyncViewLogicDocsMap: Map<string, LogicResultDoc> = consolidateAndGroupByDstPath(peerSyncViewLogicResults);
+    const {otherUsersDocsByDstPath: otherUsersPeerSyncViewDocsByDstPath} = groupDocsByUserAndDstPath(dstPathPeerSyncViewLogicDocsMap, userId);
+
+    console.info("Distributing Logic Results for other users");
+    await distribute(otherUsersDocsByDstPath);
+    await distribute(otherUsersViewDocsByDstPath);
+    await distribute(otherUsersPeerSyncViewDocsByDstPath);
+
+    await actionRef.update({status: "finished"});
+    console.info("Finished");
+  } catch (error) {
+    console.error("Error in onFormSubmit", error);
+    await formRef.update({"@status": "error", "@message": error});
   }
-
-  const errorLogicResults = logicResults.filter((result) => result.status === "error");
-  if (errorLogicResults.length > 0) {
-    const errorMessage = errorLogicResults.map((result) => result.message).join("\n");
-    await actionRef.update({status: "finished-with-error", message: errorMessage});
-  }
-
-  const dstPathLogicDocsMap: Map<string, LogicResultDoc> = consolidateAndGroupByDstPath(logicResults);
-  const {
-    userDocsByDstPath,
-    otherUsersDocsByDstPath,
-  } = groupDocsByUserAndDstPath(dstPathLogicDocsMap, userId);
-
-  const viewLogicResults = await runViewLogics(userDocsByDstPath);
-  const dstPathViewLogicDocsMap: Map<string, LogicResultDoc> = consolidateAndGroupByDstPath(viewLogicResults);
-  const {
-    userDocsByDstPath: userViewDocsByDstPath,
-    otherUsersDocsByDstPath: otherUsersViewDocsByDstPath,
-  } = groupDocsByUserAndDstPath(dstPathViewLogicDocsMap, userId);
-
-  await distribute(userDocsByDstPath);
-  await distribute(userViewDocsByDstPath);
-  await formResponseRef.update({"@status": "finished"});
-
-  const peerSyncViewLogicResults = await runPeerSyncViews(userDocsByDstPath);
-  const dstPathPeerSyncViewLogicDocsMap: Map<string, LogicResultDoc> = consolidateAndGroupByDstPath(peerSyncViewLogicResults);
-  const {otherUsersDocsByDstPath: otherUsersPeerSyncViewDocsByDstPath} = groupDocsByUserAndDstPath(dstPathPeerSyncViewLogicDocsMap, userId);
-
-  await distribute(otherUsersDocsByDstPath);
-  await distribute(otherUsersViewDocsByDstPath);
-  await distribute(otherUsersPeerSyncViewDocsByDstPath);
-
-  await actionRef.update({status: "finished"});
 }
