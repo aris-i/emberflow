@@ -3,6 +3,7 @@ import {CloudBillingClient} from "@google-cloud/billing";
 import {firestore} from "firebase-admin";
 import * as batch from "../utils/batch";
 import {Message} from "firebase-functions/lib/v1/providers/pubsub";
+import {findMatchingDocPathRegex} from "./paths";
 
 export const billing = new CloudBillingClient();
 
@@ -120,8 +121,11 @@ export const _mockable = {
 
 export function useBillProtect(onFormSubmit: onFormSubmitType) : onFormSubmitType {
   return async (event) => {
-    const colName = event.data.val()["@docPath"].split("/").slice(-2)[0];
-    const funcName = `onFormSubmittedFor${colName[0].toUpperCase()}${colName.slice(1)}`;
+    const {"@docPath": docPath} = event.data.val();
+    const colName = docPath.split("/").slice(-2)[0];
+    const {entity} = findMatchingDocPathRegex(docPath);
+    const targetName = entity || colName;
+    const funcName = `onFormSubmittedFor${targetName[0].toUpperCase()}${targetName.slice(1)}`;
     if (_mockable.isHardDisabled()) {
       console.warn(`Function ${funcName} is hard disabled.  Returning immediately`);
       return;

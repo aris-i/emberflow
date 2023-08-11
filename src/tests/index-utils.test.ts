@@ -26,6 +26,7 @@ import {Entity, dbStructure} from "../sample-custom/db-structure";
 import {securityConfig} from "../sample-custom/security";
 import {validatorConfig} from "../sample-custom/validators";
 import * as batch from "../utils/batch";
+import Timestamp = firestore.Timestamp;
 
 jest.spyOn(console, "log").mockImplementation();
 jest.spyOn(console, "info").mockImplementation();
@@ -208,10 +209,10 @@ describe("validateForm", () => {
 });
 
 describe("getFormModifiedFields", () => {
-  it("should return an empty array when there are no form fields", () => {
+  it("should return an empty object when there are no form fields", () => {
     const document = {name: "John Doe", age: 30};
     const modifiedFields = getFormModifiedFields({}, document);
-    expect(modifiedFields).toEqual([]);
+    expect(modifiedFields).toEqual({});
   });
 
   it("should return an array of modified form fields", () => {
@@ -224,16 +225,7 @@ describe("getFormModifiedFields", () => {
       "address": "123 Main St",
       "@status": "submit",
     }, document);
-    expect(modifiedFields).toEqual(["name", "address"]);
-  });
-
-  it("should return an empty array when form is empty", () => {
-    const document = {
-      "name": "John Doe",
-      "age": 30,
-    };
-    const modifiedFields = getFormModifiedFields({"@status": "submit"}, document);
-    expect(modifiedFields).toEqual([]);
+    expect(modifiedFields).toEqual({name: "Jane Doe", address: "123 Main St"});
   });
 });
 
@@ -273,9 +265,14 @@ describe("delayFormSubmissionAndCheckIfCancelled", () => {
 
 describe("runBusinessLogics", () => {
   const actionType = "create";
-  const formModifiedFields = ["field1", "field2"];
+  const formModifiedFields = {field1: "value1", field2: "value2"};
   const entity = "user";
+  const user = {
+    id: "user123",
+    name: "John Doe",
+  };
   const action:Action = {
+    user,
     eventContext: {
       id: "123",
       uid: "user123",
@@ -332,8 +329,12 @@ describe("runBusinessLogics", () => {
     expect(logicFn2).toHaveBeenCalledWith(action);
     expect(logicFn3).not.toHaveBeenCalled();
     expect(results).toEqual([
-      {status: "finished"},
-      {status: "finished"},
+      expect.objectContaining({
+        status: "finished",
+        execTime: expect.any(Number),
+        timeFinished: expect.any(Timestamp),
+      }),
+      expect.objectContaining({status: "finished"}),
     ]);
   });
 

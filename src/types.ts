@@ -19,7 +19,8 @@ export interface Action{
     actionType: string;
     document: FirebaseFirestore.DocumentData;
     form: FirebaseFirestore.DocumentData;
-    modifiedFields?: string[];
+    modifiedFields: DocumentData;
+    user: DocumentData;
     status: "new" | "processing" | "processed" | "processed-with-errors";
     timeCreated: Timestamp;
     message?: string
@@ -41,7 +42,7 @@ export interface LogicResult{
     status: "finished" | "error";
     message?: string;
     execTime?: number;
-    timeFinished: Timestamp;
+    timeFinished?: Timestamp;
     documents: LogicResultDoc[];
 }
 export type LogicFn = (action: Action) => Promise<LogicResult>;
@@ -70,7 +71,7 @@ export interface SecurityResult {
 
 export type SecurityFn = (entity: string, form: FirebaseFirestore.DocumentData,
                           document: FirebaseFirestore.DocumentData, actionType: LogicActionType,
-                          modifiedFields?: string[]) => Promise<SecurityResult>;
+                          modifiedFields: DocumentData, user: DocumentData, ) => Promise<SecurityResult>;
 export type SecurityConfig = Record<string, SecurityFn>;
 export interface ValidationResult {
     [key: string]: string[];

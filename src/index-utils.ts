@@ -156,9 +156,17 @@ export async function validateForm(
   return [hasValidationError, validationResult];
 }
 
-export function getFormModifiedFields(form: DocumentData, document: DocumentData) {
-  const formFields = Object.keys(form).filter((key) => !key.startsWith("@"));
-  return formFields.filter((field) => !deepEqual(document[field], form[field]));
+export function getFormModifiedFields(form: DocumentData, document: DocumentData): DocumentData {
+  const modifiedFields: DocumentData = {};
+
+  for (const key in form) {
+    if (key.startsWith("@")) continue;
+    if (!(key in document) || !deepEqual(document[key], form[key])) {
+      modifiedFields[key] = form[key];
+    }
+  }
+
+  return modifiedFields;
 }
 
 export async function delayFormSubmissionAndCheckIfCancelled(delay: number, formRef: Reference) {
@@ -177,17 +185,33 @@ export async function delayFormSubmissionAndCheckIfCancelled(delay: number, form
   return cancelFormSubmission;
 }
 
-export async function runBusinessLogics(actionType: LogicActionType, formModifiedFields: string[], entity: string, action: Action) {
+export async function runBusinessLogics(actionType: LogicActionType, formModifiedFields: DocumentData, entity: string, action: Action) {
   const matchingLogics = logicConfigs.filter((logic) => {
     return (
       (logic.actionTypes === "all" || logic.actionTypes.includes(actionType)) &&
-            (logic.modifiedFields === "all" || logic.modifiedFields.some((field) => formModifiedFields?.includes(field))) &&
+            (logic.modifiedFields === "all" || logic.modifiedFields.some((field) => field in formModifiedFields)) &&
             (logic.entities === "all" || logic.entities.includes(entity))
     );
   });
-  // TODO: Handle errors
-  // TODO: Add logic for execTime
-  return await Promise.all(matchingLogics.map((logic) => logic.logicFn(action)));
+  return await Promise.all(matchingLogics.map(async (logic) => {
+    const start = performance.now();
+    try {
+      const result = await logic.logicFn(action);
+      const end = performance.now();
+      const execTime = end - start;
+      return {...result, execTime, timeFinished: admin.firestore.Timestamp.now()};
+    } catch (e) {
+      const end = performance.now();
+      const execTime = end - start;
+      return {
+        name: logic.name,
+        status: "error",
+        documents: [],
+        execTime,
+        message: (e as Error).message,
+        timeFinished: admin.firestore.Timestamp.now()} as LogicResult;
+    }
+  }));
 }
 
 export function groupDocsByUserAndDstPath(docsByDstPath: Map<string, LogicResultDoc>, userId: string) {

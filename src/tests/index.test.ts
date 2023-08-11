@@ -14,8 +14,6 @@ import {Firestore} from "firebase-admin/firestore";
 import {DatabaseEvent, DataSnapshot} from "firebase-functions/lib/v2/providers/database";
 import * as paths from "../utils/paths";
 
-// TODO: Create unit test for all new functions and modified functions
-
 const projectConfig: ProjectConfig = {
   projectId: "your-project-id",
   budgetAlertTopicName: "budget-alerts",
@@ -96,7 +94,7 @@ function createEvent(form: FirebaseFirestore.DocumentData): DatabaseEvent<DataSn
 }
 
 
-describe("onDocChange", () => {
+describe("onFormSubmit", () => {
   const entity = "user";
 
   const eventContext: EventContext = {
@@ -213,6 +211,40 @@ describe("onDocChange", () => {
     expect(console.warn).toHaveBeenCalledWith("No @actionType found");
   });
 
+  it("should return when no user data found", async () => {
+    const formData = {
+      "field1": "newValue",
+      "field2": "oldValue",
+      "@actionType": "update",
+      "@status": "submit",
+      "@docPath": "users/test-uid",
+    };
+
+    const event = createEvent(formData);
+
+    const document = {
+      "field1": "oldValue",
+      "field2": "oldValue",
+      "field3": {
+        nestedField1: "oldValue",
+        nestedField2: "oldValue",
+      },
+    };
+    dataMock.mockReturnValueOnce(document);
+
+    const user = undefined;
+    dataMock.mockReturnValueOnce(user);
+
+    const validateFormMock = jest.spyOn(indexutils, "validateForm");
+    validateFormMock.mockResolvedValue([false, {}] as ValidateFormResult);
+    await onFormSubmit(event);
+    expect(refMock.update).toHaveBeenCalledWith({
+      "@status": "error",
+      "@message": "No user data found",
+    });
+  });
+
+
   it("should return on security check failure", async () => {
     const getSecurityFnMock = jest.spyOn(indexutils, "getSecurityFn");
     const rejectedSecurityResult: SecurityResult = {
@@ -240,7 +272,12 @@ describe("onDocChange", () => {
         nestedField2: "oldValue",
       },
     };
-    dataMock.mockReturnValue(document);
+    dataMock.mockReturnValueOnce(document);
+
+    const user = {
+      "username": "test-user",
+    };
+    dataMock.mockReturnValueOnce(user);
 
     const validateFormMock = jest.spyOn(indexutils, "validateForm");
     validateFormMock.mockResolvedValue([false, {}] as ValidateFormResult);
@@ -248,7 +285,7 @@ describe("onDocChange", () => {
 
     expect(getSecurityFnMock).toHaveBeenCalledWith(entity);
     expect(validateFormMock).toHaveBeenCalledWith(entity, event.data.val());
-    expect(securityFnMock).toHaveBeenCalledWith(entity, event.data.val(), document, "update", ["field1"]);
+    expect(securityFnMock).toHaveBeenCalledWith(entity, event.data.val(), document, "update", {field1: "newValue"}, user);
     expect(refMock.update).toHaveBeenCalledWith({
       "@status": "security-error",
       "@message": "Unauthorized access",
@@ -259,7 +296,11 @@ describe("onDocChange", () => {
 
   it("should call delayFormSubmissionAndCheckIfCancelled with correct parameters", async () => {
     const validateFormMock = jest.spyOn(indexutils, "validateForm").mockResolvedValue([false, {}]);
-    const getFormModifiedFieldsMock = jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue(["field1", "field2"]);
+    const getFormModifiedFieldsMock =
+        jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue({
+          "field1": "value1",
+          "field2": "value2",
+        });
     const getSecurityFnMock = jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() =>
       Promise.resolve({status: "allowed"})
     );
@@ -291,7 +332,11 @@ describe("onDocChange", () => {
 
   it("should set form @status to 'submitted' after passing all checks", async () => {
     const validateFormMock = jest.spyOn(indexutils, "validateForm").mockResolvedValue([false, {}]);
-    const getFormModifiedFieldsMock = jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue(["field1", "field2"]);
+    const getFormModifiedFieldsMock =
+        jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue({
+          "field1": "value1",
+          "field2": "value2",
+        });
     const getSecurityFnMock = jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() =>
       Promise.resolve({status: "allowed"})
     );
@@ -336,9 +381,13 @@ describe("onDocChange", () => {
     initActionRefMock.mockReset();
   });
 
-  it("should set @status to 'logic-error' if there are logic error results", async () => {
+  it("should set action-status to 'finished-with-error' if there are logic error results", async () => {
     const validateFormMock = jest.spyOn(indexutils, "validateForm").mockResolvedValue([false, {}]);
-    const getFormModifiedFieldsMock = jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue(["field1", "field2"]);
+    const getFormModifiedFieldsMock =
+        jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue({
+          "field1": "value1",
+          "field2": "value2",
+        });
     const getSecurityFnMock = jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() => Promise.resolve({status: "allowed"}));
     const delayFormSubmissionAndCheckIfCancelledMock = jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(false);
 
@@ -372,7 +421,7 @@ describe("onDocChange", () => {
     // Test that the runBusinessLogics function was called with the correct parameters
     expect(runBusinessLogicsMock).toHaveBeenCalledWith(
       "create",
-      ["field1", "field2"],
+      {"field1": "value1", "field2": "value2"},
       "user",
       expect.objectContaining({
         eventContext,
@@ -384,17 +433,17 @@ describe("onDocChange", () => {
           "name": "test",
           "@docPath": "users/test-uid",
         },
-        modifiedFields: ["field1", "field2"],
+        modifiedFields: {"field1": "value1", "field2": "value2"},
         status: "processing",
         // TimeCreated is not specified because it's dynamic
       })
     );
+    // form should still finish successfully
     expect(refMock.update).toHaveBeenCalledTimes(3);
     expect(refMock.update.mock.calls[0][0]).toEqual({"@status": "processing"});
     expect(refMock.update.mock.calls[1][0]).toEqual({"@status": "submitted"});
     expect(refMock.update.mock.calls[2][0]).toEqual({"@status": "finished"});
 
-    // Test that collectionAddSpy is not called if there are logic errors
     expect(docMock.set).toHaveBeenCalledWith(expect.objectContaining({
       eventContext,
       actionType: "create",
@@ -405,7 +454,7 @@ describe("onDocChange", () => {
         "name": "test",
         "@docPath": "users/test-uid",
       },
-      modifiedFields: ["field1", "field2"],
+      modifiedFields: {"field1": "value1", "field2": "value2"},
       status: "processing",
       // TimeCreated is not specified because it's dynamic
     }));
@@ -424,7 +473,7 @@ describe("onDocChange", () => {
 
   it("should execute the sequence of operations correctly", async () => {
     jest.spyOn(indexutils, "validateForm").mockResolvedValue([false, {}]);
-    jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue(["field1", "field2"]);
+    jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue({"field1": "value1", "field2": "value2"});
     jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() => Promise.resolve({status: "allowed"}));
     jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(false);
 

@@ -11,7 +11,8 @@ const allAllowed: SecurityFn = async (
   entity,
   doc,
   actionType,
-  modifiedFields
+  modifiedFields,
+  user,
 ) => {
   console.log(`Security check for entity ${entity}, action type ${actionType},
    and modified fields:`, modifiedFields);
@@ -21,7 +22,13 @@ const allAllowed: SecurityFn = async (
 };
 
 const userSecurityFn: SecurityFn =
-    async (entity, form, doc, actionType, modifiedFields):
+    async (
+      entity,
+      form,
+      doc,
+      actionType,
+      modifiedFields,
+      user):
         Promise<SecurityResult> => {
       switch (actionType) {
       case "create": {

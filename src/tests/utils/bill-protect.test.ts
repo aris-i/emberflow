@@ -9,8 +9,9 @@ import {
 } from "../../utils/bill-protect";
 import {db} from "../../index";
 import {DatabaseEvent, DataSnapshot} from "firebase-functions/lib/v2/providers/database";
+import * as paths from "../../utils/paths";
 
-const funcName = "onFormSubmittedForUsers";
+const funcName = "onFormSubmittedForUser";
 jest.mock("../../index", () => ({
   db: {
     collection: jest.fn().mockReturnThis(),
@@ -127,6 +128,8 @@ describe("useBillProtect", () => {
     jest.spyOn(_mockable, "incrementTotalElapsedTimeInMs").mockResolvedValue();
     jest.spyOn(_mockable, "disableFunc").mockResolvedValue();
     jest.spyOn(console, "warn").mockImplementation();
+    jest.spyOn(paths, "findMatchingDocPathRegex")
+      .mockReturnValue({entity: "user", regex: /^users\/{userId}$/});
   });
 
   const event = {
@@ -148,7 +151,6 @@ describe("useBillProtect", () => {
 
   it("should invoke onFormSubmit and update Firestore", async () => {
     const protectedFunction = useBillProtect(onFormSubmitMock);
-
     // Mock the computeElapseTime function to return a specific value
     jest.spyOn(_mockable, "computeElapseTime").mockReturnValue(200);
     jest.spyOn(_mockable, "computeTotalCost").mockReturnValue(9);

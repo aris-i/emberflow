@@ -174,10 +174,18 @@ export async function onFormSubmit(
     console.info("Validating Security");
     const document = (await db.doc(docPath).get()).data() || {};
     const formModifiedFields = getFormModifiedFields(form, document);
+    const user = (await db.doc(`users/${userId}`).get()).data();
+    if (!user) {
+      const message = "No user data found";
+      console.warn(message);
+      await formRef.update({"@status": "error", "@message": message});
+      return;
+    }
     // Run security check
     const securityFn = getSecurityFn(entity);
     if (securityFn) {
-      const securityResult = await securityFn(entity, form, document, actionType, formModifiedFields);
+      const securityResult = await securityFn(entity, form, document,
+        actionType, formModifiedFields, user);
       if (securityResult.status === "rejected") {
         console.log(`Security check failed: ${securityResult.message}`);
         await formRef.update({"@status": "security-error", "@message": securityResult.message});
@@ -218,6 +226,7 @@ export async function onFormSubmit(
       status,
       timeCreated,
       modifiedFields: formModifiedFields,
+      user,
     };
     const actionRef = await _mockable.initActionRef(formId);
     await actionRef.set(action);
