@@ -18,7 +18,6 @@ export interface Action{
     eventContext: EventContext,
     actionType: string;
     document: FirebaseFirestore.DocumentData;
-    form: FirebaseFirestore.DocumentData;
     modifiedFields: DocumentData;
     user: DocumentData;
     status: "new" | "processing" | "processed" | "processed-with-errors";
@@ -69,8 +68,7 @@ export interface SecurityResult {
     message?: string;
 }
 
-export type SecurityFn = (entity: string, form: FirebaseFirestore.DocumentData,
-                          document: FirebaseFirestore.DocumentData, actionType: LogicActionType,
+export type SecurityFn = (entity: string, document: FirebaseFirestore.DocumentData, actionType: LogicActionType,
                           modifiedFields: DocumentData, user: DocumentData, ) => Promise<SecurityResult>;
 export type SecurityConfig = Record<string, SecurityFn>;
 export interface ValidationResult {

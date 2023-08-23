@@ -287,9 +287,6 @@ describe("runBusinessLogics", () => {
       "field2": "value2",
       "field3": "value3",
     },
-    form: {
-      "@actionType": actionType,
-    },
     status: "processing",
     timeCreated: firestore.Timestamp.now(),
     modifiedFields: formModifiedFields,

@@ -132,7 +132,7 @@ export async function onFormSubmit(
   const formRef = formSnapshot.ref;
 
   try {
-    const form = formSnapshot.val();
+    const form = JSON.parse(formSnapshot.val().formData);
     console.log("form", form);
 
     console.info("Validating docPath");
@@ -184,7 +184,7 @@ export async function onFormSubmit(
     // Run security check
     const securityFn = getSecurityFn(entity);
     if (securityFn) {
-      const securityResult = await securityFn(entity, form, document,
+      const securityResult = await securityFn(entity, document,
         actionType, formModifiedFields, user);
       if (securityResult.status === "rejected") {
         console.log(`Security check failed: ${securityResult.message}`);
@@ -222,7 +222,6 @@ export async function onFormSubmit(
       eventContext,
       actionType,
       document,
-      form,
       status,
       timeCreated,
       modifiedFields: formModifiedFields,

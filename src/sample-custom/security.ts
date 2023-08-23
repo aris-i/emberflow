@@ -24,7 +24,6 @@ const allAllowed: SecurityFn = async (
 const userSecurityFn: SecurityFn =
     async (
       entity,
-      form,
       doc,
       actionType,
       modifiedFields,
@@ -34,7 +33,7 @@ const userSecurityFn: SecurityFn =
       case "create": {
         // Example: allow the user to create a new account only
         // if they are registering from a whitelisted domain
-        const email = form.email;
+        const email = modifiedFields.email;
         const domain = email.split("@")[1];
         const allowedDomains = ["example.com", "example.org"];
         let result: SecurityResult;

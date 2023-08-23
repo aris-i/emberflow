@@ -120,15 +120,17 @@ describe("onFormSubmit", () => {
 
 
   it("should return when there's no matched entity", async () => {
-    const formData = {
-      "field1": "newValue",
-      "field2": "oldValue",
-      "@actionType": "update",
+    const form = {
+      "formData": JSON.stringify({
+        "field1": "newValue",
+        "field2": "oldValue",
+        "@actionType": "update",
+        "@docPath": "users/test-uid",
+      }),
       "@status": "submit",
-      "@docPath": "users/test-uid",
     };
 
-    const event = createEvent(formData);
+    const event = createEvent(form);
 
     const document = {
       "field1": "oldValue",
@@ -153,15 +155,17 @@ describe("onFormSubmit", () => {
   });
 
   it("should return when target docPath is not allowed for given userId", async () => {
-    const formData = {
-      "field1": "newValue",
-      "field2": "oldValue",
-      "@actionType": "update",
+    const form = {
+      "formData": JSON.stringify({
+        "field1": "newValue",
+        "field2": "oldValue",
+        "@actionType": "update",
+        "@docPath": "users/another-user-id",
+      }),
       "@status": "submit",
-      "@docPath": "users/another-user-id",
     };
 
-    const event = createEvent(formData);
+    const event = createEvent(form);
 
     const document = {
       "field1": "oldValue",
@@ -183,14 +187,16 @@ describe("onFormSubmit", () => {
   });
 
   it("should return when there's no provided @actionType", async () => {
-    const formData = {
-      "field1": "newValue",
-      "field2": "oldValue",
+    const form = {
+      "formData": JSON.stringify({
+        "field1": "newValue",
+        "field2": "oldValue",
+        "@docPath": "users/test-uid",
+      }),
       "@status": "submit",
-      "@docPath": "users/test-uid",
     };
 
-    const event = createEvent(formData);
+    const event = createEvent(form);
 
     const document = {
       "field1": "oldValue",
@@ -212,15 +218,17 @@ describe("onFormSubmit", () => {
   });
 
   it("should return when no user data found", async () => {
-    const formData = {
-      "field1": "newValue",
-      "field2": "oldValue",
-      "@actionType": "update",
+    const form = {
+      "formData": JSON.stringify({
+        "field1": "newValue",
+        "field2": "oldValue",
+        "@actionType": "update",
+        "@docPath": "users/test-uid",
+      }),
       "@status": "submit",
-      "@docPath": "users/test-uid",
     };
 
-    const event = createEvent(formData);
+    const event = createEvent(form);
 
     const document = {
       "field1": "oldValue",
@@ -258,11 +266,14 @@ describe("onFormSubmit", () => {
       "field1": "newValue",
       "field2": "oldValue",
       "@actionType": "update",
-      "@status": "submit",
       "@docPath": "users/test-uid",
     };
+    const form = {
+      "formData": JSON.stringify(formData),
+      "@status": "submit",
+    };
 
-    const event = createEvent(formData);
+    const event = createEvent(form);
 
     const document = {
       "field1": "oldValue",
@@ -284,8 +295,8 @@ describe("onFormSubmit", () => {
     await onFormSubmit(event);
 
     expect(getSecurityFnMock).toHaveBeenCalledWith(entity);
-    expect(validateFormMock).toHaveBeenCalledWith(entity, event.data.val());
-    expect(securityFnMock).toHaveBeenCalledWith(entity, event.data.val(), document, "update", {field1: "newValue"}, user);
+    expect(validateFormMock).toHaveBeenCalledWith(entity, formData);
+    expect(securityFnMock).toHaveBeenCalledWith(entity, document, "update", {field1: "newValue"}, user);
     expect(refMock.update).toHaveBeenCalledWith({
       "@status": "security-error",
       "@message": "Unauthorized access",
@@ -306,15 +317,17 @@ describe("onFormSubmit", () => {
     );
     const delayFormSubmissionAndCheckIfCancelledSpy = jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(true);
 
-    const formData = {
-      "@delay": 1000,
+    const form = {
+      "formData": JSON.stringify({
+        "@delay": 1000,
+        "@actionType": "create",
+        "someField": "exampleValue",
+        "@docPath": "users/test-uid",
+      }),
       "@status": "submit",
-      "@actionType": "create",
-      "someField": "exampleValue",
-      "@docPath": "users/test-uid",
     };
 
-    const event = createEvent(formData);
+    const event = createEvent(form);
     await onFormSubmit(event);
 
     // Test that the delayFormSubmissionAndCheckIfCancelled function is called with the correct parameters
@@ -355,14 +368,16 @@ describe("onFormSubmit", () => {
       update: updateActionMock,
     } as any);
 
-    const formData = {
-      "@actionType": "create",
-      "name": "test",
+    const form = {
+      "formData": JSON.stringify({
+        "@actionType": "create",
+        "name": "test",
+        "@docPath": "users/test-uid",
+      }),
       "@status": "submit",
-      "@docPath": "users/test-uid",
     };
 
-    const event = createEvent(formData);
+    const event = createEvent(form);
     await onFormSubmit(event);
 
     expect(refMock.update).toHaveBeenCalledWith({"@status": "processing"});
@@ -402,11 +417,13 @@ describe("onFormSubmit", () => {
       },
     ]);
 
-    const formData = {
-      "@actionType": "create",
-      "name": "test",
+    const form = {
+      "formData": JSON.stringify({
+        "@docPath": "users/test-uid",
+        "@actionType": "create",
+        "name": "test",
+      }),
       "@status": "submit",
-      "@docPath": "users/test-uid",
     };
     const doc = {
       name: "test",
@@ -414,7 +431,7 @@ describe("onFormSubmit", () => {
     };
     dataMock.mockReturnValue(doc);
 
-    const event = createEvent(formData);
+    const event = createEvent(form);
 
     await onFormSubmit(event);
 
@@ -427,12 +444,6 @@ describe("onFormSubmit", () => {
         eventContext,
         actionType: "create",
         document: doc,
-        form: {
-          "@actionType": "create",
-          "@status": "submit",
-          "name": "test",
-          "@docPath": "users/test-uid",
-        },
         modifiedFields: {"field1": "value1", "field2": "value2"},
         status: "processing",
         // TimeCreated is not specified because it's dynamic
@@ -448,12 +459,6 @@ describe("onFormSubmit", () => {
       eventContext,
       actionType: "create",
       document: doc,
-      form: {
-        "@actionType": "create",
-        "@status": "submit",
-        "name": "test",
-        "@docPath": "users/test-uid",
-      },
       modifiedFields: {"field1": "value1", "field2": "value2"},
       status: "processing",
       // TimeCreated is not specified because it's dynamic
@@ -488,14 +493,16 @@ describe("onFormSubmit", () => {
     const runBusinessLogicsSpy =
         jest.spyOn(indexutils, "runBusinessLogics").mockResolvedValue(businessLogicResults);
 
-    const formData = {
-      "@actionType": "create",
-      "name": "test",
+    const form = {
+      "formData": JSON.stringify({
+        "@actionType": "create",
+        "name": "test",
+        "@docPath": "users/test-uid",
+      }),
       "@status": "submit",
-      "@docPath": "users/test-uid",
     };
 
-    const event = createEvent(formData);
+    const event = createEvent(form);
 
     const consolidatedLogicResults = new Map<string, LogicResultDoc>();
     const consolidatedViewLogicResults = new Map<string, LogicResultDoc>();
