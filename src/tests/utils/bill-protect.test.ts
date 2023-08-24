@@ -135,9 +135,12 @@ describe("useBillProtect", () => {
   const event = {
     data: {
       val: jest.fn().mockReturnValue({
-        "@docPath": "users/user12345",
-        "@actionType": "create",
-        "someField": "someValue",
+        "formData": JSON.stringify({
+          "@docPath": "users/user12345",
+          "@actionType": "create",
+          "someField": "someValue",
+        }),
+        "@status": "submit",
       }),
       ref: {},
     },

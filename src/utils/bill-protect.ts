@@ -121,7 +121,7 @@ export const _mockable = {
 
 export function useBillProtect(onFormSubmit: onFormSubmitType) : onFormSubmitType {
   return async (event) => {
-    const {"@docPath": docPath} = event.data.val();
+    const {"@docPath": docPath} = JSON.parse(event.data.val().formData);
     const colName = docPath.split("/").slice(-2)[0];
     const {entity} = findMatchingDocPathRegex(docPath);
     const targetName = entity || colName;
