@@ -145,6 +145,7 @@ export async function validateForm(
   form: FirebaseFirestore.DocumentData
 ): Promise<ValidateFormResult> {
   let hasValidationError = false;
+  console.info(`Validating form for entity ${entity}`);
   const validate = validatorConfig[entity];
   const validationResult = await validate(form);
 
