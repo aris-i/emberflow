@@ -184,7 +184,7 @@ export async function onFormSubmit(
     // Run security check
     const securityFn = getSecurityFn(entity);
     if (securityFn) {
-      const securityResult = await securityFn(entity, document,
+      const securityResult = await securityFn(entity, docPath, document,
         actionType, formModifiedFields, user);
       if (securityResult.status === "rejected") {
         console.log(`Security check failed: ${securityResult.message}`);

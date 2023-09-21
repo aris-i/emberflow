@@ -262,11 +262,12 @@ describe("onFormSubmit", () => {
     const securityFnMock = jest.fn().mockResolvedValue(rejectedSecurityResult);
     getSecurityFnMock.mockReturnValue(securityFnMock);
 
+    const docPath = "users/test-uid";
     const formData = {
       "field1": "newValue",
       "field2": "oldValue",
       "@actionType": "update",
-      "@docPath": "users/test-uid",
+      "@docPath": docPath,
     };
     const form = {
       "formData": JSON.stringify(formData),
@@ -296,7 +297,7 @@ describe("onFormSubmit", () => {
 
     expect(getSecurityFnMock).toHaveBeenCalledWith(entity);
     expect(validateFormMock).toHaveBeenCalledWith(entity, formData);
-    expect(securityFnMock).toHaveBeenCalledWith(entity, document, "update", {field1: "newValue"}, user);
+    expect(securityFnMock).toHaveBeenCalledWith(entity, docPath, document, "update", {field1: "newValue"}, user);
     expect(refMock.update).toHaveBeenCalledWith({
       "@status": "security-error",
       "@message": "Unauthorized access",

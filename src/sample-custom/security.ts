@@ -24,6 +24,7 @@ const allAllowed: SecurityFn = async (
 const userSecurityFn: SecurityFn =
     async (
       entity,
+      docPath,
       doc,
       actionType,
       modifiedFields,
