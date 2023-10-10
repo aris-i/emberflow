@@ -12,7 +12,7 @@ import {
   ViewLogicConfig,
 } from "./types";
 import {
-  consolidateAndGroupByDstPath,
+  expandConsolidateAndGroupByDstPath,
   delayFormSubmissionAndCheckIfCancelled,
   distribute,
   getFormModifiedFields,
@@ -253,7 +253,7 @@ export async function onFormSubmit(
     }
 
     console.info("Consolidating Logic Results");
-    const dstPathLogicDocsMap: Map<string, LogicResultDoc> = consolidateAndGroupByDstPath(logicResults);
+    const dstPathLogicDocsMap: Map<string, LogicResultDoc> = await expandConsolidateAndGroupByDstPath(logicResults);
     const {
       userDocsByDstPath,
       otherUsersDocsByDstPath,
@@ -261,7 +261,7 @@ export async function onFormSubmit(
 
     console.info("Running View Logics");
     const viewLogicResults = await runViewLogics(userDocsByDstPath);
-    const dstPathViewLogicDocsMap: Map<string, LogicResultDoc> = consolidateAndGroupByDstPath(viewLogicResults);
+    const dstPathViewLogicDocsMap: Map<string, LogicResultDoc> = await expandConsolidateAndGroupByDstPath(viewLogicResults);
     const {
       userDocsByDstPath: userViewDocsByDstPath,
       otherUsersDocsByDstPath: otherUsersViewDocsByDstPath,
@@ -274,7 +274,7 @@ export async function onFormSubmit(
 
     console.info("Running Peer Sync Views");
     const peerSyncViewLogicResults = await runPeerSyncViews(userDocsByDstPath);
-    const dstPathPeerSyncViewLogicDocsMap: Map<string, LogicResultDoc> = consolidateAndGroupByDstPath(peerSyncViewLogicResults);
+    const dstPathPeerSyncViewLogicDocsMap: Map<string, LogicResultDoc> = await expandConsolidateAndGroupByDstPath(peerSyncViewLogicResults);
     const {otherUsersDocsByDstPath: otherUsersPeerSyncViewDocsByDstPath} = groupDocsByUserAndDstPath(dstPathPeerSyncViewLogicDocsMap, userId);
 
     console.info("Distributing Logic Results for other users");

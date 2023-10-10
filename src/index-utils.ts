@@ -19,7 +19,7 @@ import {
   viewLogicConfigs,
 } from "./index";
 import {syncPeerViews} from "./logics/view-logics";
-import {expandAndGroupDocPaths, findMatchingDocPathRegex} from "./utils/paths";
+import {expandAndGroupDocPathsByEntity, findMatchingDocPathRegex} from "./utils/paths";
 import {deepEqual} from "./utils/misc";
 import * as batch from "./utils/batch";
 import {CloudFunctionsServiceClient} from "@google-cloud/functions";
@@ -33,8 +33,6 @@ export const _mockable = {
 };
 
 export async function distribute(docsByDstPath: Map<string, LogicResultDoc>) {
-  const forCopy: LogicResultDoc[] = [];
-
   for (const dstPath of Array.from(docsByDstPath.keys()).sort()) {
     console.log(`Documents for path ${dstPath}:`);
     const resultDoc = docsByDstPath.get(dstPath);
@@ -44,9 +42,7 @@ export async function distribute(docsByDstPath: Map<string, LogicResultDoc>) {
       doc,
       instructions,
     } = resultDoc;
-    if (action === "copy") {
-      forCopy.push(resultDoc);
-    } else if (action === "delete") {
+    if (action === "delete") {
       // Delete document at dstPath
       const dstDocRef = db.doc(dstPath);
       await batch.deleteDoc(dstDocRef);
@@ -83,54 +79,6 @@ export async function distribute(docsByDstPath: Map<string, LogicResultDoc>) {
       const dstDocRef = db.doc(dstPath);
       await batch.set(dstDocRef, updateData);
       console.log(`Document merged to ${dstPath}`);
-    }
-  }
-
-  if (batch.writeCount > 0) {
-    console.log(`Committing final batch of ${batch.writeCount} writes...`);
-    await batch.commit();
-  }
-
-  // Do copy after all other operations
-  for (const resultDoc of forCopy) {
-    const {
-      srcPath,
-      dstPath,
-      skipEntityDuringRecursiveCopy=[],
-      copyMode="recursive",
-    } = resultDoc;
-    if (!srcPath) {
-      continue;
-    }
-    const srcDocRef = db.doc(srcPath);
-    const dstDocRef = db.doc(dstPath);
-    const srcData = (await srcDocRef.get()).data();
-    if (!srcData) {
-      console.warn("Copy src doesn't exists");
-      continue;
-    }
-    await batch.set(dstDocRef, srcData);
-    console.log(`Document copied from ${srcPath} to ${dstPath}`);
-
-    if (copyMode === "recursive") {
-      const subDocPaths = expandAndGroupDocPaths(srcPath);
-      const pathsToCopy: string[] = [];
-      for (const [entity, paths] of Object.entries(subDocPaths)) {
-        if (!skipEntityDuringRecursiveCopy || !skipEntityDuringRecursiveCopy.includes(entity)) {
-          pathsToCopy.push(...paths);
-        }
-      }
-      for (const path of pathsToCopy) {
-        const srcDocRef = db.doc(path);
-        const dstDocRef = db.doc(path.replace(srcPath, dstPath));
-        const srcData = (await srcDocRef.get()).data();
-        if (!srcData) {
-          console.warn("Copy src doesn't exists");
-          continue;
-        }
-        await batch.set(dstDocRef, srcData);
-        console.log(`Document copied from ${path} to ${dstDocRef.path}`);
-      }
     }
   }
 
@@ -238,9 +186,7 @@ export function getSecurityFn(entity: string): SecurityFn {
 }
 
 
-export function consolidateAndGroupByDstPath(logicResults: LogicResult[]): Map<string, LogicResultDoc> {
-  const consolidated: Map<string, LogicResultDoc> = new Map();
-
+export async function expandConsolidateAndGroupByDstPath(logicResults: LogicResult[]): Promise<Map<string, LogicResultDoc>> {
   function warnOverwritingKeys(existing: any, incoming: any, type: string, dstPath: string) {
     for (const key in incoming) {
       if (Object.prototype.hasOwnProperty.call(existing, key)) {
@@ -293,6 +239,83 @@ export function consolidateAndGroupByDstPath(logicResults: LogicResult[]): Map<s
       consolidated.set(dstPath, doc);
     }
   }
+
+  async function expandRecursiveActions() {
+    const expandedLogicResultDocs: LogicResultDoc[] = [];
+    const expandedLogicResult: LogicResult = {
+      name: "expandRecursiveDeleteAndRecursiveCopy",
+      status: "finished",
+      documents: expandedLogicResultDocs,
+    };
+    for (const logicResult of logicResults) {
+      for (const logicResultDoc of logicResult.documents) {
+        const {
+          action,
+          dstPath,
+          srcPath,
+          skipEntityDuringRecursion,
+        } = logicResultDoc;
+
+        if (!["recursive-delete", "recursive-copy"].includes(action)) continue;
+
+        const toExpandPath = action === "recursive-delete" ? dstPath : srcPath;
+        if (!toExpandPath) {
+          continue;
+        }
+        const subDocPaths = expandAndGroupDocPathsByEntity(
+          toExpandPath,
+          undefined,
+          skipEntityDuringRecursion
+        );
+
+        for (const [_, paths] of Object.entries(subDocPaths)) {
+          for (const path of paths) {
+            if (action === "recursive-delete") {
+              expandedLogicResultDocs.push({
+                action: "delete",
+                dstPath: path,
+              });
+            } else if (action === "recursive-copy" && srcPath) {
+              const absoluteDstPath = path.replace(srcPath, dstPath);
+              const data = (await db.doc(srcPath).get()).data();
+              expandedLogicResultDocs.push({
+                action: "merge",
+                doc: data,
+                dstPath: absoluteDstPath,
+              });
+            }
+          }
+        }
+      }
+    }
+    logicResults.push(expandedLogicResult);
+  }
+
+  async function convertCopyToMerge() {
+    for (const logicResult of logicResults) {
+      for (const doc of logicResult.documents) {
+        const {
+          srcPath,
+          action,
+        } = doc;
+
+        if (action !== "copy" || !srcPath) {
+          continue;
+        }
+
+        const data = (await db.doc(srcPath).get()).data();
+        delete doc.srcPath;
+        doc.doc = data;
+        doc.action = "merge";
+      }
+    }
+  }
+
+  await expandRecursiveActions();
+
+  await convertCopyToMerge();
+
+  const consolidated: Map<string, LogicResultDoc> = new Map();
 
   for (const logicResult of logicResults) {
     for (const doc of logicResult.documents) {

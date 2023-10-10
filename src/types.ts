@@ -25,15 +25,14 @@ export interface Action{
     message?: string
 }
 
-export type LogicResultAction = "merge" | "delete" | "copy";
+export type LogicResultAction = "merge" | "delete" | "copy" | "recursive-copy" | "recursive-delete";
 export interface LogicResultDoc{
     action: LogicResultAction;
     dstPath: string;
     srcPath?: string;
     doc?: FirebaseFirestore.DocumentData;
     instructions?: { [key: string]: string };
-    skipEntityDuringRecursiveCopy?: string[];
-    copyMode?: "shallow" | "recursive";
+    skipEntityDuringRecursion?: string[];
 }
 
 export interface LogicResult{

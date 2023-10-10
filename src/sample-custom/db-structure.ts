@@ -16,12 +16,11 @@ export enum Entity {
 // Do not remove users and [Entity.User]
 // by default, view matches the id attribute of the view so make the sure that a view has an id
 export const dbStructure = {
-  // TODO: Implement view Options i.e. autoCreate
   push: {
     [Entity.Algolia]: {
       topics: {
         [Entity.TopicAlgolia]: {
-          [view(Entity.Topic, ["name", "summary", "type"], {autoCreate: true})]: {},
+          [view(Entity.Topic, ["name", "summary", "type"])]: {},
         },
       },
     },
