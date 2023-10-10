@@ -416,7 +416,7 @@ describe("expandConsolidateAndGroupByDstPath", () => {
     consoleWarnSpy.mockRestore();
   });
   it("should expand recursive-copy logic results documents to merge logic results", () => {
-    // TODO:  Create a test case for this
+    // TODO:  Create a test case for this.  Make sure to test that recursive-copy is removed from the logic results.
   });
   it("should expand recursive-delete logic results documents to delete logic results", () => {
     // TODO:  Create a test case for this

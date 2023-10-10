@@ -227,28 +227,11 @@ export async function expandConsolidateAndGroupByDstPath(logicResults: LogicResu
     }
   }
 
-  function processCopy(existingDoc: LogicResultDoc | undefined, doc: LogicResultDoc, dstPath: string) {
-    if (existingDoc) {
-      if (existingDoc.action === "copy") {
-        console.warn(`Action "copy" ignored because "copy" for dstPath "${dstPath}" already exists`);
-      } else {
-        console.warn(`Action "${existingDoc.action}" for dstPath "${dstPath}" is being replaced by action "copy"`);
-        consolidated.set(dstPath, doc);
-      }
-    } else {
-      consolidated.set(dstPath, doc);
-    }
-  }
-
   async function expandRecursiveActions() {
     const expandedLogicResultDocs: LogicResultDoc[] = [];
-    const expandedLogicResult: LogicResult = {
-      name: "expandRecursiveDeleteAndRecursiveCopy",
-      status: "finished",
-      documents: expandedLogicResultDocs,
-    };
     for (const logicResult of logicResults) {
-      for (const logicResultDoc of logicResult.documents) {
+      for (let i = logicResult.documents.length - 1; i >= 0; i--) {
+        const logicResultDoc = logicResult.documents[i];
         const {
           action,
           dstPath,
@@ -286,9 +269,10 @@ export async function expandConsolidateAndGroupByDstPath(logicResults: LogicResu
             }
           }
         }
+
+        logicResult.documents.splice(i, 1, ...expandedLogicResultDocs);
       }
     }
-    logicResults.push(expandedLogicResult);
   }
 
   async function convertCopyToMerge() {
@@ -329,8 +313,6 @@ export async function expandConsolidateAndGroupByDstPath(logicResults: LogicResu
         processMerge(existingDoc, doc, dstPath);
       } else if (action === "delete") {
         processDelete(existingDoc, doc, dstPath);
-      } else if (action === "copy") {
-        processCopy(existingDoc, doc, dstPath);
       }
     }
   }
