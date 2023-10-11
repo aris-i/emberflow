@@ -245,7 +245,7 @@ export async function expandConsolidateAndGroupByDstPath(logicResults: LogicResu
         if (!toExpandPath) {
           continue;
         }
-        const subDocPaths = expandAndGroupDocPathsByEntity(
+        const subDocPaths = await expandAndGroupDocPathsByEntity(
           toExpandPath,
           undefined,
           skipEntityDuringRecursion
@@ -260,7 +260,7 @@ export async function expandConsolidateAndGroupByDstPath(logicResults: LogicResu
               });
             } else if (action === "recursive-copy" && srcPath) {
               const absoluteDstPath = path.replace(srcPath, dstPath);
-              const data = (await db.doc(srcPath).get()).data();
+              const data = (await db.doc(path).get()).data();
               expandedLogicResultDocs.push({
                 action: "merge",
                 doc: data,
