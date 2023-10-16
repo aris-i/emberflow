@@ -516,10 +516,10 @@ describe("onFormSubmit", () => {
     const peerSyncViewLogicResults: LogicResult[] = [];
     const otherUsersPeerSyncViewDocsByDstPath = new Map<string, LogicResultDoc>();
 
-    jest.spyOn(indexutils, "consolidateAndGroupByDstPath")
-      .mockReturnValueOnce(consolidatedLogicResults)
-      .mockReturnValueOnce(consolidatedViewLogicResults)
-      .mockReturnValue(consolidatedPeerSyncViewLogicResults);
+    jest.spyOn(indexutils, "expandConsolidateAndGroupByDstPath")
+      .mockResolvedValueOnce(consolidatedLogicResults)
+      .mockResolvedValueOnce(consolidatedViewLogicResults)
+      .mockResolvedValue(consolidatedPeerSyncViewLogicResults);
     jest.spyOn(indexutils, "groupDocsByUserAndDstPath")
       .mockReturnValueOnce({
         userDocsByDstPath,
@@ -546,16 +546,16 @@ describe("onFormSubmit", () => {
     expect(docMock.set).toHaveBeenCalledTimes(2);
 
     // Test that the functions are called in the correct sequence
-    expect(indexutils.consolidateAndGroupByDstPath).toHaveBeenNthCalledWith(1, businessLogicResults);
+    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(1, businessLogicResults);
     expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(1, consolidatedLogicResults, "test-uid");
     expect(indexutils.runViewLogics).toHaveBeenCalledWith(userDocsByDstPath);
-    expect(indexutils.consolidateAndGroupByDstPath).toHaveBeenNthCalledWith(2, viewLogicResults);
+    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(2, viewLogicResults);
     expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(2, consolidatedViewLogicResults, "test-uid");
     expect(indexutils.distribute).toHaveBeenNthCalledWith(1, userDocsByDstPath);
     expect(indexutils.distribute).toHaveBeenNthCalledWith(2, userViewDocsByDstPath);
     expect(refMock.update).toHaveBeenCalledWith({"@status": "finished"});
     expect(indexutils.runPeerSyncViews).toHaveBeenCalledWith(userDocsByDstPath);
-    expect(indexutils.consolidateAndGroupByDstPath).toHaveBeenNthCalledWith(3, peerSyncViewLogicResults);
+    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(3, peerSyncViewLogicResults);
     expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(3, consolidatedPeerSyncViewLogicResults, "test-uid");
     expect(indexutils.distribute).toHaveBeenCalledWith(otherUsersDocsByDstPath);
     expect(indexutils.distribute).toHaveBeenCalledWith(otherUsersViewDocsByDstPath);

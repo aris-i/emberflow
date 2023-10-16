@@ -6,7 +6,7 @@ import {
   delayFormSubmissionAndCheckIfCancelled,
   runBusinessLogics,
   groupDocsByUserAndDstPath,
-  consolidateAndGroupByDstPath,
+  expandConsolidateAndGroupByDstPath,
   runViewLogics,
   _mockable,
 } from "../index-utils";
@@ -21,12 +21,12 @@ import {
   ProjectConfig,
   ViewLogicConfig,
 } from "../types";
-import * as paths from "../utils/paths";
 import {Entity, dbStructure} from "../sample-custom/db-structure";
 import {securityConfig} from "../sample-custom/security";
 import {validatorConfig} from "../sample-custom/validators";
 import * as batch from "../utils/batch";
 import Timestamp = firestore.Timestamp;
+import {expandAndGroupDocPathsByEntity} from "../utils/paths";
 
 jest.spyOn(console, "log").mockImplementation();
 jest.spyOn(console, "info").mockImplementation();
@@ -46,6 +46,15 @@ const projectConfig: ProjectConfig = {
 
 admin.initializeApp({
   databaseURL: "https://test-project.firebaseio.com",
+});
+
+jest.mock("../utils/paths", () => {
+  const originalModule = jest.requireActual("../utils/paths");
+
+  return {
+    ...originalModule,
+    expandAndGroupDocPathsByEntity: jest.fn(),
+  };
 });
 
 describe("distribute", () => {
@@ -119,66 +128,6 @@ describe("distribute", () => {
     expect(batchDeleteSpy).toHaveBeenCalledTimes(1);
 
     batchDeleteSpy.mockRestore();
-  });
-
-  it("should copy a document to dstPath with shallow copy mode", async () => {
-    const batchSetSpy = jest.spyOn(batch, "set").mockResolvedValue(undefined);
-
-    const userDocsByDstPath = new Map([[
-      "/users/test-user-id/documents/test-doc-id",
-        {
-          action: "copy",
-          copyMode: "shallow",
-          srcPath: "/users/test-user-id-1/documents/test-doc-id",
-          dstPath: "/users/test-user-id-2/documents/test-doc-id",
-        } as LogicResultDoc,
-    ]]);
-    await distribute(userDocsByDstPath);
-
-    expect(admin.firestore().doc).toHaveBeenCalledTimes(2);
-    expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id-1/documents/test-doc-id");
-    expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id-2/documents/test-doc-id");
-    expect(batchSetSpy.mock.calls[0][1]).toEqual({});
-    expect(batchSetSpy).toHaveBeenCalledTimes(1);
-
-    batchSetSpy.mockRestore();
-  });
-
-  it("should copy a document to dstPath with recursive copy mode", async () => {
-    const batchSetSpy = jest.spyOn(batch, "set").mockResolvedValue(undefined);
-
-    const srcDocMock = ({
-      get: jest.fn().mockResolvedValue({
-        exists: true,
-        data: () => ({field: "value"}),
-      }),
-    } as unknown) as admin.firestore.DocumentReference<admin.firestore.DocumentData>;
-
-    const mockDoc = jest.spyOn(admin.firestore(), "doc").mockReturnValue(srcDocMock);
-    const mockExpandAndGroupDocPaths = jest.spyOn(paths, "expandAndGroupDocPaths").mockResolvedValue({});
-
-
-    const userDocsByDstPath = new Map([[
-      "/users/test-user-id-2/documents/test-doc-id",
-        {
-          action: "copy",
-          copyMode: "recursive",
-          srcPath: "/users/test-user-id-1/documents/test-doc-id",
-          dstPath: "/users/test-user-id-2/documents/test-doc-id",
-        } as LogicResultDoc,
-    ]]);
-    await distribute(userDocsByDstPath);
-
-    expect(mockExpandAndGroupDocPaths).toHaveBeenCalledTimes(1);
-    expect(admin.firestore().doc).toHaveBeenCalledTimes(2);
-    expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id-1/documents/test-doc-id");
-    expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id-2/documents/test-doc-id");
-    expect(batchSetSpy.mock.calls[0][1]).toEqual({field: "value"});
-    expect(batchSetSpy).toHaveBeenCalledTimes(1);
-
-    batchSetSpy.mockRestore();
-    mockDoc.mockRestore();
-    mockExpandAndGroupDocPaths.mockRestore();
   });
 });
 
@@ -396,9 +345,70 @@ describe("groupDocsByUserAndDstPath", () => {
   });
 });
 
+const friend = {
+  "@id": "friendId",
+  "name": "Friend Name",
+  "games": 2,
+};
 
-describe("consolidateLogicResultsDocs", () => {
-  it("should consolidate logic results documents correctly", () => {
+const games = [
+  {
+    "@id": "game1Id",
+    "name": "Dota 2",
+  },
+  {
+    "@id": "game2Id",
+    "name": "Farlight",
+  },
+];
+
+describe("expandConsolidateAndGroupByDstPath", () => {
+  let dbSpy: jest.SpyInstance;
+  let consoleWarnSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    const dbDoc = (path: string) => {
+      const pathArray = path.split("/");
+      const docId = pathArray[pathArray.length - 1];
+      return {
+        get: jest.fn().mockResolvedValue({
+          exists: true,
+          data: () => (
+            docId === "123" ? friend :
+              docId === "1" ? games[0] :
+                docId === "2" ? games[1] :
+                  {}
+          ),
+        }),
+      } as unknown as admin.firestore.DocumentReference<admin.firestore.DocumentData>;
+    };
+    dbSpy = jest.spyOn(admin.firestore(), "doc").mockImplementation((path) => {
+      return dbDoc(path);
+    });
+
+    // Mock console.warn
+    consoleWarnSpy = jest.spyOn(console, "warn").mockImplementation(jest.fn());
+
+    // Clear the mock before each test
+    (expandAndGroupDocPathsByEntity as jest.Mock).mockClear();
+
+    // Mock expandAndGroupDocPathsByEntity to return sample grouped paths
+    (expandAndGroupDocPathsByEntity as jest.Mock).mockResolvedValueOnce({
+      [Entity.User]: [
+        "users/123/friends/123",
+        "users/123/friends/123/games/1",
+        "users/123/friends/123/games/2",
+      ],
+    });
+  });
+
+  afterEach(() => {
+    // Cleanup
+    dbSpy.mockRestore();
+    consoleWarnSpy.mockRestore();
+  });
+
+  it("should consolidate logic results documents correctly", async () => {
     // Arrange
     const logicResults: LogicResult[] = [
       {
@@ -406,8 +416,8 @@ describe("consolidateLogicResultsDocs", () => {
         timeFinished: firestore.Timestamp.now(),
         status: "finished",
         documents: [
-          {action: "merge", dstPath: "path1", doc: {field1: "value1"}, instructions: {field2: "++"}},
-          {action: "delete", dstPath: "path2"},
+          {action: "merge", dstPath: "path1/doc1", doc: {field1: "value1"}, instructions: {field2: "++"}},
+          {action: "delete", dstPath: "path2/doc2"},
         ],
       },
       {
@@ -415,11 +425,11 @@ describe("consolidateLogicResultsDocs", () => {
         timeFinished: firestore.Timestamp.now(),
         status: "finished",
         documents: [
-          {action: "merge", dstPath: "path1", doc: {field1: "value1a"}, instructions: {field2: "--"}},
-          {action: "merge", dstPath: "path1", doc: {field3: "value3"}, instructions: {field4: "--"}},
-          {action: "copy", srcPath: "path3", dstPath: "path4"},
-          {action: "merge", dstPath: "path2", doc: {field4: "value4"}},
-          {action: "merge", dstPath: "path7", doc: {field6: "value7"}},
+          {action: "merge", dstPath: "path1/doc1", doc: {field1: "value1a"}, instructions: {field2: "--"}},
+          {action: "merge", dstPath: "path1/doc1", doc: {field3: "value3"}, instructions: {field4: "--"}},
+          {action: "copy", srcPath: "path3/doc3", dstPath: "path4/doc4"},
+          {action: "merge", dstPath: "path2/doc2", doc: {field4: "value4"}},
+          {action: "merge", dstPath: "path7/doc7", doc: {field6: "value7"}},
         ],
       },
       {
@@ -427,10 +437,10 @@ describe("consolidateLogicResultsDocs", () => {
         timeFinished: firestore.Timestamp.now(),
         status: "finished",
         documents: [
-          {action: "copy", srcPath: "path5", dstPath: "path6"},
-          {action: "delete", dstPath: "path7"},
-          {action: "delete", dstPath: "path7"},
-          {action: "copy", srcPath: "path3", dstPath: "path4"},
+          {action: "copy", srcPath: "path5/doc5", dstPath: "path6/doc6"},
+          {action: "delete", dstPath: "path7/doc7"},
+          {action: "delete", dstPath: "path7/doc7"},
+          {action: "copy", srcPath: "path3/doc3", dstPath: "path4/doc4"},
         ],
       },
       {
@@ -438,43 +448,201 @@ describe("consolidateLogicResultsDocs", () => {
         timeFinished: firestore.Timestamp.now(),
         status: "finished",
         documents: [
-          {action: "delete", dstPath: "path2"},
-          {action: "copy", srcPath: "path3", dstPath: "path7"},
+          {action: "delete", dstPath: "path2/doc2"},
+          {action: "copy", srcPath: "path3/doc3", dstPath: "path7/doc7"},
         ],
       },
     ];
 
-    // Mock console.warn
-    const consoleWarnSpy = jest.spyOn(console, "warn").mockImplementation(jest.fn());
-
     // Act
-    const result = consolidateAndGroupByDstPath(logicResults);
+    const result = await expandConsolidateAndGroupByDstPath(logicResults);
 
     // Assert
     const expectedResult = new Map<string, LogicResultDoc>([
-      ["path1", {action: "merge", dstPath: "path1", doc: {field1: "value1a", field3: "value3"}, instructions: {field2: "--", field4: "--"}}],
-      ["path2", {action: "delete", dstPath: "path2"}],
-      ["path4", {action: "copy", srcPath: "path3", dstPath: "path4"}],
-      ["path6", {action: "copy", srcPath: "path5", dstPath: "path6"}],
-      ["path7", {action: "copy", srcPath: "path3", dstPath: "path7"}],
+      ["path1/doc1", {action: "merge", dstPath: "path1/doc1", doc: {field1: "value1a", field3: "value3"}, instructions: {field2: "--", field4: "--"}}],
+      ["path2/doc2", {action: "delete", dstPath: "path2/doc2"}],
+      ["path4/doc4", {action: "merge", dstPath: "path4/doc4", doc: {}, instructions: {}}],
+      ["path6/doc6", {action: "merge", dstPath: "path6/doc6", doc: {}}],
+      ["path7/doc7", {action: "delete", dstPath: "path7/doc7"}],
     ]);
 
     expect(result).toEqual(expectedResult);
+
     // Verify that console.warn was called
-    expect(consoleWarnSpy).toHaveBeenCalledTimes(8);
+    expect(consoleWarnSpy).toHaveBeenCalledTimes(7);
 
     // Verify that console.warn was called with the correct message
-    expect(consoleWarnSpy.mock.calls[0][0]).toBe("Overwriting key \"field1\" in doc for dstPath \"path1\"");
-    expect(consoleWarnSpy.mock.calls[1][0]).toBe("Overwriting key \"field2\" in instructions for dstPath \"path1\"");
-    expect(consoleWarnSpy.mock.calls[2][0]).toBe("Action \"merge\" ignored because a \"delete\" for dstPath \"path2\" already exists");
-    expect(consoleWarnSpy.mock.calls[3][0]).toBe("Action \"merge\" for dstPath \"path7\" is being overwritten by action \"delete\"");
-    expect(consoleWarnSpy.mock.calls[4][0]).toBe("Action \"delete\" ignored because a \"delete\" for dstPath \"path7\" already exists");
-    expect(consoleWarnSpy.mock.calls[5][0]).toBe("Action \"copy\" ignored because \"copy\" for dstPath \"path4\" already exists");
-    expect(consoleWarnSpy.mock.calls[6][0]).toBe("Action \"delete\" ignored because a \"delete\" for dstPath \"path2\" already exists");
-    expect(consoleWarnSpy.mock.calls[7][0]).toBe("Action \"delete\" for dstPath \"path7\" is being replaced by action \"copy\"");
+    expect(consoleWarnSpy.mock.calls[0][0]).toBe("Overwriting key \"field1\" in doc for dstPath \"path1/doc1\"");
+    expect(consoleWarnSpy.mock.calls[1][0]).toBe("Overwriting key \"field2\" in instructions for dstPath \"path1/doc1\"");
+    expect(consoleWarnSpy.mock.calls[2][0]).toBe("Action \"merge\" ignored because a \"delete\" for dstPath \"path2/doc2\" already exists");
+    expect(consoleWarnSpy.mock.calls[3][0]).toBe("Action \"merge\" for dstPath \"path7/doc7\" is being overwritten by action \"delete\"");
+    expect(consoleWarnSpy.mock.calls[4][0]).toBe("Action \"delete\" ignored because a \"delete\" for dstPath \"path7/doc7\" already exists");
+    expect(consoleWarnSpy.mock.calls[5][0]).toBe("Action \"delete\" ignored because a \"delete\" for dstPath \"path2/doc2\" already exists");
+    expect(consoleWarnSpy.mock.calls[6][0]).toBe("Action \"merge\" ignored because a \"delete\" for dstPath \"path7/doc7\" already exists");
+  });
+  it("should expand recursive-copy logic results documents to merge logic results", async () => {
+    const logicResults: LogicResult[] = [
+      {
+        name: "logic 1",
+        timeFinished: firestore.Timestamp.now(),
+        status: "finished",
+        documents: [
+          {action: "recursive-copy", srcPath: "users/123/friends/123", dstPath: "users/456/friends/123"},
+        ],
+      },
+      {
+        name: "logic 2",
+        timeFinished: firestore.Timestamp.now(),
+        status: "finished",
+        documents: [
+          {action: "merge", dstPath: "path1/doc1", doc: {field1: "value1a"}, instructions: {field2: "--"}},
+        ],
+      },
+    ];
 
-    // Cleanup
-    consoleWarnSpy.mockRestore();
+    // Act
+    const result = await expandConsolidateAndGroupByDstPath(logicResults);
+
+    // Assert
+    const expectedResult = new Map<string, LogicResultDoc>([
+      ["path1/doc1", {
+        action: "merge",
+        dstPath: "path1/doc1",
+        doc: {field1: "value1a"},
+        instructions: {field2: "--"},
+      }],
+      ["users/456/friends/123", {
+        action: "merge",
+        doc: friend,
+        dstPath: "users/456/friends/123",
+      }],
+      ["users/456/friends/123/games/1", {
+        action: "merge",
+        doc: games[0],
+        dstPath: "users/456/friends/123/games/1",
+      }],
+      ["users/456/friends/123/games/2", {
+        action: "merge",
+        doc: games[1],
+        dstPath: "users/456/friends/123/games/2",
+      }],
+    ]);
+
+    // Checks if "recursive-copy" is removed from the logic results
+    expect([...result.values()].every((logicResultDoc) => logicResultDoc.action !== "recursive-copy"))
+      .toBe(true);
+    expect(result).toEqual(expectedResult);
+  });
+  it("should expand recursive-delete logic results documents to delete logic results", async () => {
+    const logicResults: LogicResult[] = [
+      {
+        name: "logic 1",
+        timeFinished: firestore.Timestamp.now(),
+        status: "finished",
+        documents: [
+          {action: "recursive-delete", dstPath: "users/123/friends/123"},
+        ],
+      },
+      {
+        name: "logic 2",
+        timeFinished: firestore.Timestamp.now(),
+        status: "finished",
+        documents: [
+          {action: "merge", dstPath: "path1/doc1", doc: {field1: "value1a"}, instructions: {field2: "--"}},
+        ],
+      },
+      {
+        name: "logic 3",
+        timeFinished: firestore.Timestamp.now(),
+        status: "finished",
+        documents: [
+          {action: "merge", dstPath: "users/123/friends/123", instructions: {games: "--"}},
+        ],
+      },
+    ];
+
+    // Act
+    const result = await expandConsolidateAndGroupByDstPath(logicResults);
+
+    // Assert
+    const expectedResult = new Map<string, LogicResultDoc>([
+      ["path1/doc1", {
+        action: "merge",
+        dstPath: "path1/doc1",
+        doc: {field1: "value1a"},
+        instructions: {field2: "--"},
+      }],
+      ["users/123/friends/123", {
+        action: "delete",
+        dstPath: "users/123/friends/123",
+      }],
+      ["users/123/friends/123/games/1", {
+        action: "delete",
+        dstPath: "users/123/friends/123/games/1",
+      }],
+      ["users/123/friends/123/games/2", {
+        action: "delete",
+        dstPath: "users/123/friends/123/games/2",
+      }],
+    ]);
+
+    // Checks if "recursive-delete" is removed from the logic results
+    expect([...result.values()].every((logicResultDoc) => logicResultDoc.action !== "recursive-delete"))
+      .toBe(true);
+    expect(result).toEqual(expectedResult);
+
+    // Verify that console.warn was called
+    expect(consoleWarnSpy).toHaveBeenCalledTimes(1);
+    expect(consoleWarnSpy.mock.calls[0][0]).toBe("Action \"merge\" ignored because a \"delete\" for dstPath \"users/123/friends/123\" already exists");
+  });
+  it("should convert copy logic results documents to merge logic results", async () => {
+    const logicResults: LogicResult[] = [
+      {
+        name: "logic 1",
+        timeFinished: firestore.Timestamp.now(),
+        status: "finished",
+        documents: [
+          {action: "copy", srcPath: "users/123/friends/123/games/1", dstPath: "users/456/friends/123/games/1"},
+          {action: "copy", srcPath: "users/123/friends/123/games/2", dstPath: "users/456/friends/123/games/2"},
+        ],
+      },
+      {
+        name: "logic 2",
+        timeFinished: firestore.Timestamp.now(),
+        status: "finished",
+        documents: [
+          {action: "merge", dstPath: "path1/doc1", doc: {field1: "value1a"}, instructions: {field2: "--"}},
+        ],
+      },
+    ];
+
+    // Act
+    const result = await expandConsolidateAndGroupByDstPath(logicResults);
+
+    // Assert
+    const expectedResult = new Map<string, LogicResultDoc>([
+      ["path1/doc1", {
+        action: "merge",
+        dstPath: "path1/doc1",
+        doc: {field1: "value1a"},
+        instructions: {field2: "--"},
+      }],
+      ["users/456/friends/123/games/1", {
+        action: "merge",
+        doc: games[0],
+        dstPath: "users/456/friends/123/games/1",
+      }],
+      ["users/456/friends/123/games/2", {
+        action: "merge",
+        doc: games[1],
+        dstPath: "users/456/friends/123/games/2",
+      }],
+    ]);
+
+    // Checks if "copy" is removed from the logic results
+    expect([...result.values()].every((logicResultDoc) => logicResultDoc.action !== "copy"))
+      .toBe(true);
+    expect(result).toEqual(expectedResult);
   });
 });
 

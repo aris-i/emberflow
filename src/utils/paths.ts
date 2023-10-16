@@ -34,7 +34,7 @@ export function filterSubDocPathsByEntity(entity: string, excludeEntities?: stri
   });
 }
 
-export async function expandAndGroupDocPaths(
+export async function expandAndGroupDocPathsByEntity(
   startingDocPath: string,
   entityCondition?: Record<string, QueryCondition>,
   excludeEntities?: string[]) {

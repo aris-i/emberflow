@@ -1,4 +1,4 @@
-import {expandAndGroupDocPaths, hydrateDocPath, filterSubDocPathsByEntity, _mockable as pathsMockable} from "../../utils/paths";
+import {expandAndGroupDocPathsByEntity, hydrateDocPath, filterSubDocPathsByEntity, _mockable as pathsMockable} from "../../utils/paths";
 import {fetchIds} from "../../utils/query";
 import {ProjectConfig, QueryCondition} from "../../types";
 import {initializeEmberFlow} from "../../index";
@@ -245,7 +245,7 @@ describe("expandAndGroupDocPaths", () => {
     pathsMockable.filterSubDocPathsByEntity = filterSubDocPathsByEntityMock;
 
     // Execute the function
-    const result = await expandAndGroupDocPaths(startingDocPath, entityCondition, excludeEntities);
+    const result = await expandAndGroupDocPathsByEntity(startingDocPath, entityCondition, excludeEntities);
 
     // Check the result
     const expected = {
