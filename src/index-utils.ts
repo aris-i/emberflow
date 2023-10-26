@@ -36,82 +36,79 @@ export const _mockable = {
 
 
 export async function distribute(
-  docsByDstPath: Map<string, LogicResultDoc>,
-  mode : "immediate" | "later" = "immediate") {
-  if (mode === "immediate") {
-    for (const dstPath of Array.from(docsByDstPath.keys()).sort()) {
-      console.log(`Documents for path ${dstPath}:`);
-      const resultDoc = docsByDstPath.get(dstPath);
-      if (!resultDoc) continue;
-      const {
-        action,
-        doc,
-        instructions,
-      } = resultDoc;
-      if (action === "delete") {
-        // Delete document at dstPath
-        const dstDocRef = db.doc(dstPath);
-        await batch.deleteDoc(dstDocRef);
-        console.log(`Document deleted at ${dstPath}`);
-      } else if (action === "merge") {
-        const updateData: { [key: string]: any } = {...doc};
-        if (instructions) {
-          for (const [property, instruction] of Object.entries(instructions)) {
-            if (instruction === "++") {
-              updateData[property] = admin.firestore.FieldValue.increment(1);
-            } else if (instruction === "--") {
-              updateData[property] = admin.firestore.FieldValue.increment(-1);
-            } else if (instruction.startsWith("+")) {
-              const incrementValue = parseInt(instruction.slice(1));
-              if (isNaN(incrementValue)) {
-                console.log(`Invalid increment value ${instruction} for property ${property}`);
-              } else {
-                updateData[property] = admin.firestore.FieldValue.increment(incrementValue);
-              }
-            } else if (instruction.startsWith("-")) {
-              const decrementValue = parseInt(instruction.slice(1));
-              if (isNaN(decrementValue)) {
-                console.log(`Invalid decrement value ${instruction} for property ${property}`);
-              } else {
-                updateData[property] = admin.firestore.FieldValue.increment(-decrementValue);
-              }
+  docsByDstPath: Map<string, LogicResultDoc> ) {
+  for (const dstPath of Array.from(docsByDstPath.keys()).sort()) {
+    console.log(`Documents for path ${dstPath}:`);
+    const resultDoc = docsByDstPath.get(dstPath);
+    if (!resultDoc) continue;
+    const {
+      action,
+      doc,
+      instructions,
+    } = resultDoc;
+    if (action === "delete") {
+      // Delete document at dstPath
+      const dstDocRef = db.doc(dstPath);
+      await batch.deleteDoc(dstDocRef);
+      console.log(`Document deleted at ${dstPath}`);
+    } else if (action === "merge") {
+      const updateData: { [key: string]: any } = {...doc};
+      if (instructions) {
+        for (const [property, instruction] of Object.entries(instructions)) {
+          if (instruction === "++") {
+            updateData[property] = admin.firestore.FieldValue.increment(1);
+          } else if (instruction === "--") {
+            updateData[property] = admin.firestore.FieldValue.increment(-1);
+          } else if (instruction.startsWith("+")) {
+            const incrementValue = parseInt(instruction.slice(1));
+            if (isNaN(incrementValue)) {
+              console.log(`Invalid increment value ${instruction} for property ${property}`);
             } else {
-              console.log(`Invalid instruction ${instruction} for property ${property}`);
+              updateData[property] = admin.firestore.FieldValue.increment(incrementValue);
             }
+          } else if (instruction.startsWith("-")) {
+            const decrementValue = parseInt(instruction.slice(1));
+            if (isNaN(decrementValue)) {
+              console.log(`Invalid decrement value ${instruction} for property ${property}`);
+            } else {
+              updateData[property] = admin.firestore.FieldValue.increment(-decrementValue);
+            }
+          } else {
+            console.log(`Invalid instruction ${instruction} for property ${property}`);
           }
         }
-
-        // Merge document to dstPath
-        const dstDocRef = db.doc(dstPath);
-        await batch.set(dstDocRef, updateData);
-        console.log(`Document merged to ${dstPath}`);
       }
-    }
 
-    if (batch.writeCount > 0) {
-      console.log(`Committing final batch of ${batch.writeCount} writes...`);
-      await batch.commit();
+      // Merge document to dstPath
+      const dstDocRef = db.doc(dstPath);
+      await batch.set(dstDocRef, updateData);
+      console.log(`Document merged to ${dstPath}`);
     }
-  } else {
-    console.log("Submitting to form for later processing...");
-    docsByDstPath.forEach((doc, dstPath) => {
-      if (doc.priority === "normal"){
-        doc.priority = "high";
-      } else if (doc.priority === "low"){
-        doc.priority = "normal";
-      }
-    });
-    // TODO: Need to make this idempotent
-    const id = db.collection("@internal/forDistribution/distributions").doc().id;
-    const formData: FormData = {
-      "@docPath": `@internal/forDistribution/distributions/${id}`,
-      "@actionType": "create",
-      "logicResultDocs": Array.from(docsByDstPath.values()),
-    };
-    await submitForm(formData, (status: string, data: DocumentData, isLastUpdate: boolean) => {
-      console.log(`Status: ${status}, data: ${JSON.stringify(data)}, isLastUpdate: ${isLastUpdate}`);
-    });
   }
+
+  if (batch.writeCount > 0) {
+    console.log(`Committing final batch of ${batch.writeCount} writes...`);
+    await batch.commit();
+  }
+}
+
+export async function distributeLater(docsByDstPath: Map<string, LogicResultDoc>, id: string) {
+  console.log("Submitting to form for later processing...");
+  docsByDstPath.forEach((doc, dstPath) => {
+    if (doc.priority === "normal") {
+      doc.priority = "high";
+    } else if (doc.priority === "low") {
+      doc.priority = "normal";
+    }
+  });
+  const formData: FormData = {
+    "@docPath": `@internal/forDistribution/distributions/${id}`,
+    "@actionType": "create",
+    "logicResultDocs": Array.from(docsByDstPath.values()),
+  };
+  await submitForm(formData, (status: string, data: DocumentData, isLastUpdate: boolean) => {
+    console.log(`Status: ${status}, data: ${JSON.stringify(data)}, isLastUpdate: ${isLastUpdate}`);
+  });
 }
 
 export async function validateForm(

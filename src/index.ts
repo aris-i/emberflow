@@ -24,6 +24,7 @@ import {
   runPeerSyncViews,
   runViewLogics,
   validateForm,
+  distributeLater,
 } from "./index-utils";
 import {initDbStructure} from "./init-db-structure";
 import {createViewLogicFn} from "./logics/view-logics";
@@ -288,8 +289,8 @@ export async function onFormSubmit(
           userDocsByDstPath: highPriorityUserDocsByDstPath,
           otherUsersDocsByDstPath: highPriorityOtherUsersDocsByDstPath,
         } = groupDocsByUserAndDstPath(highPriorityDstPathLogicDocsMap, userId);
-        await distribute(highPriorityUserDocsByDstPath, "immediate");
-        await distribute(highPriorityOtherUsersDocsByDstPath, "immediate");
+        await distribute(highPriorityUserDocsByDstPath);
+        await distribute(highPriorityOtherUsersDocsByDstPath);
 
         if (page === 0) {
           await formRef.update({"@status": "finished"});
@@ -302,8 +303,8 @@ export async function onFormSubmit(
           userDocsByDstPath: normalPriorityUserDocsByDstPath,
           otherUsersDocsByDstPath: normalPriorityOtherUsersDocsByDstPath,
         } = groupDocsByUserAndDstPath(normalPriorityDstPathLogicDocsMap, userId);
-        await distribute(normalPriorityUserDocsByDstPath, "immediate");
-        await distribute(normalPriorityOtherUsersDocsByDstPath, "later");
+        await distribute(normalPriorityUserDocsByDstPath);
+        await distributeLater(normalPriorityOtherUsersDocsByDstPath, `${formId}-${page}`);
 
         console.info("Consolidating and Distributing Low Priority Logic Results");
         const lowPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc> =
@@ -312,10 +313,9 @@ export async function onFormSubmit(
           userDocsByDstPath: lowPriorityUserDocsByDstPath,
           otherUsersDocsByDstPath: lowPriorityOtherUsersDocsByDstPath,
         } = groupDocsByUserAndDstPath(lowPriorityDstPathLogicDocsMap, userId);
-        await distribute(lowPriorityUserDocsByDstPath, "later");
-        await distribute(lowPriorityOtherUsersDocsByDstPath, "later");
+        await distribute(lowPriorityUserDocsByDstPath);
+        await distributeLater(lowPriorityOtherUsersDocsByDstPath, `${formId}-${page}`);
 
-        //TODO: Need to put in an array and consolidate again
         userDocsByDstPath = new Map([
           ...userDocsByDstPath,
           ...highPriorityUserDocsByDstPath,
@@ -335,8 +335,8 @@ export async function onFormSubmit(
     } = groupDocsByUserAndDstPath(dstPathViewLogicDocsMap, userId);
 
     console.info("Distributing View Logic Results");
-    await distribute(userViewDocsByDstPath, "immediate");
-    await distribute(otherUsersViewDocsByDstPath, "later");
+    await distribute(userViewDocsByDstPath);
+    await distributeLater(otherUsersViewDocsByDstPath, `${formId}-views`);
 
     console.info("Running Peer Sync Views");
     const peerSyncViewLogicResults = await runPeerSyncViews(userDocsByDstPath);
@@ -345,9 +345,9 @@ export async function onFormSubmit(
     const {otherUsersDocsByDstPath: otherUsersPeerSyncViewDocsByDstPath} = groupDocsByUserAndDstPath(dstPathPeerSyncViewLogicDocsMap, userId);
 
     console.info("Distributing Logic Results for Peer Sync Views");
-    await distribute(otherUsersPeerSyncViewDocsByDstPath, "later");
+    await distributeLater(otherUsersPeerSyncViewDocsByDstPath, `${formId}-peers`);
 
-    if (errorMessage){
+    if (errorMessage) {
       await actionRef.update({status: "finished-with-error", message: errorMessage});
     } else {
       await actionRef.update({status: "finished"});
