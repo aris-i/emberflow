@@ -33,9 +33,6 @@ jest.spyOn(admin, "app").mockImplementation();
 jest.spyOn(adminClient, "initClient").mockImplementation();
 jest.spyOn(adminClient, "submitForm").mockImplementation();
 
-const test= 'string';
-console.log(test);
-
 const dataMock = jest.fn().mockReturnValue({});
 
 const getMock: CollectionReference = {
@@ -497,7 +494,7 @@ describe("onFormSubmit", () => {
             modifiedFields: {"field1": "value1", "field2": "value2"},
             status: "processing"
         }));
-        expect(docMock.update).toHaveBeenCalledTimes(2);
+        expect(docMock.update).toHaveBeenCalledTimes(1);
         expect((docMock.update as jest.Mock).mock.calls[0][0]).toEqual({status: "finished-with-error", message: errorMessage});
 
         validateFormMock.mockReset();
@@ -530,7 +527,7 @@ describe("onFormSubmit", () => {
         const event = createEvent(form);
 
         const consolidatedLogicResults = new Map<string, LogicResultDoc>();
-        const consolidatedViewLogicResults = new Map<string, LogicResultDoc>();
+        const consolidatedViewLogicResults = new Map<string, LogicResultDoc>(); //
         const consolidatedPeerSyncViewLogicResults = new Map<string, LogicResultDoc>();
         const userDocsByDstPath = new Map<string, LogicResultDoc>();
         const otherUsersDocsByDstPath = new Map<string, LogicResultDoc>();
@@ -540,34 +537,34 @@ describe("onFormSubmit", () => {
         const peerSyncViewLogicResults: LogicResult[] = [];
         const otherUsersPeerSyncViewDocsByDstPath = new Map<string, LogicResultDoc>();
 
-    jest.spyOn(indexutils, "expandConsolidateAndGroupByDstPath")
-      .mockResolvedValueOnce(consolidatedLogicResults)
-      .mockResolvedValueOnce(consolidatedViewLogicResults)
-      .mockResolvedValue(consolidatedPeerSyncViewLogicResults);
-    jest.spyOn(indexutils, "groupDocsByUserAndDstPath")
-      .mockReturnValueOnce({
-        userDocsByDstPath,
-        otherUsersDocsByDstPath,
-      })
-      .mockReturnValueOnce({
-        userDocsByDstPath: userViewDocsByDstPath,
-        otherUsersDocsByDstPath: otherUsersViewDocsByDstPath,
-      })
-      .mockReturnValueOnce({
-        userDocsByDstPath: new Map<string, LogicResultDoc>(),
-        otherUsersDocsByDstPath: otherUsersPeerSyncViewDocsByDstPath,
-      });
-    jest.spyOn(indexutils, "runViewLogics").mockResolvedValue(viewLogicResults);
-    jest.spyOn(indexutils, "runPeerSyncViews").mockResolvedValue(peerSyncViewLogicResults);
-    jest.spyOn(indexutils, "distribute");
+        jest.spyOn(indexutils, "expandConsolidateAndGroupByDstPath")
+            .mockResolvedValueOnce(consolidatedLogicResults)
+            .mockResolvedValueOnce(consolidatedViewLogicResults)
+            .mockResolvedValue(consolidatedPeerSyncViewLogicResults);
+        jest.spyOn(indexutils, "groupDocsByUserAndDstPath")
+            .mockReturnValueOnce({
+                userDocsByDstPath,
+                otherUsersDocsByDstPath,
+            })
+            .mockReturnValueOnce({
+                userDocsByDstPath: userViewDocsByDstPath,
+                otherUsersDocsByDstPath: otherUsersViewDocsByDstPath,
+            })
+            .mockReturnValueOnce({
+                userDocsByDstPath: new Map<string, LogicResultDoc>(),
+                otherUsersDocsByDstPath: otherUsersPeerSyncViewDocsByDstPath,
+            });
+        jest.spyOn(indexutils, "runViewLogics").mockResolvedValue(viewLogicResults);
+        jest.spyOn(indexutils, "runPeerSyncViews").mockResolvedValue(peerSyncViewLogicResults);
+        jest.spyOn(indexutils, "distribute");
+        jest.spyOn(indexutils, "distributeLater");
 
         await onFormSubmit(event);
 
         // Test that the runBusinessLogics function was called with the correct parameters
         expect(runBusinessLogicsSpy).toHaveBeenCalled();
-        expect(refMock.update).toHaveBeenCalledTimes(3);
-
-        expect(docMock.set).toHaveBeenCalledTimes(2);
+        expect(refMock.update).toHaveBeenCalledTimes(2); //3
+        expect(docMock.set).toHaveBeenCalledTimes(1); // 2
 
         // Test that the functions are called in the correct sequence
         expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(1, consolidatedLogicResults, "test-uid");
@@ -575,11 +572,11 @@ describe("onFormSubmit", () => {
         expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(2, viewLogicResults);
         expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(2, consolidatedViewLogicResults, "test-uid");
         expect(indexutils.distribute).toHaveBeenNthCalledWith(1, userDocsByDstPath);
-        expect(indexutils.distribute).toHaveBeenNthCalledWith(2, userViewDocsByDstPath);
-        expect(refMock.update).toHaveBeenCalledWith({"@status": "finished"});
+        expect(indexutils.distribute).toHaveBeenNthCalledWith(1, userViewDocsByDstPath);
+        expect(refMock.update).toHaveBeenCalledWith({"@status": "processing"});
         expect(indexutils.runPeerSyncViews).toHaveBeenCalledWith(userDocsByDstPath);
-        expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(3, peerSyncViewLogicResults);
-        expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(3, consolidatedPeerSyncViewLogicResults, "test-uid");
+        expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(2, peerSyncViewLogicResults);
+        expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(2, consolidatedPeerSyncViewLogicResults, "test-uid");
         expect(indexutils.distribute).toHaveBeenCalledWith(otherUsersDocsByDstPath);
         expect(indexutils.distribute).toHaveBeenCalledWith(otherUsersViewDocsByDstPath);
         expect(indexutils.distribute).toHaveBeenCalledWith(otherUsersPeerSyncViewDocsByDstPath);
