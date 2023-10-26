@@ -101,11 +101,12 @@ export async function distribute(
         doc.priority = "normal";
       }
     });
-    const id = db.collection("@distributions").doc().id;
+    // TODO: Need to make this idempotent
+    const id = db.collection("@internal/forDistribution/distributions").doc().id;
     const formData: FormData = {
-      "@docPath": `@distributions/${id}`,
+      "@docPath": `@internal/forDistribution/distributions/${id}`,
       "@actionType": "create",
-      "docsByDstPath": Array.from(docsByDstPath.values()),
+      "logicResultDocs": Array.from(docsByDstPath.values()),
     };
     await submitForm(formData, (status: string, data: DocumentData, isLastUpdate: boolean) => {
       console.log(`Status: ${status}, data: ${JSON.stringify(data)}, isLastUpdate: ${isLastUpdate}`);
