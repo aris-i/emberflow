@@ -97,8 +97,6 @@ function createEvent(form: FirebaseFirestore.DocumentData): DatabaseEvent<DataSn
     } as unknown as DatabaseEvent<DataSnapshot>;
 }
 
-const fixedTimestamp = Timestamp.fromDate(new Date('2023-01-01T12:00:00Z'));
-
 describe("onFormSubmit", () => {
     const entity = "user";
 
@@ -113,7 +111,7 @@ describe("onFormSubmit", () => {
 
     beforeEach(() => {
         // Add the spy for _mockable
-        jest.spyOn(_mockable, "createNowTimestamp").mockReturnValue(fixedTimestamp);
+        jest.spyOn(_mockable, "createNowTimestamp").mockReturnValue(Timestamp.now());
         jest.spyOn(console, "log").mockImplementation();
         jest.spyOn(console, "warn").mockImplementation();
         parseEntityMock.mockReturnValue({
@@ -464,7 +462,7 @@ describe("onFormSubmit", () => {
                 field1: "value1",
                 field2: "value2"
             },
-            timeCreated: fixedTimestamp,
+            timeCreated: _mockable.createNowTimestamp(),
             user: {
                 description: "test description",
                 name: "test"
@@ -495,7 +493,10 @@ describe("onFormSubmit", () => {
             status: "processing"
         }));
         expect(docMock.update).toHaveBeenCalledTimes(1);
-        expect((docMock.update as jest.Mock).mock.calls[0][0]).toEqual({status: "finished-with-error", message: errorMessage});
+        expect((docMock.update as jest.Mock).mock.calls[0][0]).toEqual({
+            status: "finished-with-error",
+            message: errorMessage
+        });
 
         validateFormMock.mockReset();
         getFormModifiedFieldsMock.mockReset();
@@ -513,7 +514,19 @@ describe("onFormSubmit", () => {
         jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(false);
 
         const runBusinessLogicsSpy =
-            jest.spyOn(indexutils, "runBusinessLogics");
+            jest.spyOn(indexutils, "runBusinessLogics").mockImplementation(
+                async (actionType, formModifiedFields, entity, action, distributeFn) => {
+                    const logicResults: LogicResult[] = [
+                        {
+                            name: "testLogic",
+                            status: "finished",
+                            timeFinished: _mockable.createNowTimestamp(),
+                            documents: [],
+                        },
+                    ];
+                    await distributeFn(logicResults, 0);
+                }
+            );
 
         const form = {
             "formData": JSON.stringify({
@@ -526,11 +539,9 @@ describe("onFormSubmit", () => {
 
         const event = createEvent(form);
 
-        const consolidatedLogicResults = new Map<string, LogicResultDoc>();
         const consolidatedViewLogicResults = new Map<string, LogicResultDoc>(); //
         const consolidatedPeerSyncViewLogicResults = new Map<string, LogicResultDoc>();
         const userDocsByDstPath = new Map<string, LogicResultDoc>();
-        const otherUsersDocsByDstPath = new Map<string, LogicResultDoc>();
         const viewLogicResults: LogicResult[] = [];
         const userViewDocsByDstPath = new Map<string, LogicResultDoc>();
         const otherUsersViewDocsByDstPath = new Map<string, LogicResultDoc>();
@@ -538,14 +549,9 @@ describe("onFormSubmit", () => {
         const otherUsersPeerSyncViewDocsByDstPath = new Map<string, LogicResultDoc>();
 
         jest.spyOn(indexutils, "expandConsolidateAndGroupByDstPath")
-            .mockResolvedValueOnce(consolidatedLogicResults)
             .mockResolvedValueOnce(consolidatedViewLogicResults)
             .mockResolvedValue(consolidatedPeerSyncViewLogicResults);
         jest.spyOn(indexutils, "groupDocsByUserAndDstPath")
-            .mockReturnValueOnce({
-                userDocsByDstPath,
-                otherUsersDocsByDstPath,
-            })
             .mockReturnValueOnce({
                 userDocsByDstPath: userViewDocsByDstPath,
                 otherUsersDocsByDstPath: otherUsersViewDocsByDstPath,
@@ -563,23 +569,23 @@ describe("onFormSubmit", () => {
 
         // Test that the runBusinessLogics function was called with the correct parameters
         expect(runBusinessLogicsSpy).toHaveBeenCalled();
-        expect(refMock.update).toHaveBeenCalledTimes(2); //3
-        expect(docMock.set).toHaveBeenCalledTimes(1); // 2
+        expect(refMock.update).toHaveBeenCalledTimes(3);
+        expect(docMock.set).toHaveBeenCalledTimes(2);
 
         // Test that the functions are called in the correct sequence
-        expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(1, consolidatedLogicResults, "test-uid");
         expect(indexutils.runViewLogics).toHaveBeenCalledWith(userDocsByDstPath);
-        expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(2, viewLogicResults);
-        expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(2, consolidatedViewLogicResults, "test-uid");
-        expect(indexutils.distribute).toHaveBeenNthCalledWith(1, userDocsByDstPath);
-        expect(indexutils.distribute).toHaveBeenNthCalledWith(1, userViewDocsByDstPath);
+        expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(1, viewLogicResults);
+        expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(1, consolidatedViewLogicResults, "test-uid");
+
         expect(refMock.update).toHaveBeenCalledWith({"@status": "processing"});
+        expect(indexutils.distribute).toHaveBeenNthCalledWith(1, userViewDocsByDstPath);
+        expect(indexutils.distributeLater).toHaveBeenNthCalledWith(1, otherUsersViewDocsByDstPath, "test-fid-0");
+
         expect(indexutils.runPeerSyncViews).toHaveBeenCalledWith(userDocsByDstPath);
         expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(2, peerSyncViewLogicResults);
         expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(2, consolidatedPeerSyncViewLogicResults, "test-uid");
-        expect(indexutils.distribute).toHaveBeenCalledWith(otherUsersDocsByDstPath);
-        expect(indexutils.distribute).toHaveBeenCalledWith(otherUsersViewDocsByDstPath);
-        expect(indexutils.distribute).toHaveBeenCalledWith(otherUsersPeerSyncViewDocsByDstPath);
+        expect(indexutils.distributeLater).toHaveBeenNthCalledWith(2, otherUsersPeerSyncViewDocsByDstPath, "test-fid-0");
+
         expect(docMock.update).toHaveBeenCalledTimes(1);
         expect((docMock.update as jest.Mock).mock.calls[0][0]).toEqual({status: "finished"});
     });
