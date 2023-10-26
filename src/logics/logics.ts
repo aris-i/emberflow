@@ -12,7 +12,7 @@ export const forDistributionLogicConfig: LogicConfig = {
   entities: [InternalEntity.ForDistribution],
   logicFn: async (action: Action) => {
     const {document} = action;
-    const documents: LogicResultDoc[] = document.docsByDstPath;
+    const documents: LogicResultDoc[] = document.logicResultDocs;
     return {
       name: "For Distribution Logic Result",
       status: "finished",

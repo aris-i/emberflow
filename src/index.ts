@@ -150,7 +150,7 @@ export async function onFormSubmit(
     }
 
     console.info("Validating userId");
-    if (userId !== "forDistribution" && !docPath.startsWith(`users/${userId}`)) {
+    if (docPath.startsWith("users") && !docPath.startsWith(`users/${userId}`)) {
       const message = "User id from path does not match user id from event params";
       console.warn(message);
       await formRef.update({"@status": "error", "@message": message});
@@ -238,6 +238,7 @@ export async function onFormSubmit(
 
     console.info("Running Business Logics");
     let userDocsByDstPath: Map<string, LogicResultDoc> = new Map();
+    let errorMessage = "";
     await runBusinessLogics(
       actionType,
       formModifiedFields,
@@ -258,8 +259,7 @@ export async function onFormSubmit(
 
         const errorLogicResults = logicResults.filter((result) => result.status === "error");
         if (errorLogicResults.length > 0) {
-          const errorMessage = errorLogicResults.map((result) => result.message).join("\n");
-          await actionRef.update({status: "finished-with-error", message: errorMessage});
+          errorMessage = errorMessage + errorLogicResults.map((result) => result.message).join("\n");
         }
 
         console.info("Group logic docs by priority");
@@ -315,6 +315,7 @@ export async function onFormSubmit(
         await distribute(lowPriorityUserDocsByDstPath, "later");
         await distribute(lowPriorityOtherUsersDocsByDstPath, "later");
 
+        //TODO: Need to put in an array and consolidate again
         userDocsByDstPath = new Map([
           ...userDocsByDstPath,
           ...highPriorityUserDocsByDstPath,
@@ -346,7 +347,11 @@ export async function onFormSubmit(
     console.info("Distributing Logic Results for Peer Sync Views");
     await distribute(otherUsersPeerSyncViewDocsByDstPath, "later");
 
-    await actionRef.update({status: "finished"});
+    if (errorMessage){
+      await actionRef.update({status: "finished-with-error", message: errorMessage});
+    } else {
+      await actionRef.update({status: "finished"});
+    }
     console.info("Finished");
   } catch (error) {
     console.error("Error in onFormSubmit", error);
