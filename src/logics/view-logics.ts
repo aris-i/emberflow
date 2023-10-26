@@ -1,4 +1,10 @@
-import {LogicResultAction, LogicResultDoc, ViewDefinition, ViewLogicFn} from "../types";
+import {
+  LogicResultAction,
+  LogicResultDoc,
+  LogicResultDocPriority,
+  ViewDefinition,
+  ViewLogicFn,
+} from "../types";
 import {docPaths} from "../index";
 import * as admin from "firebase-admin";
 import {findMatchingDocPathRegex, hydrateDocPath} from "../utils/paths";
@@ -17,7 +23,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn {
       action,
     } = logicResultDoc;
     console.log(`Executing ViewLogic on document at ${actualSrcPath}...`);
-    let destPaths: string[] = [];
+    let destPaths: string[];
     const destDocPath = docPaths[destEntity];
     const docId = actualSrcPath.split("/").slice(-1)[0];
     if (destProp) {
@@ -38,6 +44,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn {
         return {
           action: "delete" as LogicResultAction,
           dstPath: destPath,
+          priority: "normal" as LogicResultDocPriority,
         };
       });
       return {
@@ -63,6 +70,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn {
           dstPath: destPath,
           doc: viewDoc,
           instructions: viewInstructions,
+          priority: "low" as LogicResultDocPriority,
         };
       });
 
@@ -148,6 +156,7 @@ export const syncPeerViews: ViewLogicFn = async (logicResultDoc: LogicResultDoc)
       dstPath: forSyncPath,
       doc: doc,
       instructions: instructions,
+      priority: "low" as LogicResultDocPriority,
     };
   });
 

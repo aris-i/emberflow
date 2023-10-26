@@ -26,65 +26,90 @@ import {CloudFunctionsServiceClient} from "@google-cloud/functions";
 import QueryDocumentSnapshot = firestore.QueryDocumentSnapshot;
 import DocumentData = FirebaseFirestore.DocumentData;
 import Reference = database.Reference;
+import {submitForm} from "emberflow-admin-client/lib";
+import {FormData} from "emberflow-admin-client/lib/types";
 
 export const _mockable = {
   getViewLogicsConfig: () => viewLogicConfigs,
   createNowTimestamp: () => admin.firestore.Timestamp.now(),
 };
 
-export async function distribute(docsByDstPath: Map<string, LogicResultDoc>) {
-  for (const dstPath of Array.from(docsByDstPath.keys()).sort()) {
-    console.log(`Documents for path ${dstPath}:`);
-    const resultDoc = docsByDstPath.get(dstPath);
-    if (!resultDoc) continue;
-    const {
-      action,
-      doc,
-      instructions,
-    } = resultDoc;
-    if (action === "delete") {
-      // Delete document at dstPath
-      const dstDocRef = db.doc(dstPath);
-      await batch.deleteDoc(dstDocRef);
-      console.log(`Document deleted at ${dstPath}`);
-    } else if (action === "merge") {
-      const updateData: { [key: string]: any } = {...doc};
-      if (instructions) {
-        for (const [property, instruction] of Object.entries(instructions)) {
-          if (instruction === "++") {
-            updateData[property] = admin.firestore.FieldValue.increment(1);
-          } else if (instruction === "--") {
-            updateData[property] = admin.firestore.FieldValue.increment(-1);
-          } else if (instruction.startsWith("+")) {
-            const incrementValue = parseInt(instruction.slice(1));
-            if (isNaN(incrementValue)) {
-              console.log(`Invalid increment value ${instruction} for property ${property}`);
+
+export async function distribute(
+  docsByDstPath: Map<string, LogicResultDoc>,
+  mode : "immediate" | "later" = "immediate") {
+  if (mode === "immediate") {
+    for (const dstPath of Array.from(docsByDstPath.keys()).sort()) {
+      console.log(`Documents for path ${dstPath}:`);
+      const resultDoc = docsByDstPath.get(dstPath);
+      if (!resultDoc) continue;
+      const {
+        action,
+        doc,
+        instructions,
+      } = resultDoc;
+      if (action === "delete") {
+        // Delete document at dstPath
+        const dstDocRef = db.doc(dstPath);
+        await batch.deleteDoc(dstDocRef);
+        console.log(`Document deleted at ${dstPath}`);
+      } else if (action === "merge") {
+        const updateData: { [key: string]: any } = {...doc};
+        if (instructions) {
+          for (const [property, instruction] of Object.entries(instructions)) {
+            if (instruction === "++") {
+              updateData[property] = admin.firestore.FieldValue.increment(1);
+            } else if (instruction === "--") {
+              updateData[property] = admin.firestore.FieldValue.increment(-1);
+            } else if (instruction.startsWith("+")) {
+              const incrementValue = parseInt(instruction.slice(1));
+              if (isNaN(incrementValue)) {
+                console.log(`Invalid increment value ${instruction} for property ${property}`);
+              } else {
+                updateData[property] = admin.firestore.FieldValue.increment(incrementValue);
+              }
+            } else if (instruction.startsWith("-")) {
+              const decrementValue = parseInt(instruction.slice(1));
+              if (isNaN(decrementValue)) {
+                console.log(`Invalid decrement value ${instruction} for property ${property}`);
+              } else {
+                updateData[property] = admin.firestore.FieldValue.increment(-decrementValue);
+              }
             } else {
-              updateData[property] = admin.firestore.FieldValue.increment(incrementValue);
+              console.log(`Invalid instruction ${instruction} for property ${property}`);
             }
-          } else if (instruction.startsWith("-")) {
-            const decrementValue = parseInt(instruction.slice(1));
-            if (isNaN(decrementValue)) {
-              console.log(`Invalid decrement value ${instruction} for property ${property}`);
-            } else {
-              updateData[property] = admin.firestore.FieldValue.increment(-decrementValue);
-            }
-          } else {
-            console.log(`Invalid instruction ${instruction} for property ${property}`);
           }
         }
+
+        // Merge document to dstPath
+        const dstDocRef = db.doc(dstPath);
+        await batch.set(dstDocRef, updateData);
+        console.log(`Document merged to ${dstPath}`);
       }
-
-      // Merge document to dstPath
-      const dstDocRef = db.doc(dstPath);
-      await batch.set(dstDocRef, updateData);
-      console.log(`Document merged to ${dstPath}`);
     }
-  }
 
-  if (batch.writeCount > 0) {
-    console.log(`Committing final batch of ${batch.writeCount} writes...`);
-    await batch.commit();
+    if (batch.writeCount > 0) {
+      console.log(`Committing final batch of ${batch.writeCount} writes...`);
+      await batch.commit();
+    }
+  } else {
+    console.log("Submitting to form for later processing...");
+    docsByDstPath.forEach((doc, dstPath) => {
+      if (doc.priority === "normal"){
+        doc.priority = "high";
+      } else if (doc.priority === "low"){
+        doc.priority = "normal";
+      }
+    });
+    const id = db.collection("@distributions").doc().id;
+    const formData: FormData = {
+      "@docPath": `@distributions/${id}`,
+      "@actionType": "create",
+      "docsByDstPath": Array.from(docsByDstPath.values()),
+    };
+    await submitForm(formData, (status: string, data: DocumentData, isLastUpdate: boolean) => {
+      console.log(`Status: ${status}, data: ${JSON.stringify(data)}, isLastUpdate: ${isLastUpdate}`);
+    });
   }
 }
 
@@ -134,7 +159,13 @@ export async function delayFormSubmissionAndCheckIfCancelled(delay: number, form
   return cancelFormSubmission;
 }
 
-export async function runBusinessLogics(actionType: LogicActionType, formModifiedFields: DocumentData, entity: string, action: Action) {
+export async function runBusinessLogics(
+  actionType: LogicActionType,
+  formModifiedFields: DocumentData,
+  entity: string,
+  action: Action,
+  distributeFn: (logicResults: LogicResult[], page: number) => Promise<void>,
+) {
   const matchingLogics = logicConfigs.filter((logic) => {
     return (
       (logic.actionTypes === "all" || logic.actionTypes.includes(actionType)) &&
@@ -142,25 +173,44 @@ export async function runBusinessLogics(actionType: LogicActionType, formModifie
             (logic.entities === "all" || logic.entities.includes(entity))
     );
   });
-  return await Promise.all(matchingLogics.map(async (logic) => {
-    const start = performance.now();
-    try {
-      const result = await logic.logicFn(action);
-      const end = performance.now();
-      const execTime = end - start;
-      return {...result, execTime, timeFinished: admin.firestore.Timestamp.now()};
-    } catch (e) {
-      const end = performance.now();
-      const execTime = end - start;
-      return {
-        name: logic.name,
-        status: "error",
-        documents: [],
-        execTime,
-        message: (e as Error).message,
-        timeFinished: admin.firestore.Timestamp.now()} as LogicResult;
+
+  const nextPageMarkers: (object|undefined)[] = Array(matchingLogics.length).fill(undefined);
+  let page = 0;
+  while (matchingLogics.length > 0) {
+    const logicResults: LogicResult[] = [];
+    for (let i = matchingLogics.length-1; i >= 0; i--) {
+      const start = performance.now();
+      const logic = matchingLogics[i];
+      try {
+        const result = await logic.logicFn(action, nextPageMarkers[i]);
+        const end = performance.now();
+        const execTime = end - start;
+        const {status, nextPage} = result;
+        if (status === "finished") {
+          matchingLogics.splice(i, 1);
+          nextPageMarkers.splice(i, 1);
+        } else if (status === "partial-result") {
+          nextPageMarkers[i] = nextPage;
+        }
+
+        logicResults.push({...result, execTime, timeFinished: admin.firestore.Timestamp.now()});
+      } catch (e) {
+        const end = performance.now();
+        const execTime = end - start;
+        matchingLogics.splice(i, 1);
+        nextPageMarkers.splice(i, 1);
+        logicResults.push({
+          name: logic.name,
+          status: "error",
+          documents: [],
+          execTime,
+          message: (e as Error).message,
+          timeFinished: admin.firestore.Timestamp.now(),
+        });
+      }
     }
-  }));
+    await distributeFn(logicResults, page++);
+  }
 }
 
 export function groupDocsByUserAndDstPath(docsByDstPath: Map<string, LogicResultDoc>, userId: string) {
@@ -186,7 +236,7 @@ export function getSecurityFn(entity: string): SecurityFn {
 }
 
 
-export async function expandConsolidateAndGroupByDstPath(logicResults: LogicResult[]): Promise<Map<string, LogicResultDoc>> {
+export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultDoc[]): Promise<Map<string, LogicResultDoc>> {
   function warnOverwritingKeys(existing: any, incoming: any, type: string, dstPath: string) {
     for (const key in incoming) {
       if (Object.prototype.hasOwnProperty.call(existing, key)) {
@@ -229,69 +279,68 @@ export async function expandConsolidateAndGroupByDstPath(logicResults: LogicResu
 
   async function expandRecursiveActions() {
     const expandedLogicResultDocs: LogicResultDoc[] = [];
-    for (const logicResult of logicResults) {
-      for (let i = logicResult.documents.length - 1; i >= 0; i--) {
-        const logicResultDoc = logicResult.documents[i];
-        const {
-          action,
-          dstPath,
-          srcPath,
-          skipEntityDuringRecursion,
-        } = logicResultDoc;
+    for (let i = logicDocs.length - 1; i >= 0; i--) {
+      const logicResultDoc = logicDocs[i];
+      const {
+        action,
+        dstPath,
+        srcPath,
+        skipEntityDuringRecursion,
+        priority,
+      } = logicResultDoc;
 
-        if (!["recursive-delete", "recursive-copy"].includes(action)) continue;
+      if (!["recursive-delete", "recursive-copy"].includes(action)) continue;
 
-        const toExpandPath = action === "recursive-delete" ? dstPath : srcPath;
-        if (!toExpandPath) {
-          continue;
-        }
-        const subDocPaths = await expandAndGroupDocPathsByEntity(
-          toExpandPath,
-          undefined,
-          skipEntityDuringRecursion
-        );
+      const toExpandPath = action === "recursive-delete" ? dstPath : srcPath;
+      if (!toExpandPath) {
+        continue;
+      }
+      const subDocPaths = await expandAndGroupDocPathsByEntity(
+        toExpandPath,
+        undefined,
+        skipEntityDuringRecursion
+      );
 
-        for (const [_, paths] of Object.entries(subDocPaths)) {
-          for (const path of paths) {
-            if (action === "recursive-delete") {
-              expandedLogicResultDocs.push({
-                action: "delete",
-                dstPath: path,
-              });
-            } else if (action === "recursive-copy" && srcPath) {
-              const absoluteDstPath = path.replace(srcPath, dstPath);
-              const data = (await db.doc(path).get()).data();
-              expandedLogicResultDocs.push({
-                action: "merge",
-                doc: data,
-                dstPath: absoluteDstPath,
-              });
-            }
+      for (const [_, paths] of Object.entries(subDocPaths)) {
+        for (const path of paths) {
+          if (action === "recursive-delete") {
+            expandedLogicResultDocs.push({
+              action: "delete",
+              dstPath: path,
+              priority,
+            });
+          } else if (action === "recursive-copy" && srcPath) {
+            const absoluteDstPath = path.replace(srcPath, dstPath);
+            const data = (await db.doc(path).get()).data();
+            expandedLogicResultDocs.push({
+              action: "merge",
+              doc: data,
+              dstPath: absoluteDstPath,
+              priority,
+            });
           }
         }
-
-        logicResult.documents.splice(i, 1, ...expandedLogicResultDocs);
       }
+
+      logicDocs.splice(i, 1, ...expandedLogicResultDocs);
     }
   }
 
   async function convertCopyToMerge() {
-    for (const logicResult of logicResults) {
-      for (const doc of logicResult.documents) {
-        const {
-          srcPath,
-          action,
-        } = doc;
+    for (const doc of logicDocs) {
+      const {
+        srcPath,
+        action,
+      } = doc;
 
-        if (action !== "copy" || !srcPath) {
-          continue;
-        }
-
-        const data = (await db.doc(srcPath).get()).data();
-        delete doc.srcPath;
-        doc.doc = data;
-        doc.action = "merge";
+      if (action !== "copy" || !srcPath) {
+        continue;
       }
+
+      const data = (await db.doc(srcPath).get()).data();
+      delete doc.srcPath;
+      doc.doc = data;
+      doc.action = "merge";
     }
   }
 
@@ -301,19 +350,17 @@ export async function expandConsolidateAndGroupByDstPath(logicResults: LogicResu
 
   const consolidated: Map<string, LogicResultDoc> = new Map();
 
-  for (const logicResult of logicResults) {
-    for (const doc of logicResult.documents) {
-      const {
-        dstPath,
-        action,
-      } = doc;
-      const existingDoc = consolidated.get(dstPath);
+  for (const doc of logicDocs) {
+    const {
+      dstPath,
+      action,
+    } = doc;
+    const existingDoc = consolidated.get(dstPath);
 
-      if (action === "merge") {
-        processMerge(existingDoc, doc, dstPath);
-      } else if (action === "delete") {
-        processDelete(existingDoc, doc, dstPath);
-      }
+    if (action === "merge") {
+      processMerge(existingDoc, doc, dstPath);
+    } else if (action === "delete") {
+      processDelete(existingDoc, doc, dstPath);
     }
   }
 

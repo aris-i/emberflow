@@ -43,4 +43,3 @@ export async function deleteDoc<T extends DocumentData>(
     await commit();
   }
 }
-

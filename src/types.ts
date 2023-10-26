@@ -26,9 +26,11 @@ export interface Action{
 }
 
 export type LogicResultAction = "merge" | "delete" | "copy" | "recursive-copy" | "recursive-delete";
+export type LogicResultDocPriority = "high" | "normal" | "low";
 export interface LogicResultDoc{
     action: LogicResultAction;
     dstPath: string;
+    priority: LogicResultDocPriority;
     srcPath?: string;
     doc?: FirebaseFirestore.DocumentData;
     instructions?: { [key: string]: string };
@@ -37,13 +39,14 @@ export interface LogicResultDoc{
 
 export interface LogicResult{
     name: string;
-    status: "finished" | "error";
+    status: "finished" | "error" | "partial-result";
+    nextPage?: object;
     message?: string;
     execTime?: number;
     timeFinished?: Timestamp;
     documents: LogicResultDoc[];
 }
-export type LogicFn = (action: Action) => Promise<LogicResult>;
+export type LogicFn = (action: Action, nextPage?: object) => Promise<LogicResult>;
 export type LogicActionType = "create" | "update" | "delete";
 export interface LogicConfig{
     name: string;
