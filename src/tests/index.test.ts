@@ -33,6 +33,9 @@ jest.spyOn(admin, "app").mockImplementation();
 jest.spyOn(adminClient, "initClient").mockImplementation();
 jest.spyOn(adminClient, "submitForm").mockImplementation();
 
+const test= 'string';
+console.log(test);
+
 const dataMock = jest.fn().mockReturnValue({});
 
 const getMock: CollectionReference = {
