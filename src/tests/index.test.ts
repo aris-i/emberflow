@@ -585,11 +585,27 @@ describe("onFormSubmit", () => {
     // const consolidatedViewLogicResults = new Map<string, LogicResultDoc>([["users/test-uid", logicResults[0]]]);
     const consolidatedPeerSyncViewLogicResults = new Map<string, LogicResultDoc>([["users/test-uid-2", highPriorityDocs[0]]]);
     const userDocsByDstPath = new Map<string, LogicResultDoc>([...userHighPriorityByDstPath, ...userNormalPriorityByDstPath, ...userLowPriorityByDstPath]);
-    const viewLogicResults: LogicResult[] = [];
-    const userViewDocsByDstPath = new Map<string, LogicResultDoc>();
-    const otherUsersViewDocsByDstPath = new Map<string, LogicResultDoc>();
-    const peerSyncViewLogicResults: LogicResult[] = [];
-    const otherUsersPeerSyncViewDocsByDstPath = new Map<string, LogicResultDoc>();
+    const viewLogicResults: LogicResult[] = [{
+      name: "User ViewLogic",
+      status: "finished",
+      timeFinished: _mockable.createNowTimestamp(),
+      documents: logicResults.map((result) => result.documents).flat(),
+    }];
+    const viewLogicResultDocs = viewLogicResults.map((result) => result.documents).flat();
+    const userViewDocs = viewLogicResultDocs.filter((doc) => [doc.dstPath === "users/test-uid"]);
+    const userViewDocsByDstPath = new Map<string, LogicResultDoc>(userViewDocs.map((doc) => [doc.dstPath, doc]));
+    const otherUserViewDocs = viewLogicResultDocs.filter((doc) => [doc.dstPath !== "users/test-uid"]);
+    const otherUsersViewDocsByDstPath = new Map<string, LogicResultDoc>(otherUserViewDocs.map((doc) => [doc.dstPath, doc]));
+    const peerSyncViewLogicResults: LogicResult[] = [{
+      name: "SyncPeerViews",
+      status: "finished",
+      timeFinished: _mockable.createNowTimestamp(),
+      documents: logicResults.map((result) => result.documents).flat(),
+    }];
+
+    const peerSyncViewLogicResultDocs = peerSyncViewLogicResults.map((result) => result.documents).flat();
+    const peerSyncViewDocs = peerSyncViewLogicResultDocs.filter((doc) => [doc.dstPath !== "users/test-uid"]);
+    const otherUsersPeerSyncViewDocsByDstPath = new Map<string, LogicResultDoc>(peerSyncViewDocs.map((doc) => [doc.dstPath, doc]));
 
     jest.spyOn(indexutils, "expandConsolidateAndGroupByDstPath")
       .mockResolvedValueOnce(consolidateHighPriorityDocs)
@@ -647,7 +663,7 @@ describe("onFormSubmit", () => {
     expect(indexutils.distributeLater).toHaveBeenNthCalledWith(3, otherUsersLowPriorityByDstPath, "test-fid-low-others-0");
 
     expect(indexutils.runViewLogics).toHaveBeenCalledWith(userDocsByDstPath);
-    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(4, viewLogicResults);
+    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(4, viewLogicResultDocs);
     expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(4, consolidatedViewLogicResults, "test-uid");
 
     expect(refMock.update).toHaveBeenCalledWith({"@status": "processing"});
@@ -655,7 +671,7 @@ describe("onFormSubmit", () => {
     expect(indexutils.distributeLater).toHaveBeenNthCalledWith(4, otherUsersViewDocsByDstPath, "test-fid-views");
 
     expect(indexutils.runPeerSyncViews).toHaveBeenCalledWith(userDocsByDstPath);
-    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(5, peerSyncViewLogicResults);
+    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(5, peerSyncViewLogicResultDocs);
     expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(5, consolidatedPeerSyncViewLogicResults, "test-uid");
     expect(indexutils.distributeLater).toHaveBeenNthCalledWith(5, otherUsersPeerSyncViewDocsByDstPath, "test-fid-peers");
 
