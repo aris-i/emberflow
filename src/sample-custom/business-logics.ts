@@ -18,6 +18,7 @@ const echoLogic: LogicFn = async (action) => {
         dstPath: docPath,
         doc: modifiedFields,
         instructions: {},
+        priority: "normal",
       },
     ],
   };
