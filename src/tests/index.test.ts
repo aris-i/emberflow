@@ -10,7 +10,7 @@ import {
   LogicResultDoc,
   ProjectConfig,
   SecurityResult,
-  ValidateFormResult
+  ValidateFormResult,
 } from "../types";
 import * as functions from "firebase-functions";
 import {dbStructure, Entity} from "../sample-custom/db-structure";
@@ -521,17 +521,40 @@ describe("onFormSubmit", () => {
     jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() => Promise.resolve({status: "allowed"}));
     jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(false);
 
+    const highPriorityDocs: LogicResultDoc[] = [{
+      action: "create" as LogicResultAction,
+      dstPath: "users/test-uid",
+      priority: "high",
+    }];
+    const normalPriorityDocs: LogicResultDoc[] = [{
+      action: "create" as LogicResultAction,
+      dstPath: "users/test-uid",
+      priority: "normal",
+    },
+    {
+      action: "create" as LogicResultAction,
+      dstPath: "users/test-uid-2",
+      priority: "normal",
+    },
+    ];
+    const lowPriorityDocs: LogicResultDoc[] = [{
+      action: "create" as LogicResultAction,
+      dstPath: "users/test-uid",
+      priority: "low",
+    }];
+
+    const logicResults: LogicResult[] = [
+      {
+        name: "testLogic",
+        status: "finished",
+        timeFinished: _mockable.createNowTimestamp(),
+        documents: [...highPriorityDocs, ...normalPriorityDocs, ...lowPriorityDocs],
+      },
+    ];
+
     const runBusinessLogicsSpy =
             jest.spyOn(indexutils, "runBusinessLogics").mockImplementation(
               async (actionType, formModifiedFields, entity, action, distributeFn) => {
-                const logicResults: LogicResult[] = [
-                  {
-                    name: "testLogic",
-                    status: "finished",
-                    timeFinished: _mockable.createNowTimestamp(),
-                    documents: [],
-                  },
-                ];
                 await distributeFn(logicResults, 0);
               }
             );
@@ -547,32 +570,21 @@ describe("onFormSubmit", () => {
 
     const event = createEvent(form);
 
-    const highPriorityDocs: LogicResultDoc[] = [{
-      action: "create" as LogicResultAction,
-      dstPath: "users/test-uid",
-      priority: "high",
-    }];
-    const normalPriorityDocs: LogicResultDoc[] = [{
-      action: "create" as LogicResultAction,
-      dstPath: "users/test-uid",
-      priority: "normal",
-    }];
-    const lowPriorityDocs: LogicResultDoc[] = [];
+    const consolidateHighPriorityDocs = new Map<string, LogicResultDoc>([["users/test-uid", highPriorityDocs[0]], ["users/test-uid-2", highPriorityDocs[0]]]);
+    const consolidateNormalPriorityDocs = new Map<string, LogicResultDoc>([["users/test-uid", normalPriorityDocs[0]], ["users/test-uid", normalPriorityDocs[1]], ["users/test-uid-2", normalPriorityDocs[0]], ["users/test-uid-2", normalPriorityDocs[1]]]);
+    const consolidateLowPriorityDocs = new Map<string, LogicResultDoc>([["users/test-uid", lowPriorityDocs[0]], ["users/test-uid-2", lowPriorityDocs[0]], ["users/test-uid-3", lowPriorityDocs[0]]]);
 
-    const consolidateHighPriorityDocs = new Map<string, LogicResultDoc>();
-    const consolidateNormalPriorityDocs = new Map<string, LogicResultDoc>();
-    const consolidateLowPriorityDocs = new Map<string, LogicResultDoc>();
+    const userHighPriorityByDstPath = new Map<string, LogicResultDoc>([["users/test-uid", highPriorityDocs[0]]]);
+    const otherUsersHighPriorityByDstPath = new Map<string, LogicResultDoc>([["users/test-uid-2", highPriorityDocs[0]]]);
+    const userNormalPriorityByDstPath = new Map<string, LogicResultDoc>([["users/test-uid", normalPriorityDocs[0]], ["users/test-uid", normalPriorityDocs[1]]]);
+    const otherUsersNormalPriorityByDstPath = new Map<string, LogicResultDoc>([["users/test-uid-2", normalPriorityDocs[0]], ["users/test-uid-2", normalPriorityDocs[1]]]);
+    const userLowPriorityByDstPath = new Map<string, LogicResultDoc>([["users/test-uid", lowPriorityDocs[0]]]);
+    const otherUsersLowPriorityByDstPath = new Map<string, LogicResultDoc>([["users/test-uid-2", lowPriorityDocs[0]], ["users/test-uid-3", lowPriorityDocs[0]]]);
 
-    const userHighPriorityByDstPath = new Map<string, LogicResultDoc>();
-    const otherUsersHighPriorityByDstPath = new Map<string, LogicResultDoc>();
-    const userNormalPriorityByDstPath = new Map<string, LogicResultDoc>();
-    const otherUsersNormalPriorityByDstPath = new Map<string, LogicResultDoc>();
-    const userLowPriorityByDstPath = new Map<string, LogicResultDoc>();
-    const otherUsersLowPriorityByDstPath = new Map<string, LogicResultDoc>();
-
-    const consolidatedViewLogicResults = new Map<string, LogicResultDoc>(); //
-    const consolidatedPeerSyncViewLogicResults = new Map<string, LogicResultDoc>();
-    const userDocsByDstPath = new Map<string, LogicResultDoc>();
+    const consolidatedViewLogicResults = new Map<string, LogicResultDoc>([]);
+    // const consolidatedViewLogicResults = new Map<string, LogicResultDoc>([["users/test-uid", logicResults[0]]]);
+    const consolidatedPeerSyncViewLogicResults = new Map<string, LogicResultDoc>([["users/test-uid-2", highPriorityDocs[0]]]);
+    const userDocsByDstPath = new Map<string, LogicResultDoc>([...userHighPriorityByDstPath, ...userNormalPriorityByDstPath, ...userLowPriorityByDstPath]);
     const viewLogicResults: LogicResult[] = [];
     const userViewDocsByDstPath = new Map<string, LogicResultDoc>();
     const otherUsersViewDocsByDstPath = new Map<string, LogicResultDoc>();
@@ -616,7 +628,7 @@ describe("onFormSubmit", () => {
     // Test that the runBusinessLogics function was called with the correct parameters
     expect(runBusinessLogicsSpy).toHaveBeenCalled();
     expect(refMock.update).toHaveBeenCalledTimes(3);
-    expect(docMock.set).toHaveBeenCalledTimes(2);
+    expect(docMock.set).toHaveBeenCalledTimes(6);
 
     // Test that the functions are called in the correct sequence
     expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(1, highPriorityDocs);
@@ -627,25 +639,25 @@ describe("onFormSubmit", () => {
     expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(2, normalPriorityDocs);
     expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(2, consolidateNormalPriorityDocs, "test-uid");
     expect(indexutils.distribute).toHaveBeenNthCalledWith(3, userNormalPriorityByDstPath);
-    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(1, otherUsersNormalPriorityByDstPath, "test-fid-0");
+    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(1, otherUsersNormalPriorityByDstPath, "test-fid-normal-0");
 
     expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(3, lowPriorityDocs);
     expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(3, consolidateLowPriorityDocs, "test-uid");
-    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(4, userLowPriorityByDstPath);
-    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(2, otherUsersLowPriorityByDstPath, "test-fid-0");
+    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(2, userLowPriorityByDstPath, "test-fid-low-user-0");
+    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(3, otherUsersLowPriorityByDstPath, "test-fid-low-others-0");
 
     expect(indexutils.runViewLogics).toHaveBeenCalledWith(userDocsByDstPath);
     expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(4, viewLogicResults);
     expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(4, consolidatedViewLogicResults, "test-uid");
 
     expect(refMock.update).toHaveBeenCalledWith({"@status": "processing"});
-    expect(indexutils.distribute).toHaveBeenNthCalledWith(5, userViewDocsByDstPath);
-    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(3, otherUsersViewDocsByDstPath, "test-fid-views");
+    expect(indexutils.distribute).toHaveBeenNthCalledWith(4, userViewDocsByDstPath);
+    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(4, otherUsersViewDocsByDstPath, "test-fid-views");
 
     expect(indexutils.runPeerSyncViews).toHaveBeenCalledWith(userDocsByDstPath);
     expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(5, peerSyncViewLogicResults);
     expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(5, consolidatedPeerSyncViewLogicResults, "test-uid");
-    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(4, otherUsersPeerSyncViewDocsByDstPath, "test-fid-peers");
+    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(5, otherUsersPeerSyncViewDocsByDstPath, "test-fid-peers");
 
     expect(docMock.update).toHaveBeenCalledTimes(1);
     expect((docMock.update as jest.Mock).mock.calls[0][0]).toEqual({status: "finished"});
