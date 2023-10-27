@@ -539,6 +539,21 @@ describe("onFormSubmit", () => {
 
         const event = createEvent(form);
 
+        const highPriorityDocs: LogicResultDoc[] = [];
+        const normalPriorityDocs: LogicResultDoc[] = [];
+        const lowPriorityDocs: LogicResultDoc[] = [];
+
+        const consolidateHighPriorityDocs = new Map<string, LogicResultDoc>();
+        const consolidateNormalPriorityDocs = new Map<string, LogicResultDoc>();
+        const consolidateLowPriorityDocs = new Map<string, LogicResultDoc>();
+
+        const userHighPriorityByDstPath = new Map<string, LogicResultDoc>();
+        const otherUsersHighPriorityByDstPath = new Map<string, LogicResultDoc>();
+        const userNormalPriorityByDstPath = new Map<string, LogicResultDoc>();
+        const otherUsersNormalPriorityByDstPath = new Map<string, LogicResultDoc>();
+        const userLowPriorityByDstPath = new Map<string, LogicResultDoc>();
+        const otherUsersLowPriorityByDstPath = new Map<string, LogicResultDoc>();
+
         const consolidatedViewLogicResults = new Map<string, LogicResultDoc>(); //
         const consolidatedPeerSyncViewLogicResults = new Map<string, LogicResultDoc>();
         const userDocsByDstPath = new Map<string, LogicResultDoc>();
@@ -549,9 +564,24 @@ describe("onFormSubmit", () => {
         const otherUsersPeerSyncViewDocsByDstPath = new Map<string, LogicResultDoc>();
 
         jest.spyOn(indexutils, "expandConsolidateAndGroupByDstPath")
+            .mockResolvedValueOnce(consolidateHighPriorityDocs)
+            .mockResolvedValueOnce(consolidateNormalPriorityDocs)
+            .mockResolvedValueOnce(consolidateLowPriorityDocs)
             .mockResolvedValueOnce(consolidatedViewLogicResults)
             .mockResolvedValue(consolidatedPeerSyncViewLogicResults);
         jest.spyOn(indexutils, "groupDocsByUserAndDstPath")
+            .mockReturnValueOnce({
+                userDocsByDstPath: userHighPriorityByDstPath,
+                otherUsersDocsByDstPath: otherUsersHighPriorityByDstPath,
+            })
+            .mockReturnValueOnce({
+                userDocsByDstPath: userNormalPriorityByDstPath,
+                otherUsersDocsByDstPath: otherUsersNormalPriorityByDstPath,
+            })
+            .mockReturnValueOnce({
+                userDocsByDstPath: userLowPriorityByDstPath,
+                otherUsersDocsByDstPath: otherUsersLowPriorityByDstPath,
+            })
             .mockReturnValueOnce({
                 userDocsByDstPath: userViewDocsByDstPath,
                 otherUsersDocsByDstPath: otherUsersViewDocsByDstPath,
@@ -573,18 +603,33 @@ describe("onFormSubmit", () => {
         expect(docMock.set).toHaveBeenCalledTimes(2);
 
         // Test that the functions are called in the correct sequence
+        expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(1, highPriorityDocs);
+        expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(1, consolidateHighPriorityDocs, "test-uid");
+        expect(indexutils.distribute).toHaveBeenNthCalledWith(1, userHighPriorityByDstPath);
+        expect(indexutils.distribute).toHaveBeenNthCalledWith(2, otherUsersHighPriorityByDstPath);
+
+        expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(2, normalPriorityDocs);
+        expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(2, consolidateNormalPriorityDocs, "test-uid");
+        expect(indexutils.distribute).toHaveBeenNthCalledWith(3, userLowPriorityByDstPath);
+        expect(indexutils.distributeLater).toHaveBeenNthCalledWith(1, otherUsersNormalPriorityByDstPath, "test-fid-0");
+
+        expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(3, lowPriorityDocs);
+        expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(3, consolidateLowPriorityDocs, "test-uid");
+        expect(indexutils.distribute).toHaveBeenNthCalledWith(4, userLowPriorityByDstPath);
+        expect(indexutils.distributeLater).toHaveBeenNthCalledWith(2, otherUsersLowPriorityByDstPath, "test-fid-0")
+
         expect(indexutils.runViewLogics).toHaveBeenCalledWith(userDocsByDstPath);
-        expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(1, viewLogicResults);
-        expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(1, consolidatedViewLogicResults, "test-uid");
+        expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(4, viewLogicResults);
+        expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(4, consolidatedViewLogicResults, "test-uid");
 
         expect(refMock.update).toHaveBeenCalledWith({"@status": "processing"});
-        expect(indexutils.distribute).toHaveBeenNthCalledWith(1, userViewDocsByDstPath);
-        expect(indexutils.distributeLater).toHaveBeenNthCalledWith(1, otherUsersViewDocsByDstPath, "test-fid-0");
+        expect(indexutils.distribute).toHaveBeenNthCalledWith(5, userViewDocsByDstPath);
+        expect(indexutils.distributeLater).toHaveBeenNthCalledWith(3, otherUsersViewDocsByDstPath, "test-fid-views");
 
         expect(indexutils.runPeerSyncViews).toHaveBeenCalledWith(userDocsByDstPath);
-        expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(2, peerSyncViewLogicResults);
-        expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(2, consolidatedPeerSyncViewLogicResults, "test-uid");
-        expect(indexutils.distributeLater).toHaveBeenNthCalledWith(2, otherUsersPeerSyncViewDocsByDstPath, "test-fid-0");
+        expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(5, peerSyncViewLogicResults);
+        expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(5, consolidatedPeerSyncViewLogicResults, "test-uid");
+        expect(indexutils.distributeLater).toHaveBeenNthCalledWith(4, otherUsersPeerSyncViewDocsByDstPath, "test-fid-peers");
 
         expect(docMock.update).toHaveBeenCalledTimes(1);
         expect((docMock.update as jest.Mock).mock.calls[0][0]).toEqual({status: "finished"});
