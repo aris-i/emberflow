@@ -270,7 +270,7 @@ export async function onFormSubmit(
           .reduce((acc, doc) => {
             if (doc.priority === "high") {
               acc.highPriorityDocs.push(doc);
-            } else if (doc.priority === "normal") {
+            } else if (!doc.priority || doc.priority === "normal") {
               acc.normalPriorityDocs.push(doc);
             } else {
               acc.lowPriorityDocs.push(doc);

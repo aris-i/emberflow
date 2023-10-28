@@ -30,7 +30,7 @@ export type LogicResultDocPriority = "high" | "normal" | "low";
 export interface LogicResultDoc{
     action: LogicResultAction;
     dstPath: string;
-    priority: LogicResultDocPriority;
+    priority?: LogicResultDocPriority;
     srcPath?: string;
     doc?: FirebaseFirestore.DocumentData;
     instructions?: { [key: string]: string };

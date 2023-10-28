@@ -95,7 +95,7 @@ export async function distribute(
 export async function distributeLater(docsByDstPath: Map<string, LogicResultDoc>, id: string) {
   console.log("Submitting to form for later processing...");
   docsByDstPath.forEach((doc, dstPath) => {
-    if (doc.priority === "normal") {
+    if (!doc.priority || doc.priority === "normal") {
       doc.priority = "high";
     } else if (doc.priority === "low") {
       doc.priority = "normal";
