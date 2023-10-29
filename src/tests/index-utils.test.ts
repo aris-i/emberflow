@@ -432,7 +432,8 @@ describe("runBusinessLogics", () => {
     ], 1]);
   });
 
-  it("should not call any logic when no matching logics are found", async () => {
+  it("should not call any logic when no matching logics are found but distributeFn should still be " +
+      "called", async () => {
     const logics: LogicConfig[] = [
       {
         name: "Logic 1",
@@ -462,7 +463,8 @@ describe("runBusinessLogics", () => {
     expect(logicFn1).not.toHaveBeenCalled();
     expect(logicFn2).not.toHaveBeenCalled();
     expect(logicFn3).not.toHaveBeenCalled();
-    expect(distributeFn).not.toHaveBeenCalled();
+    expect(distributeFn).toHaveBeenCalledTimes(1);
+    expect(distributeFn).toHaveBeenCalledWith([], 0);
   });
 });
 

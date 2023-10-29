@@ -94,6 +94,10 @@ export async function distribute(
 
 export async function distributeLater(docsByDstPath: Map<string, LogicResultDoc>, id: string) {
   console.log("Submitting to form for later processing...");
+  const documents = Array.from(docsByDstPath.values());
+  if (documents.length === 0) {
+    return;
+  }
   docsByDstPath.forEach((doc, dstPath) => {
     if (!doc.priority || doc.priority === "normal") {
       doc.priority = "high";
@@ -104,7 +108,7 @@ export async function distributeLater(docsByDstPath: Map<string, LogicResultDoc>
   const formData: FormData = {
     "@docPath": `@internal/forDistribution/distributions/${id}`,
     "@actionType": "create",
-    "logicResultDocs": Array.from(docsByDstPath.values()),
+    "logicResultDocs": documents,
   };
   await submitForm(formData, (status: string, data: DocumentData, isLastUpdate: boolean) => {
     console.log(`Status: ${status}, data: ${JSON.stringify(data)}, isLastUpdate: ${isLastUpdate}`);
@@ -171,14 +175,24 @@ export async function runBusinessLogics(
             (logic.entities === "all" || logic.entities.includes(entity))
     );
   });
+  console.debug("Matching logics:", matchingLogics.map((logic) => logic.name));
+  if (matchingLogics.length === 0) {
+    console.log("No matching logics found");
+    await distributeFn([], 0);
+    return;
+  }
 
   const nextPageMarkers: (object|undefined)[] = Array(matchingLogics.length).fill(undefined);
   let page = 0;
   while (matchingLogics.length > 0) {
+    if (page > 0) {
+      console.debug(`Page ${page} Remaining logics:`, matchingLogics.map((logic) => logic.name));
+    }
     const logicResults: LogicResult[] = [];
     for (let i = matchingLogics.length-1; i >= 0; i--) {
       const start = performance.now();
       const logic = matchingLogics[i];
+      console.debug("Running logic:", logic.name);
       try {
         const result = await logic.logicFn(action, nextPageMarkers[i]);
         const end = performance.now();
