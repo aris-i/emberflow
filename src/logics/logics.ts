@@ -11,8 +11,8 @@ export const forDistributionLogicConfig: LogicConfig = {
   modifiedFields: "all",
   entities: [InternalEntity.ForDistribution],
   logicFn: async (action: Action) => {
-    const {document} = action;
-    const documents: LogicResultDoc[] = document.logicResultDocs;
+    const {modifiedFields} = action;
+    const documents: LogicResultDoc[] = modifiedFields.logicResultDocs;
     return {
       name: "For Distribution Logic Result",
       status: "finished",

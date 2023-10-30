@@ -198,7 +198,7 @@ export async function runBusinessLogics(
     for (let i = matchingLogics.length-1; i >= 0; i--) {
       const start = performance.now();
       const logic = matchingLogics[i];
-      console.debug("Running logic:", logic.name);
+      console.debug("Running logic:", logic.name, "nextPageMarker:", nextPageMarkers[i]);
       try {
         const result = await logic.logicFn(action, nextPageMarkers[i]);
         const end = performance.now();
