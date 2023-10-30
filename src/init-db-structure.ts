@@ -117,7 +117,7 @@ export function initDbStructure(
   const viewDefinitions = mapViewDefinitions(paths, Entity, docPaths);
   const docPathsRegex: Record<string, RegExp> = {} as Record<string, RegExp>;
   for (const [key, value] of Object.entries(docPaths)) {
-    const regexPattern = value.replace(/{(\w+)Id}/g, "([^/]+)");
+    const regexPattern = value.replace(/{([^/]+)Id}/g, "([^/]+)");
     docPathsRegex[key] = new RegExp(`^${regexPattern}$`);
   }
   const colPaths = mapColPaths(docPaths);

@@ -324,11 +324,22 @@ describe("runBusinessLogics", () => {
   let logicFn2: jest.Mock;
   let logicFn3: jest.Mock;
 
+  let dbSpy: jest.SpyInstance;
+
   beforeEach(() => {
     distributeFn = jest.fn();
     logicFn1 = jest.fn().mockResolvedValue({status: "finished"});
     logicFn2 = jest.fn().mockResolvedValue({status: "finished"});
     logicFn3 = jest.fn().mockResolvedValue({status: "error", message: "Error message"});
+
+    const dbDoc = ({
+      get: jest.fn().mockResolvedValue({
+        data: jest.fn().mockReturnValue({
+          maxLogicResultPages: 10,
+        }),
+      }),
+    } as unknown) as admin.firestore.DocumentReference<admin.firestore.DocumentData>;
+    dbSpy = jest.spyOn(admin.firestore(), "doc").mockReturnValue(dbDoc);
   });
 
   afterEach(() => {
@@ -337,6 +348,7 @@ describe("runBusinessLogics", () => {
     logicFn2.mockRestore();
     logicFn3.mockRestore();
     distributeFn.mockRestore();
+    dbSpy.mockRestore();
   });
 
   it("should call all matching logics and pass their results to distributeFn", async () => {
@@ -466,6 +478,35 @@ describe("runBusinessLogics", () => {
     expect(distributeFn).toHaveBeenCalledTimes(1);
     expect(distributeFn).toHaveBeenCalledWith([], 0);
   });
+
+  it("should recall logic when it returns \"partial-result\" status indefinitely up to the config maxLogicResultPages",
+    async () => {
+      logicFn2.mockResolvedValue({status: "partial-result", nextPage: {}});
+      const logics: LogicConfig[] = [
+        {
+          name: "Logic 1",
+          actionTypes: ["create"],
+          modifiedFields: ["field1"],
+          entities: ["user"],
+          logicFn: logicFn1,
+        },
+        {
+          name: "Logic 2",
+          actionTypes: "all",
+          modifiedFields: ["field2"],
+          entities: ["user"],
+          logicFn: logicFn2,
+        },
+      ];
+      initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
+      await runBusinessLogics(actionType, formModifiedFields, entity, action, distributeFn);
+
+      expect(logicFn1).toHaveBeenCalledWith(action, undefined);
+      expect(logicFn2).toHaveBeenCalledWith(action, undefined);
+      expect(logicFn1).toHaveBeenCalledTimes(1);
+      expect(logicFn2).toHaveBeenCalledTimes(10);
+      expect(distributeFn).toHaveBeenCalledTimes(10);
+    });
 });
 
 describe("groupDocsByUserAndDstPath", () => {

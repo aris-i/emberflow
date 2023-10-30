@@ -182,8 +182,10 @@ export async function runBusinessLogics(
     return;
   }
 
-  const nextPageMarkers: (object|undefined)[] = Array(matchingLogics.length).fill(undefined);
+  const config = (await db.doc("@server/config").get()).data();
+  const maxLogicResultPages = config?.maxLogicResultPages || 20;
   let page = 0;
+  const nextPageMarkers: (object|undefined)[] = Array(matchingLogics.length).fill(undefined);
   while (matchingLogics.length > 0) {
     if (page > 0) {
       console.debug(`Page ${page} Remaining logics:`, matchingLogics.map((logic) => logic.name));
@@ -222,6 +224,10 @@ export async function runBusinessLogics(
       }
     }
     await distributeFn(logicResults, page++);
+    if (page >= maxLogicResultPages) {
+      console.warn(`Maximum number of logic result pages (${maxLogicResultPages}) reached`);
+      break;
+    }
   }
 }
 

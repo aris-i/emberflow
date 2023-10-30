@@ -1,7 +1,7 @@
 
 export enum InternalEntity {
     Internal = "internal",
-    ForDistribution = "for-distribution",
+    ForDistribution = "forDistribution",
 }
 export const internalDbStructure = {
   "@internal": {
