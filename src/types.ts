@@ -40,13 +40,13 @@ export interface LogicResultDoc{
 export interface LogicResult{
     name: string;
     status: "finished" | "error" | "partial-result";
-    nextPage?: object;
+    nextPage?: AnyObject;
     message?: string;
     execTime?: number;
     timeFinished?: Timestamp;
     documents: LogicResultDoc[];
 }
-export type LogicFn = (action: Action, nextPage?: object) => Promise<LogicResult>;
+export type LogicFn = (action: Action, nextPage?: AnyObject) => Promise<LogicResult>;
 export type LogicActionType = "create" | "update" | "delete";
 export interface LogicConfig{
     name: string;
