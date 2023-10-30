@@ -122,6 +122,10 @@ export async function validateForm(
   let hasValidationError = false;
   console.info(`Validating form for entity ${entity}`);
   const validate = validatorConfig[entity];
+  if (!validate) {
+    console.log(`No validator found for entity ${entity}`);
+    return [false, {}];
+  }
   const validationResult = await validate(form);
 
   // Check if validation failed

@@ -150,8 +150,10 @@ export async function onFormSubmit(
       return;
     }
 
+    const isUsersDocPath = docPath.startsWith("users");
+
     console.info("Validating userId");
-    if (docPath.startsWith("users") && !docPath.startsWith(`users/${userId}`)) {
+    if (isUsersDocPath && !docPath.startsWith(`users/${userId}`)) {
       const message = "User id from path does not match user id from event params";
       console.warn(message);
       await formRef.update({"@status": "error", "@message": message});
@@ -168,7 +170,6 @@ export async function onFormSubmit(
       return;
     }
 
-    // Validate the form
     console.info("Validating form");
     const [hasValidationError, validationResult] = await validateForm(entity, form);
     if (hasValidationError) {
@@ -176,17 +177,22 @@ export async function onFormSubmit(
       return;
     }
 
-    console.info("Validating Security");
     const document = (await db.doc(docPath).get()).data() || {};
     const formModifiedFields = getFormModifiedFields(form, document);
-    const user = (await db.doc(`users/${userId}`).get()).data();
-    if (!user) {
-      const message = "No user data found";
-      console.warn(message);
-      await formRef.update({"@status": "error", "@message": message});
-      return;
+    let user;
+    if (isUsersDocPath) {
+      user = (await db.doc(`users/${userId}`).get()).data();
+      if (!user) {
+        const message = "No user data found";
+        console.warn(message);
+        await formRef.update({"@status": "error", "@message": message});
+        return;
+      }
+    } else {
+      user = {"@id": userId};
     }
-    // Run security check
+
+    console.info("Validating Security");
     const securityFn = getSecurityFn(entity);
     if (securityFn) {
       const securityResult = await securityFn(entity, docPath, document,
@@ -250,7 +256,7 @@ export async function onFormSubmit(
         for (let i = 0; i < logicResults.length; i++) {
           const {documents, ...logicResult} = logicResults[i];
           const logicResultsRef = actionRef.collection("logicResults")
-            .doc(`${actionRef.id}-${i}`);
+            .doc(`${actionRef.id}-${page}-${i}`);
           await logicResultsRef.set(logicResult);
           const documentsRef = logicResultsRef.collection("documents");
           for (let j = 0; j < documents.length; j++) {

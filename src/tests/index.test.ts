@@ -94,13 +94,17 @@ function createDocumentSnapshot(form: FirebaseFirestore.DocumentData)
   } as unknown as functions.database.DataSnapshot;
 }
 
-function createEvent(form: FirebaseFirestore.DocumentData): DatabaseEvent<DataSnapshot> {
+function createEvent(form: FirebaseFirestore.DocumentData, userId?: string): DatabaseEvent<DataSnapshot> {
+  if (!userId){
+    const formData = JSON.parse(form.formData);
+    userId = formData["@docPath"].split("/")[1];
+  }
   return {
     id: "test-id",
     data: createDocumentSnapshot(form),
     params: {
       formId: "test-fid",
-      userId: "test-uid",
+      userId,
     },
   } as unknown as DatabaseEvent<DataSnapshot>;
 }
@@ -118,7 +122,6 @@ describe("onFormSubmit", () => {
   };
 
   beforeEach(() => {
-    // Add the spy for _mockable
     jest.spyOn(_mockable, "createNowTimestamp").mockReturnValue(Timestamp.now());
     jest.spyOn(console, "log").mockImplementation();
     jest.spyOn(console, "warn").mockImplementation();
@@ -176,7 +179,7 @@ describe("onFormSubmit", () => {
       "@status": "submit",
     };
 
-    const event = createEvent(form);
+    const event = createEvent(form, "user-id");
 
     const document = {
       "field1": "oldValue",
@@ -263,8 +266,7 @@ describe("onFormSubmit", () => {
     });
   });
 
-
-  it("should return on security check failure", async () => {
+  it("should return on security check failure and user should be forDistribution", async () => {
     const getSecurityFnMock = jest.spyOn(indexutils, "getSecurityFn");
     const rejectedSecurityResult: SecurityResult = {
       status: "rejected",
@@ -273,7 +275,7 @@ describe("onFormSubmit", () => {
     const securityFnMock = jest.fn().mockResolvedValue(rejectedSecurityResult);
     getSecurityFnMock.mockReturnValue(securityFnMock);
 
-    const docPath = "users/test-uid";
+    const docPath = "@internal/forDistribution/distribution/0";
     const formData = {
       "field1": "newValue",
       "field2": "oldValue",
@@ -298,9 +300,8 @@ describe("onFormSubmit", () => {
     dataMock.mockReturnValueOnce(document);
 
     const user = {
-      "username": "test-user",
+      "@id": "forDistribution",
     };
-    dataMock.mockReturnValueOnce(user);
 
     const validateFormMock = jest.spyOn(indexutils, "validateForm");
     validateFormMock.mockResolvedValue([false, {}] as ValidateFormResult);
@@ -402,6 +403,53 @@ describe("onFormSubmit", () => {
     validateFormMock.mockReset();
     getFormModifiedFieldsMock.mockReset();
     getSecurityFnMock.mockReset();
+    delayFormSubmissionAndCheckIfCancelledMock.mockReset();
+    setActionMock.mockReset();
+    updateActionMock.mockReset();
+    initActionRefMock.mockReset();
+  });
+
+  it("should set form @status to 'submitted' after passing all checks even with non user path", async () => {
+    const getFormModifiedFieldsMock =
+        jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue({
+          "field1": "value1",
+          "field2": "value2",
+        });
+    const delayFormSubmissionAndCheckIfCancelledMock = jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(false);
+
+    const setActionMock = jest.fn().mockResolvedValue({
+      update: jest.fn(),
+    });
+
+    const updateActionMock = jest.fn().mockResolvedValue({
+      update: jest.fn(),
+    });
+
+    const initActionRefMock = jest.spyOn(_mockable, "initActionRef").mockResolvedValue({
+      set: setActionMock,
+      update: updateActionMock,
+    } as any);
+
+    const form = {
+      "formData": JSON.stringify({
+        "@actionType": "create",
+        "name": "test",
+        "@docPath": "@internal/forDistribution/distributions/0",
+      }),
+      "@status": "submit",
+    };
+
+    const event = createEvent(form);
+    await onFormSubmit(event);
+
+    expect(refMock.update).toHaveBeenCalledWith({"@status": "processing"});
+    expect(refMock.update).toHaveBeenCalledWith({"@status": "submitted"});
+
+    // Test that addActionSpy is called with the correct parameters
+    expect(setActionMock).toHaveBeenCalled();
+    expect(updateActionMock).toHaveBeenCalled();
+
+    getFormModifiedFieldsMock.mockReset();
     delayFormSubmissionAndCheckIfCancelledMock.mockReset();
     setActionMock.mockReset();
     updateActionMock.mockReset();
