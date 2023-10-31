@@ -1,17 +1,21 @@
 import {db} from "../../index";
-import {firestore} from "firebase-admin";
-import WriteBatch = firestore.WriteBatch;
 import * as batch from "../../utils/batch";
 
 // Mock Firestore and necessary functions
+const setMock = jest.fn();
+const updateMock = jest.fn();
+const commitMock = jest.fn();
+const deleteMock = jest.fn();
 jest.mock("../../index", () => ({
   db: {
-    batch: jest.fn().mockReturnValue({
-      set: jest.fn(),
-      update: jest.fn(),
-      commit: jest.fn().mockResolvedValue(undefined),
-      delete: jest.fn(),
-    }) as unknown as WriteBatch,
+    batch: jest.fn().mockImplementation(() =>{
+      return {
+        set: setMock,
+        update: updateMock,
+        commit: commitMock.mockResolvedValue(undefined),
+        delete: deleteMock,
+      };
+    }),
     collection: jest.fn().mockReturnThis(),
     doc: jest.fn().mockReturnThis(),
   },
