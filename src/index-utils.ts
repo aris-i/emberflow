@@ -21,13 +21,13 @@ import {
 import {syncPeerViews} from "./logics/view-logics";
 import {expandAndGroupDocPathsByEntity, findMatchingDocPathRegex} from "./utils/paths";
 import {deepEqual} from "./utils/misc";
-import * as batch from "./utils/batch";
 import {CloudFunctionsServiceClient} from "@google-cloud/functions";
 import QueryDocumentSnapshot = firestore.QueryDocumentSnapshot;
 import DocumentData = FirebaseFirestore.DocumentData;
 import Reference = database.Reference;
 import {submitForm} from "emberflow-admin-client/lib";
 import {FormData} from "emberflow-admin-client/lib/types";
+import {BatchUtil} from "./utils/batch";
 
 export const _mockable = {
   getViewLogicsConfig: () => viewLogicConfigs,
@@ -37,6 +37,7 @@ export const _mockable = {
 
 export async function distribute(
   docsByDstPath: Map<string, LogicResultDoc> ) {
+  const batch = BatchUtil.getInstance();
   for (const dstPath of Array.from(docsByDstPath.keys()).sort()) {
     console.log(`Documents for path ${dstPath}:`);
     const resultDoc = docsByDstPath.get(dstPath);
@@ -444,6 +445,7 @@ export async function processScheduledEntities() {
   const scheduledDocs = await db.collection("@scheduled")
     .where("runAt", "<=", now).get();
     // For each document, get path, data and docId.  Then copy data to the path
+  const batch = BatchUtil.getInstance();
   try {
     scheduledDocs.forEach((doc) => {
       const {

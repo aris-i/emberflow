@@ -25,10 +25,10 @@ import {
 import {Entity, dbStructure} from "../sample-custom/db-structure";
 import {securityConfig} from "../sample-custom/security";
 import {validatorConfig} from "../sample-custom/validators";
-import * as batch from "../utils/batch";
 import Timestamp = firestore.Timestamp;
 import {expandAndGroupDocPathsByEntity} from "../utils/paths";
 import * as adminClient from "emberflow-admin-client/lib";
+import {BatchUtil} from "../utils/batch";
 
 jest.spyOn(console, "log").mockImplementation();
 jest.spyOn(console, "info").mockImplementation();
@@ -62,6 +62,8 @@ jest.mock("../utils/paths", () => {
 describe("distribute", () => {
   let dbSpy: jest.SpyInstance;
   let colSpy: jest.SpyInstance;
+  const batch = BatchUtil.getInstance();
+  jest.spyOn(BatchUtil, "getInstance").mockImplementation(() => batch);
 
   beforeEach(() => {
     const dbDoc = ({

@@ -1,5 +1,5 @@
 import {db} from "../../index";
-import * as batch from "../../utils/batch";
+import {BatchUtil} from "../../utils/batch";
 
 // Mock Firestore and necessary functions
 const setMock = jest.fn();
@@ -22,6 +22,7 @@ jest.mock("../../index", () => ({
 }));
 
 describe("Batch", () => {
+  const batch = BatchUtil.getInstance();
   const collectionRef = db.collection("example-collection");
   const documentRef = collectionRef.doc("example-document");
   const documentData = {name: "John Doe", age: 30};

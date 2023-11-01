@@ -1,9 +1,9 @@
 import {admin, db, onFormSubmit, projectConfig} from "../index";
 import {CloudBillingClient} from "@google-cloud/billing";
 import {firestore} from "firebase-admin";
-import * as batch from "../utils/batch";
 import {Message} from "firebase-functions/lib/v1/providers/pubsub";
 import {findMatchingDocPathRegex} from "./paths";
+import {BatchUtil} from "../utils/batch";
 
 export const billing = new CloudBillingClient();
 
@@ -234,6 +234,7 @@ export async function resetUsageStats() {
   const usageCollectionPath = "@server/usage/functions";
   const collectionRef = db.collection(usageCollectionPath);
   const querySnapshot = await collectionRef.select(firestore.FieldPath.documentId()).get();
+  const batch = BatchUtil.getInstance();
   querySnapshot.forEach((doc) => {
     return batch.set(doc.ref, {
       totalElapsedTimeInMs: 0,
