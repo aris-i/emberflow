@@ -28,6 +28,7 @@ const projectConfig: ProjectConfig = {
   budgetAlertTopicName: "budget-alerts",
   region: "us-central1",
   rtdbName: "rtdb",
+  submitFormQueueTopicName: "submit-form-queue",
   maxCostLimitPerFunction: 100,
   specialCostLimitPerFunction: {
     function1: 50,
@@ -95,7 +96,7 @@ function createDocumentSnapshot(form: FirebaseFirestore.DocumentData)
 }
 
 function createEvent(form: FirebaseFirestore.DocumentData, userId?: string): DatabaseEvent<DataSnapshot> {
-  if (!userId){
+  if (!userId) {
     const formData = JSON.parse(form.formData);
     userId = formData["@docPath"].split("/")[1];
   }
@@ -618,21 +619,21 @@ describe("onFormSubmit", () => {
 
     const event = createEvent(form);
 
-    const consolidateHighPriorityDocs = new Map<string, LogicResultDoc>([["users/test-uid", highPriorityDocs[0]], ["users/test-uid-2", highPriorityDocs[0]]]);
-    const consolidateNormalPriorityDocs = new Map<string, LogicResultDoc>([["users/test-uid", normalPriorityDocs[0]], ["users/test-uid", normalPriorityDocs[1]], ["users/test-uid-2", normalPriorityDocs[0]], ["users/test-uid-2", normalPriorityDocs[1]]]);
-    const consolidateLowPriorityDocs = new Map<string, LogicResultDoc>([["users/test-uid", lowPriorityDocs[0]], ["users/test-uid-2", lowPriorityDocs[0]], ["users/test-uid-3", lowPriorityDocs[0]]]);
+    const consolidateHighPriorityDocs = new Map<string, LogicResultDoc[]>([["users/test-uid", [highPriorityDocs[0]]], ["users/test-uid-2", [highPriorityDocs[0]]]]);
+    const consolidateNormalPriorityDocs = new Map<string, LogicResultDoc[]>([["users/test-uid", [normalPriorityDocs[0]]], ["users/test-uid", [normalPriorityDocs[1]]], ["users/test-uid-2", [normalPriorityDocs[0]]], ["users/test-uid-2", [normalPriorityDocs[1]]]]);
+    const consolidateLowPriorityDocs = new Map<string, LogicResultDoc[]>([["users/test-uid", [lowPriorityDocs[0]]], ["users/test-uid-2", [lowPriorityDocs[0]]], ["users/test-uid-3", [lowPriorityDocs[0]]]]);
 
-    const userHighPriorityByDstPath = new Map<string, LogicResultDoc>([["users/test-uid", highPriorityDocs[0]]]);
-    const otherUsersHighPriorityByDstPath = new Map<string, LogicResultDoc>([["users/test-uid-2", highPriorityDocs[0]]]);
-    const userNormalPriorityByDstPath = new Map<string, LogicResultDoc>([["users/test-uid", normalPriorityDocs[0]], ["users/test-uid", normalPriorityDocs[1]]]);
-    const otherUsersNormalPriorityByDstPath = new Map<string, LogicResultDoc>([["users/test-uid-2", normalPriorityDocs[0]], ["users/test-uid-2", normalPriorityDocs[1]]]);
-    const userLowPriorityByDstPath = new Map<string, LogicResultDoc>([["users/test-uid", lowPriorityDocs[0]]]);
-    const otherUsersLowPriorityByDstPath = new Map<string, LogicResultDoc>([["users/test-uid-2", lowPriorityDocs[0]], ["users/test-uid-3", lowPriorityDocs[0]]]);
+    const userHighPriorityByDstPath = new Map<string, LogicResultDoc[]>([["users/test-uid", [highPriorityDocs[0]]]]);
+    const otherUsersHighPriorityByDstPath = new Map<string, LogicResultDoc[]>([["users/test-uid-2", [highPriorityDocs[0]]]]);
+    const userNormalPriorityByDstPath = new Map<string, LogicResultDoc[]>([["users/test-uid", [normalPriorityDocs[0]]], ["users/test-uid", [normalPriorityDocs[1]]]]);
+    const otherUsersNormalPriorityByDstPath = new Map<string, LogicResultDoc[]>([["users/test-uid-2", [normalPriorityDocs[0]]], ["users/test-uid-2", [normalPriorityDocs[1]]]]);
+    const userLowPriorityByDstPath = new Map<string, LogicResultDoc[]>([["users/test-uid", [lowPriorityDocs[0]]]]);
+    const otherUsersLowPriorityByDstPath = new Map<string, LogicResultDoc[]>([["users/test-uid-2", [lowPriorityDocs[0]]], ["users/test-uid-3", [lowPriorityDocs[0]]]]);
 
-    const consolidatedViewLogicResults = new Map<string, LogicResultDoc>([]);
+    const consolidatedViewLogicResults = new Map<string, LogicResultDoc[]>([]);
     // const consolidatedViewLogicResults = new Map<string, LogicResultDoc>([["users/test-uid", logicResults[0]]]);
-    const consolidatedPeerSyncViewLogicResults = new Map<string, LogicResultDoc>([["users/test-uid-2", highPriorityDocs[0]]]);
-    const userDocsByDstPath = new Map<string, LogicResultDoc>([...userHighPriorityByDstPath, ...userNormalPriorityByDstPath, ...userLowPriorityByDstPath]);
+    const consolidatedPeerSyncViewLogicResults = new Map<string, LogicResultDoc[]>([["users/test-uid-2", [highPriorityDocs[0]]]]);
+    const userDocsByDstPath = new Map<string, LogicResultDoc[]>([...userHighPriorityByDstPath, ...userNormalPriorityByDstPath, ...userLowPriorityByDstPath]);
     const viewLogicResults: LogicResult[] = [{
       name: "User ViewLogic",
       status: "finished",
@@ -641,9 +642,9 @@ describe("onFormSubmit", () => {
     }];
     const viewLogicResultDocs = viewLogicResults.map((result) => result.documents).flat();
     const userViewDocs = viewLogicResultDocs.filter((doc) => [doc.dstPath === "users/test-uid"]);
-    const userViewDocsByDstPath = new Map<string, LogicResultDoc>(userViewDocs.map((doc) => [doc.dstPath, doc]));
+    const userViewDocsByDstPath = new Map<string, LogicResultDoc[]>(userViewDocs.map((doc) => [doc.dstPath, [doc]]));
     const otherUserViewDocs = viewLogicResultDocs.filter((doc) => [doc.dstPath !== "users/test-uid"]);
-    const otherUsersViewDocsByDstPath = new Map<string, LogicResultDoc>(otherUserViewDocs.map((doc) => [doc.dstPath, doc]));
+    const otherUsersViewDocsByDstPath = new Map<string, LogicResultDoc[]>(otherUserViewDocs.map((doc) => [doc.dstPath, [doc]]));
     const peerSyncViewLogicResults: LogicResult[] = [{
       name: "SyncPeerViews",
       status: "finished",
@@ -653,7 +654,7 @@ describe("onFormSubmit", () => {
 
     const peerSyncViewLogicResultDocs = peerSyncViewLogicResults.map((result) => result.documents).flat();
     const peerSyncViewDocs = peerSyncViewLogicResultDocs.filter((doc) => [doc.dstPath !== "users/test-uid"]);
-    const otherUsersPeerSyncViewDocsByDstPath = new Map<string, LogicResultDoc>(peerSyncViewDocs.map((doc) => [doc.dstPath, doc]));
+    const otherUsersPeerSyncViewDocsByDstPath = new Map<string, LogicResultDoc[]>(peerSyncViewDocs.map((doc) => [doc.dstPath, [doc]]));
 
     jest.spyOn(indexutils, "expandConsolidateAndGroupByDstPath")
       .mockResolvedValueOnce(consolidateHighPriorityDocs)
@@ -679,7 +680,7 @@ describe("onFormSubmit", () => {
         otherUsersDocsByDstPath: otherUsersViewDocsByDstPath,
       })
       .mockReturnValueOnce({
-        userDocsByDstPath: new Map<string, LogicResultDoc>(),
+        userDocsByDstPath: new Map<string, LogicResultDoc[]>(),
         otherUsersDocsByDstPath: otherUsersPeerSyncViewDocsByDstPath,
       });
     jest.spyOn(indexutils, "runViewLogics").mockResolvedValue(viewLogicResults);

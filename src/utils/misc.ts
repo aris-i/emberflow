@@ -1,6 +1,8 @@
 import {firestore} from "firebase-admin";
+import {rtdb} from "../index";
 import Timestamp = firestore.Timestamp;
 import GeoPoint = firestore.GeoPoint;
+import {Request, Response} from "firebase-functions";
 
 function isObject(item: any): boolean {
   return (typeof item === "object" && !Array.isArray(item) && item !== null);
@@ -68,4 +70,23 @@ export function computeHashCode(str: string) {
 
 export async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function deleteForms(request: Request, response: Response) {
+  const userId = request.query.userId;
+
+  if (!userId) {
+    response.status(400).send("No ID provided");
+    return;
+  }
+
+  const ref = rtdb.ref(`forms/${userId}`);
+  ref.remove()
+    .then(() => {
+      response.send(`Data with ID ${userId} deleted`);
+    })
+    .catch((error) => {
+      console.error("Error deleting data:", error);
+      response.status(500).send("Internal Server Error");
+    });
 }

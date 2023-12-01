@@ -12,19 +12,17 @@ import {
   ViewLogicConfig,
 } from "./types";
 import {
-  expandConsolidateAndGroupByDstPath,
   delayFormSubmissionAndCheckIfCancelled,
   distribute,
+  distributeLater,
+  expandConsolidateAndGroupByDstPath,
   getFormModifiedFields,
   getSecurityFn,
   groupDocsByUserAndDstPath,
   onDeleteFunction,
   processScheduledEntities,
   runBusinessLogics,
-  runPeerSyncViews,
-  runViewLogics,
   validateForm,
-  distributeLater,
 } from "./index-utils";
 import {initDbStructure} from "./init-db-structure";
 import {createViewLogicFn} from "./logics/view-logics";
@@ -33,15 +31,20 @@ import {Firestore} from "firebase-admin/firestore";
 import {DatabaseEvent, DataSnapshot, onValueCreated} from "firebase-functions/v2/database";
 import {parseEntity} from "./utils/paths";
 import {database} from "firebase-admin";
-import Database = database.Database;
 import {initClient} from "emberflow-admin-client/lib";
 import {internalDbStructure, InternalEntity} from "./db-structure";
 import {forDistributionLogicConfig} from "./logics/logics";
+import {onMessageSubmitFormQueue} from "./utils/forms";
+import {PubSub} from "@google-cloud/pubsub";
+import {onMessagePublished} from "firebase-functions/v2/pubsub";
+import {deleteForms} from "./utils/misc";
+import Database = database.Database;
 
 
 export let admin: FirebaseAdmin;
 export let db: Firestore;
 export let rtdb: Database;
+export let pubsub: PubSub;
 export let dbStructure: Record<string, object>;
 export let Entity: Record<string, string>;
 export let securityConfig: SecurityConfig;
@@ -77,6 +80,7 @@ export function initializeEmberFlow(
   admin = adminInstance;
   db = admin.firestore();
   rtdb = admin.database();
+  pubsub = new PubSub();
   dbStructure = {...customDbStructure, ...internalDbStructure};
   Entity = {...CustomEntity, ...InternalEntity};
   securityConfig = customSecurityConfig;
@@ -107,13 +111,21 @@ export function initializeEmberFlow(
     {
       ref: "forms/{userId}/{formId}",
       region: projectConfig.region,
+      memory: "256MiB",
     },
     useBillProtect(onFormSubmit)
   );
-
+  // TODO: Make this disappear when deployed to production
+  functionsConfig["deleteForms"] = functions.https.onRequest(deleteForms);
 
   functionsConfig["onBudgetAlert"] =
         functions.pubsub.topic(projectConfig.budgetAlertTopicName).onPublish(stopBillingIfBudgetExceeded);
+  functionsConfig["onMessageSubmitFormQueue"] = onMessagePublished({
+    topic: projectConfig.submitFormQueueTopicName,
+    region: projectConfig.region,
+    memory: "256MiB",
+    maxInstances: 1,
+  }, onMessageSubmitFormQueue);
   functionsConfig["hourlyFunctions"] = functions.pubsub.schedule("every 1 hours")
     .onRun(resetUsageStats);
   functionsConfig["minuteFunctions"] = functions.pubsub.schedule("every 1 minutes")
@@ -244,7 +256,6 @@ export async function onFormSubmit(
     await formRef.update({"@status": "submitted"});
 
     console.info("Running Business Logics");
-    let userDocsByDstPath: Map<string, LogicResultDoc> = new Map();
     let errorMessage = "";
     await runBusinessLogics(
       actionType,
@@ -288,8 +299,8 @@ export async function onFormSubmit(
             lowPriorityDocs: [] as LogicResultDoc[],
           });
 
-        console.info("Consolidating and Distributing High Priority Logic Results");
-        const highPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc> =
+        console.info("Consolidating and Distributing High Priority Logic Results", highPriorityDocs);
+        const highPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
             await expandConsolidateAndGroupByDstPath(highPriorityDocs);
         const {
           userDocsByDstPath: highPriorityUserDocsByDstPath,
@@ -302,8 +313,8 @@ export async function onFormSubmit(
           await formRef.update({"@status": "finished"});
         }
 
-        console.info("Consolidating and Distributing Normal Priority Logic Results");
-        const normalPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc> =
+        console.info("Consolidating and Distributing Normal Priority Logic Results", normalPriorityDocs);
+        const normalPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
             await expandConsolidateAndGroupByDstPath(normalPriorityDocs);
         const {
           userDocsByDstPath: normalPriorityUserDocsByDstPath,
@@ -312,8 +323,8 @@ export async function onFormSubmit(
         await distribute(normalPriorityUserDocsByDstPath);
         await distributeLater(normalPriorityOtherUsersDocsByDstPath, `${formId}-normal-${page}`);
 
-        console.info("Consolidating and Distributing Low Priority Logic Results");
-        const lowPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc> =
+        console.info("Consolidating and Distributing Low Priority Logic Results", lowPriorityDocs);
+        const lowPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
             await expandConsolidateAndGroupByDstPath(lowPriorityDocs);
         const {
           userDocsByDstPath: lowPriorityUserDocsByDstPath,
@@ -322,36 +333,28 @@ export async function onFormSubmit(
         await distributeLater(lowPriorityUserDocsByDstPath, `${formId}-low-user-${page}`);
         await distributeLater(lowPriorityOtherUsersDocsByDstPath, `${formId}-low-others-${page}`);
 
-        userDocsByDstPath = new Map([
-          ...userDocsByDstPath,
-          ...highPriorityUserDocsByDstPath,
-          ...normalPriorityUserDocsByDstPath,
-          ...lowPriorityUserDocsByDstPath,
-        ]);
+        // const userDocsByDstPath = new Map([
+        //   ...highPriorityUserDocsByDstPath,
+        //   ...normalPriorityUserDocsByDstPath,
+        // ]);
+
+        // console.info("Running View Logics");
+        // const viewLogicResults = await runViewLogics(userDocsByDstPath);
+        // const viewLogicResultDocs = viewLogicResults.map((result) => result.documents).flat();
+        // const dstPathViewLogicDocsMap: Map<string, LogicResultDoc[]> = await expandConsolidateAndGroupByDstPath(viewLogicResultDocs);
+        // console.info("Distributing View Logic Results");
+        // await distribute(dstPathViewLogicDocsMap);
+
+        // console.info("Running Peer Sync Views");
+        // const peerSyncViewLogicResults = await runPeerSyncViews(userDocsByDstPath);
+        // const peerSyncViewLogicResultDocs = peerSyncViewLogicResults.map((result) => result.documents).flat();
+        // const dstPathPeerSyncViewLogicDocsMap: Map<string, LogicResultDoc> = await expandConsolidateAndGroupByDstPath(peerSyncViewLogicResultDocs);
+        // const {otherUsersDocsByDstPath: otherUsersPeerSyncViewDocsByDstPath} = groupDocsByUserAndDstPath(dstPathPeerSyncViewLogicDocsMap, userId);
+        //
+        // console.info("Distributing Logic Results for Peer Sync Views");
+        // await distributeLater(otherUsersPeerSyncViewDocsByDstPath, `${formId}-peers`);
       }
     );
-
-    console.info("Running View Logics");
-    const viewLogicResults = await runViewLogics(userDocsByDstPath);
-    const viewLogicResultDocs = viewLogicResults.map((result) => result.documents).flat();
-    const dstPathViewLogicDocsMap: Map<string, LogicResultDoc> = await expandConsolidateAndGroupByDstPath(viewLogicResultDocs);
-    const {
-      userDocsByDstPath: userViewDocsByDstPath,
-      otherUsersDocsByDstPath: otherUsersViewDocsByDstPath,
-    } = groupDocsByUserAndDstPath(dstPathViewLogicDocsMap, userId);
-
-    console.info("Distributing View Logic Results");
-    await distribute(userViewDocsByDstPath);
-    await distributeLater(otherUsersViewDocsByDstPath, `${formId}-views`);
-
-    console.info("Running Peer Sync Views");
-    const peerSyncViewLogicResults = await runPeerSyncViews(userDocsByDstPath);
-    const peerSyncViewLogicResultDocs = peerSyncViewLogicResults.map((result) => result.documents).flat();
-    const dstPathPeerSyncViewLogicDocsMap: Map<string, LogicResultDoc> = await expandConsolidateAndGroupByDstPath(peerSyncViewLogicResultDocs);
-    const {otherUsersDocsByDstPath: otherUsersPeerSyncViewDocsByDstPath} = groupDocsByUserAndDstPath(dstPathPeerSyncViewLogicDocsMap, userId);
-
-    console.info("Distributing Logic Results for Peer Sync Views");
-    await distributeLater(otherUsersPeerSyncViewDocsByDstPath, `${formId}-peers`);
 
     if (errorMessage) {
       await actionRef.update({status: "finished-with-error", message: errorMessage});

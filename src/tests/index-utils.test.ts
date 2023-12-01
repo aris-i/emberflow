@@ -38,6 +38,7 @@ const projectConfig: ProjectConfig = {
   region: "asia-southeast1",
   rtdbName: "your-rtdb-name",
   budgetAlertTopicName: "budget-alerts",
+  submitFormQueueTopicName: "submit-form-queue",
   maxCostLimitPerFunction: 100,
   specialCostLimitPerFunction: {
     function1: 50,
@@ -87,7 +88,7 @@ describe("distribute", () => {
 
     const userDocsByDstPath = new Map([[
       "/users/test-user-id/documents/test-doc-id",
-      {
+      [{
         action: "merge",
         priority: "normal",
         doc: {name: "test-doc-name-updated"},
@@ -98,7 +99,7 @@ describe("distribute", () => {
           "minusScore": "-3",
         },
         dstPath: "/users/test-user-id/documents/test-doc-id",
-      } as LogicResultDoc,
+      } as LogicResultDoc],
     ]]);
     initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, []);
     await distribute(userDocsByDstPath);
@@ -121,10 +122,10 @@ describe("distribute", () => {
 
     const userDocsByDstPath = new Map([[
       "/users/test-user-id/documents/test-doc-id",
-        {
-          action: "delete",
-          dstPath: "/users/test-user-id/documents/test-doc-id",
-        } as LogicResultDoc,
+      [{
+        action: "delete",
+        dstPath: "/users/test-user-id/documents/test-doc-id",
+      } as LogicResultDoc],
     ]]);
     await distribute(userDocsByDstPath);
 
@@ -162,8 +163,8 @@ describe("distributeLater", () => {
       dstPath: "/users/test-user-id/documents/doc2",
     };
     const usersDocsByDstPath = new Map([
-      ["/users/test-user-id/documents/doc1", doc1],
-      ["/users/test-user-id/documents/doc2", doc2],
+      ["/users/test-user-id/documents/doc1", [doc1]],
+      ["/users/test-user-id/documents/doc2", [doc2]],
     ]);
     const formId = "formId";
     await distributeLater(usersDocsByDstPath, formId);
@@ -193,8 +194,8 @@ describe("distributeLater", () => {
       dstPath: "/users/test-user-id/documents/doc2",
     };
     const usersDocsByDstPath = new Map([
-      ["/users/test-user-id/documents/doc1", doc1],
-      ["/users/test-user-id/documents/doc2", doc2],
+      ["/users/test-user-id/documents/doc1", [doc1]],
+      ["/users/test-user-id/documents/doc2", [doc2]],
     ]);
     const formId = "formId";
     await distributeLater(usersDocsByDstPath, formId);
@@ -513,25 +514,25 @@ describe("runBusinessLogics", () => {
 
 describe("groupDocsByUserAndDstPath", () => {
   initializeEmberFlow(projectConfig, admin, dbStructure, Entity, {}, {}, []);
-  const docsByDstPath = new Map<string, LogicResultDoc>([
-    ["users/user123/document1", {action: "merge", priority: "normal", dstPath: "users/user123/document1", doc: {field1: "value1", field2: "value2"}}],
-    ["users/user123/document2", {action: "merge", priority: "normal", dstPath: "users/user123/document2", doc: {field3: "value3", field6: "value6"}}],
-    ["users/user456/document3", {action: "merge", priority: "normal", dstPath: "users/user456/document3", doc: {field4: "value4"}}],
-    ["users/user789/document4", {action: "delete", priority: "normal", dstPath: "users/user789/document4"}],
-    ["othercollection/document5", {action: "merge", priority: "normal", dstPath: "othercollection/document5", doc: {field5: "value5"}}],
+  const docsByDstPath = new Map<string, LogicResultDoc[]>([
+    ["users/user123/document1", [{action: "merge", priority: "normal", dstPath: "users/user123/document1", doc: {field1: "value1", field2: "value2"}}]],
+    ["users/user123/document2", [{action: "merge", priority: "normal", dstPath: "users/user123/document2", doc: {field3: "value3", field6: "value6"}}]],
+    ["users/user456/document3", [{action: "merge", priority: "normal", dstPath: "users/user456/document3", doc: {field4: "value4"}}]],
+    ["users/user789/document4", [{action: "delete", priority: "normal", dstPath: "users/user789/document4"}]],
+    ["othercollection/document5", [{action: "merge", priority: "normal", dstPath: "othercollection/document5", doc: {field5: "value5"}}]],
   ]);
 
   it("should group documents by destination path and user", () => {
     const userId = "user123";
     const expectedResults = {
-      userDocsByDstPath: new Map<string, LogicResultDoc>([
-        ["users/user123/document1", {action: "merge", priority: "normal", dstPath: "users/user123/document1", doc: {field1: "value1", field2: "value2"}}],
-        ["users/user123/document2", {action: "merge", priority: "normal", dstPath: "users/user123/document2", doc: {field3: "value3", field6: "value6"}}],
+      userDocsByDstPath: new Map<string, LogicResultDoc[]>([
+        ["users/user123/document1", [{action: "merge", priority: "normal", dstPath: "users/user123/document1", doc: {field1: "value1", field2: "value2"}}]],
+        ["users/user123/document2", [{action: "merge", priority: "normal", dstPath: "users/user123/document2", doc: {field3: "value3", field6: "value6"}}]],
       ]),
-      otherUsersDocsByDstPath: new Map<string, LogicResultDoc>([
-        ["users/user456/document3", {action: "merge", priority: "normal", dstPath: "users/user456/document3", doc: {field4: "value4"}}],
-        ["users/user789/document4", {action: "delete", priority: "normal", dstPath: "users/user789/document4"}],
-        ["othercollection/document5", {action: "merge", priority: "normal", dstPath: "othercollection/document5", doc: {field5: "value5"}}],
+      otherUsersDocsByDstPath: new Map<string, LogicResultDoc[]>([
+        ["users/user456/document3", [{action: "merge", priority: "normal", dstPath: "users/user456/document3", doc: {field4: "value4"}}]],
+        ["users/user789/document4", [{action: "delete", priority: "normal", dstPath: "users/user789/document4"}]],
+        ["othercollection/document5", [{action: "merge", priority: "normal", dstPath: "othercollection/document5", doc: {field5: "value5"}}]],
       ]),
     };
 
@@ -654,12 +655,12 @@ describe("expandConsolidateAndGroupByDstPath", () => {
     const result = await expandConsolidateAndGroupByDstPath(logicResultDocs);
 
     // Assert
-    const expectedResult = new Map<string, LogicResultDoc>([
-      ["path1/doc1", {action: "merge", priority: "normal", dstPath: "path1/doc1", doc: {field1: "value1a", field3: "value3"}, instructions: {field2: "--", field4: "--"}}],
-      ["path2/doc2", {action: "delete", priority: "normal", dstPath: "path2/doc2"}],
-      ["path4/doc4", {action: "merge", priority: "normal", dstPath: "path4/doc4", doc: {}, instructions: {}}],
-      ["path6/doc6", {action: "merge", priority: "normal", dstPath: "path6/doc6", doc: {}}],
-      ["path7/doc7", {action: "delete", priority: "normal", dstPath: "path7/doc7"}],
+    const expectedResult = new Map<string, LogicResultDoc[]>([
+      ["path1/doc1", [{action: "merge", priority: "normal", dstPath: "path1/doc1", doc: {field1: "value1a", field3: "value3"}, instructions: {field2: "--", field4: "--"}}]],
+      ["path2/doc2", [{action: "delete", priority: "normal", dstPath: "path2/doc2"}]],
+      ["path4/doc4", [{action: "merge", priority: "normal", dstPath: "path4/doc4", doc: {}, instructions: {}}]],
+      ["path7/doc7", [{action: "delete", priority: "normal", dstPath: "path7/doc7"}]],
+      ["path6/doc6", [{action: "merge", priority: "normal", dstPath: "path6/doc6", doc: {}}]],
     ]);
 
     expect(result).toEqual(expectedResult);
@@ -731,7 +732,8 @@ describe("expandConsolidateAndGroupByDstPath", () => {
     ]);
 
     // Checks if "recursive-copy" is removed from the logic results
-    expect([...result.values()].every((logicResultDoc) => logicResultDoc.action !== "recursive-copy"))
+    expect([...result.values()].every((logicResultDocs) =>
+      logicResultDocs.every((doc) => doc.action !== "recursive-copy")))
       .toBe(true);
     expect(result).toEqual(expectedResult);
   });
@@ -795,7 +797,8 @@ describe("expandConsolidateAndGroupByDstPath", () => {
     ]);
 
     // Checks if "recursive-delete" is removed from the logic results
-    expect([...result.values()].every((logicResultDoc) => logicResultDoc.action !== "recursive-delete"))
+    expect([...result.values()].every((logicResultDocs) =>
+      logicResultDocs.every((doc) => doc.action !== "recursive-delete")))
       .toBe(true);
     expect(result).toEqual(expectedResult);
 
@@ -853,7 +856,8 @@ describe("expandConsolidateAndGroupByDstPath", () => {
     ]);
 
     // Checks if "copy" is removed from the logic results
-    expect([...result.values()].every((logicResultDoc) => logicResultDoc.action !== "copy"))
+    expect([...result.values()].every((logicResultDocs) =>
+      logicResultDocs.every((doc) => doc.action !== "copy")))
       .toBe(true);
     expect(result).toEqual(expectedResult);
   });
@@ -883,7 +887,7 @@ describe("runViewLogics", () => {
   });
 
   it("should run view logics properly", async () => {
-    const dstPathLogicDocsMap: Map<string, LogicResultDoc> = new Map();
+    const dstPathLogicDocsMap: Map<string, LogicResultDoc[]> = new Map();
     const logicResult1: LogicResultDoc = {
       action: "merge" as LogicResultAction,
       priority: "normal",
@@ -895,8 +899,8 @@ describe("runViewLogics", () => {
       priority: "normal",
       dstPath: "users/user124",
     };
-    dstPathLogicDocsMap.set(logicResult1.dstPath, logicResult1);
-    dstPathLogicDocsMap.set(logicResult2.dstPath, logicResult2);
+    dstPathLogicDocsMap.set(logicResult1.dstPath, [logicResult1]);
+    dstPathLogicDocsMap.set(logicResult2.dstPath, [logicResult2]);
     viewLogicFn1.mockResolvedValue({});
     viewLogicFn2.mockResolvedValue({});
 

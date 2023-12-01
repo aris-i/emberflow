@@ -10,6 +10,7 @@ export interface ProjectConfig {
     region: string;
     rtdbName: string;
     budgetAlertTopicName: string;
+    submitFormQueueTopicName: string;
     maxCostLimitPerFunction: number;
     specialCostLimitPerFunction: { [key: string]: number };
 }
@@ -25,7 +26,7 @@ export interface Action{
     message?: string
 }
 
-export type LogicResultAction = "merge" | "delete" | "copy" | "recursive-copy" | "recursive-delete";
+export type LogicResultAction = "merge" | "delete" | "copy" | "recursive-copy" | "recursive-delete" | "submit-form";
 export type LogicResultDocPriority = "high" | "normal" | "low";
 export interface LogicResultDoc{
     action: LogicResultAction;

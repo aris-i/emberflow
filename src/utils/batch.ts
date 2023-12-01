@@ -2,13 +2,11 @@ import {DocumentData, DocumentReference} from "firebase-admin/lib/firestore";
 import {db} from "../index";
 import {firestore} from "firebase-admin";
 import WriteBatch = firestore.WriteBatch;
-import {sleep} from "./misc";
 
 
 export class BatchUtil {
   BATCH_SIZE: number;
   writeCount: number;
-  _oldBatch: WriteBatch | undefined;
   _batch: WriteBatch | undefined;
 
   private constructor() {
@@ -22,17 +20,13 @@ export class BatchUtil {
 
   async getBatch() {
     if (!this._batch) {
-      do {
-        this._batch = db.batch();
-        await sleep(100);
-      } while (this._batch === this._oldBatch);
+      this._batch = db.batch();
     }
     return this._batch;
   }
 
   async commit() {
     await (await this.getBatch()).commit();
-    this._oldBatch = this._batch;
     this._batch = undefined;
     this.writeCount = 0;
   }

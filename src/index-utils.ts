@@ -22,12 +22,12 @@ import {syncPeerViews} from "./logics/view-logics";
 import {expandAndGroupDocPathsByEntity, findMatchingDocPathRegex} from "./utils/paths";
 import {deepEqual} from "./utils/misc";
 import {CloudFunctionsServiceClient} from "@google-cloud/functions";
+import {FormData} from "emberflow-admin-client/lib/types";
+import {BatchUtil} from "./utils/batch";
+import {queueSubmitForm} from "./utils/forms";
 import QueryDocumentSnapshot = firestore.QueryDocumentSnapshot;
 import DocumentData = FirebaseFirestore.DocumentData;
 import Reference = database.Reference;
-import {submitForm} from "emberflow-admin-client/lib";
-import {FormData} from "emberflow-admin-client/lib/types";
-import {BatchUtil} from "./utils/batch";
 
 export const _mockable = {
   getViewLogicsConfig: () => viewLogicConfigs,
@@ -36,54 +36,64 @@ export const _mockable = {
 
 
 export async function distribute(
-  docsByDstPath: Map<string, LogicResultDoc> ) {
+  docsByDstPath: Map<string, LogicResultDoc[]> ) {
   const batch = BatchUtil.getInstance();
   for (const dstPath of Array.from(docsByDstPath.keys()).sort()) {
     console.log(`Documents for path ${dstPath}:`);
-    const resultDoc = docsByDstPath.get(dstPath);
-    if (!resultDoc) continue;
-    const {
-      action,
-      doc,
-      instructions,
-    } = resultDoc;
-    if (action === "delete") {
-      // Delete document at dstPath
-      const dstDocRef = db.doc(dstPath);
-      await batch.deleteDoc(dstDocRef);
-      console.log(`Document deleted at ${dstPath}`);
-    } else if (action === "merge") {
-      const updateData: { [key: string]: any } = {...doc};
-      if (instructions) {
-        for (const [property, instruction] of Object.entries(instructions)) {
-          if (instruction === "++") {
-            updateData[property] = admin.firestore.FieldValue.increment(1);
-          } else if (instruction === "--") {
-            updateData[property] = admin.firestore.FieldValue.increment(-1);
-          } else if (instruction.startsWith("+")) {
-            const incrementValue = parseInt(instruction.slice(1));
-            if (isNaN(incrementValue)) {
-              console.log(`Invalid increment value ${instruction} for property ${property}`);
+    const resultDocs = docsByDstPath.get(dstPath);
+    if (!resultDocs) continue;
+    for (const resultDoc of resultDocs) {
+      const {
+        action,
+        doc,
+        instructions,
+      } = resultDoc;
+      console.debug(`Distributing doc with Action: ${action}`);
+      if (action === "delete") {
+        // Delete document at dstPath
+        const dstDocRef = db.doc(dstPath);
+        await batch.deleteDoc(dstDocRef);
+        console.log(`Document deleted at ${dstPath}`);
+      } else if (action === "merge") {
+        const updateData: { [key: string]: any } = {...doc};
+        if (instructions) {
+          for (const [property, instruction] of Object.entries(instructions)) {
+            if (instruction === "++") {
+              updateData[property] = admin.firestore.FieldValue.increment(1);
+            } else if (instruction === "--") {
+              updateData[property] = admin.firestore.FieldValue.increment(-1);
+            } else if (instruction.startsWith("+")) {
+              const incrementValue = parseInt(instruction.slice(1));
+              if (isNaN(incrementValue)) {
+                console.log(`Invalid increment value ${instruction} for property ${property}`);
+              } else {
+                updateData[property] = admin.firestore.FieldValue.increment(incrementValue);
+              }
+            } else if (instruction.startsWith("-")) {
+              const decrementValue = parseInt(instruction.slice(1));
+              if (isNaN(decrementValue)) {
+                console.log(`Invalid decrement value ${instruction} for property ${property}`);
+              } else {
+                updateData[property] = admin.firestore.FieldValue.increment(-decrementValue);
+              }
             } else {
-              updateData[property] = admin.firestore.FieldValue.increment(incrementValue);
+              console.log(`Invalid instruction ${instruction} for property ${property}`);
             }
-          } else if (instruction.startsWith("-")) {
-            const decrementValue = parseInt(instruction.slice(1));
-            if (isNaN(decrementValue)) {
-              console.log(`Invalid decrement value ${instruction} for property ${property}`);
-            } else {
-              updateData[property] = admin.firestore.FieldValue.increment(-decrementValue);
-            }
-          } else {
-            console.log(`Invalid instruction ${instruction} for property ${property}`);
           }
         }
-      }
 
-      // Merge document to dstPath
-      const dstDocRef = db.doc(dstPath);
-      await batch.set(dstDocRef, updateData);
-      console.log(`Document merged to ${dstPath}`);
+        const dstDocRef = db.doc(dstPath);
+        await batch.set(dstDocRef, updateData);
+        console.log(`Document merged to ${dstPath}`);
+      } else if (action === "submit-form") {
+        console.debug("Queuing submit form...");
+        const formData: FormData = {
+          "@docPath": dstPath,
+          "@actionType": "create",
+          ...doc,
+        };
+        await queueSubmitForm(formData);
+      }
     }
   }
 
@@ -93,13 +103,13 @@ export async function distribute(
   }
 }
 
-export async function distributeLater(docsByDstPath: Map<string, LogicResultDoc>, id: string) {
+export async function distributeLater(docsByDstPath: Map<string, LogicResultDoc[]>, id: string) {
   console.log("Submitting to form for later processing...");
-  const documents = Array.from(docsByDstPath.values());
+  const documents = Array.from(docsByDstPath.values()).flat();
   if (documents.length === 0) {
     return;
   }
-  docsByDstPath.forEach((doc, dstPath) => {
+  documents.forEach((doc) => {
     if (!doc.priority || doc.priority === "normal") {
       doc.priority = "high";
     } else if (doc.priority === "low") {
@@ -111,9 +121,7 @@ export async function distributeLater(docsByDstPath: Map<string, LogicResultDoc>
     "@actionType": "create",
     "logicResultDocs": documents,
   };
-  await submitForm(formData, (status: string, data: DocumentData, isLastUpdate: boolean) => {
-    console.log(`Status: ${status}, data: ${JSON.stringify(data)}, isLastUpdate: ${isLastUpdate}`);
-  });
+  await queueSubmitForm(formData);
 }
 
 export async function validateForm(
@@ -236,17 +244,17 @@ export async function runBusinessLogics(
   }
 }
 
-export function groupDocsByUserAndDstPath(docsByDstPath: Map<string, LogicResultDoc>, userId: string) {
+export function groupDocsByUserAndDstPath(docsByDstPath: Map<string, LogicResultDoc[]>, userId: string) {
   const userDocPath = docPaths["user"].replace("{userId}", userId);
 
-  const userDocsByDstPath = new Map<string, LogicResultDoc>();
-  const otherUsersDocsByDstPath = new Map<string, LogicResultDoc>();
+  const userDocsByDstPath = new Map<string, LogicResultDoc[]>();
+  const otherUsersDocsByDstPath = new Map<string, LogicResultDoc[]>();
 
-  for (const [key, value] of docsByDstPath.entries()) {
+  for (const [key, values] of docsByDstPath.entries()) {
     if (key.startsWith(userDocPath)) {
-      userDocsByDstPath.set(key, value);
+      userDocsByDstPath.set(key, values);
     } else {
-      otherUsersDocsByDstPath.set(key, value);
+      otherUsersDocsByDstPath.set(key, values);
     }
   }
 
@@ -259,7 +267,7 @@ export function getSecurityFn(entity: string): SecurityFn {
 }
 
 
-export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultDoc[]): Promise<Map<string, LogicResultDoc>> {
+export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultDoc[]): Promise<Map<string, LogicResultDoc[]>> {
   function warnOverwritingKeys(existing: any, incoming: any, type: string, dstPath: string) {
     for (const key in incoming) {
       if (Object.prototype.hasOwnProperty.call(existing, key)) {
@@ -268,36 +276,32 @@ export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultD
     }
   }
 
-  function processMerge(existingDoc: LogicResultDoc | undefined, doc: LogicResultDoc, dstPath: string) {
-    if (existingDoc) {
+  function processMerge(existingDocs: LogicResultDoc[], doc: LogicResultDoc, dstPath: string) {
+    let merged = false;
+    for (const existingDoc of existingDocs) {
       if (existingDoc.action === "merge") {
         warnOverwritingKeys(existingDoc.doc, doc.doc, "doc", dstPath);
         warnOverwritingKeys(existingDoc.instructions, doc.instructions, "instructions", dstPath);
         existingDoc.instructions = {...existingDoc.instructions, ...doc.instructions};
         existingDoc.doc = {...existingDoc.doc, ...doc.doc};
-      } else {
-        console.warn(
-          `Action "merge" ignored because a "${existingDoc.action}" for dstPath "${dstPath}" already exists`
-        );
+        merged = true;
+        break;
       }
-    } else {
-      consolidated.set(dstPath, doc);
+    }
+    if (!merged) {
+      existingDocs.push(doc);
     }
   }
 
-  function processDelete(existingDoc: LogicResultDoc | undefined, doc: LogicResultDoc, dstPath: string) {
-    if (existingDoc) {
-      if (existingDoc.action === "merge") {
-        console.warn(`Action "merge" for dstPath "${dstPath}" is being overwritten by action "delete"`);
-        consolidated.set(dstPath, doc);
-      } else {
-        console.warn(
-          `Action "delete" ignored because a "${existingDoc.action}" for dstPath "${dstPath}" already exists`
-        );
+  function processDelete(existingDocs: LogicResultDoc[], doc: LogicResultDoc, dstPath: string) {
+    for (let i = existingDocs.length-1; i >= 0; i--) {
+      const existingDoc = existingDocs[i];
+      if (existingDoc.action === "merge" || existingDoc.action === "delete") {
+        console.warn(`Action ${existingDoc.action} for dstPath "${dstPath}" is being overwritten by action "delete"`);
+        existingDocs.splice(i, 1);
       }
-    } else {
-      consolidated.set(dstPath, doc);
     }
+    existingDocs.push(doc);
   }
 
   async function expandRecursiveActions() {
@@ -371,62 +375,69 @@ export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultD
 
   await convertCopyToMerge();
 
-  const consolidated: Map<string, LogicResultDoc> = new Map();
+  const consolidated: Map<string, LogicResultDoc[]> = new Map();
 
   for (const doc of logicDocs) {
     const {
       dstPath,
       action,
     } = doc;
-    const existingDoc = consolidated.get(dstPath);
+    const existingDocs = consolidated.get(dstPath) || [];
+    if (existingDocs.length === 0) {
+      consolidated.set(dstPath, existingDocs);
+    }
 
     if (action === "merge") {
-      processMerge(existingDoc, doc, dstPath);
+      processMerge(existingDocs, doc, dstPath);
     } else if (action === "delete") {
-      processDelete(existingDoc, doc, dstPath);
+      processDelete(existingDocs, doc, dstPath);
+    } else if (action === "submit-form") {
+      existingDocs.push(doc);
     }
   }
 
   return consolidated;
 }
 
-export async function runViewLogics(dstPathLogicDocsMap: Map<string, LogicResultDoc>): Promise<LogicResult[]> {
+export async function runViewLogics(dstPathLogicDocsMap: Map<string, LogicResultDoc[]>): Promise<LogicResult[]> {
   const logicResults: LogicResult[] = [];
-  for (const [dstPath, logicResultDoc] of dstPathLogicDocsMap.entries()) {
-    const {
-      action,
-      doc,
-      instructions,
-    } = logicResultDoc;
-    const modifiedFields: string[] = [];
-    if (doc) {
-      modifiedFields.push(...Object.keys(doc));
+  for (const [dstPath, logicResultDocs] of dstPathLogicDocsMap.entries()) {
+    for (const logicResultDoc of logicResultDocs) {
+      const {
+        action,
+        doc,
+        instructions,
+      } = logicResultDoc;
+      const modifiedFields: string[] = [];
+      if (doc) {
+        modifiedFields.push(...Object.keys(doc));
+      }
+      if (instructions) {
+        modifiedFields.push(...Object.keys(instructions));
+      }
+      const {entity} = findMatchingDocPathRegex(dstPath);
+      if (!entity) {
+        console.error("Entity should not be blank");
+        continue;
+      }
+      const matchingLogics = _mockable.getViewLogicsConfig().filter((logic) => {
+        return (
+          (
+            action === "merge" &&
+                logic.modifiedFields.some((field) => modifiedFields.includes(field)) &&
+                logic.entity === entity
+          ) ||
+            (
+              action === "delete" &&
+                logic.entity === entity
+            )
+        );
+      });
+      // TODO: Handle errors
+      // TODO: Add logic for execTime
+      const results = await Promise.all(matchingLogics.map((logic) => logic.viewLogicFn(logicResultDoc)));
+      logicResults.push(...results);
     }
-    if (instructions) {
-      modifiedFields.push(...Object.keys(instructions));
-    }
-    const {entity} = findMatchingDocPathRegex(dstPath);
-    if (!entity) {
-      console.error("Entity should not be blank");
-      continue;
-    }
-    const matchingLogics = _mockable.getViewLogicsConfig().filter((logic) => {
-      return (
-        (
-          action === "merge" &&
-          logic.modifiedFields.some((field) => modifiedFields.includes(field)) &&
-          logic.entity === entity
-        ) ||
-        (
-          action === "delete" &&
-            logic.entity === entity
-        )
-      );
-    });
-    // TODO: Handle errors
-    // TODO: Add logic for execTime
-    const results = await Promise.all(matchingLogics.map((logic) => logic.viewLogicFn(logicResultDoc)));
-    logicResults.push(...results);
   }
   return logicResults;
 }
