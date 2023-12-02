@@ -124,7 +124,8 @@ export function initializeEmberFlow(
     topic: projectConfig.submitFormQueueTopicName,
     region: projectConfig.region,
     memory: "256MiB",
-    maxInstances: 1,
+    maxInstances: 5,
+    timeoutSeconds: 540,
   }, onMessageSubmitFormQueue);
   functionsConfig["hourlyFunctions"] = functions.pubsub.schedule("every 1 hours")
     .onRun(resetUsageStats);

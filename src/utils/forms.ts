@@ -26,6 +26,7 @@ export async function onMessageSubmitFormQueue(event: CloudEvent<MessagePublishe
     const formData = event.data.message.json;
     console.log("Received form submission:", formData);
 
+    // TODO:  Let's make status handler optional
     await submitForm(formData);
 
     return "Processed form data";
