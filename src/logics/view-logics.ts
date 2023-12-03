@@ -5,9 +5,12 @@ import {
   ViewDefinition,
   ViewLogicFn,
 } from "../types";
-import {docPaths} from "../index";
+import {docPaths, pubsub, PEER_SYNC_TOPIC_NAME, VIEW_LOGICS_TOPIC_NAME} from "../index";
 import * as admin from "firebase-admin";
 import {findMatchingDocPathRegex, hydrateDocPath} from "../utils/paths";
+import {CloudEvent} from "firebase-functions/lib/v2/core";
+import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
+import {distribute, expandConsolidateAndGroupByDstPath, runViewLogics} from "../index-utils";
 
 export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn {
   return async (logicResultDoc: LogicResultDoc) => {
@@ -168,3 +171,80 @@ export const syncPeerViews: ViewLogicFn = async (logicResultDoc: LogicResultDoc)
     documents,
   };
 };
+
+export async function queueRunViewLogics(userLogicResultDocs: LogicResultDoc[]) {
+  const topic = pubsub.topic(VIEW_LOGICS_TOPIC_NAME);
+
+  try {
+    for (const userLogicResultDoc of userLogicResultDocs) {
+      const messageId = await topic.publishMessage({json: userLogicResultDoc});
+      console.log(`Message ${messageId} published.`);
+    }
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      console.error(`Received error while publishing: ${error.message}`);
+    } else {
+      console.error("An unknown error occurred during publishing");
+    }
+    throw error;
+  }
+}
+
+export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishedData>) {
+  try {
+    const userLogicResultDoc = event.data.message.json;
+    console.log("Received user logic result doc:", userLogicResultDoc);
+
+    console.info("Running View Logics");
+    const viewLogicResults = await runViewLogics(userLogicResultDoc);
+    const viewLogicResultDocs = viewLogicResults.map((result) => result.documents).flat();
+    const dstPathViewLogicDocsMap: Map<string, LogicResultDoc[]> = await expandConsolidateAndGroupByDstPath(viewLogicResultDocs);
+
+    console.info("Distributing View Logic Results");
+    await distribute(dstPathViewLogicDocsMap);
+
+    console.info("Queue for Peer Sync");
+    await queueForPeerSync([userLogicResultDoc, ...viewLogicResultDocs]);
+    return "Processed view logics";
+  } catch (e) {
+    console.error("PubSub message was not JSON", e);
+    throw new Error("No json in message");
+  }
+}
+export async function queueForPeerSync(userLogicResultDocs: LogicResultDoc[]) {
+  const topic = pubsub.topic(PEER_SYNC_TOPIC_NAME);
+
+  try {
+    for (const userLogicResultDoc of userLogicResultDocs) {
+      const messageId = await topic.publishMessage({json: userLogicResultDoc});
+      console.log(`Message ${messageId} published.`);
+    }
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      console.error(`Received error while publishing: ${error.message}`);
+    } else {
+      console.error("An unknown error occurred during publishing");
+    }
+    throw error;
+  }
+}
+
+export async function onMessagePeerSyncQueue(event: CloudEvent<MessagePublishedData>) {
+  try {
+    const userLogicResultDoc = event.data.message.json;
+    console.log("Received user logic result doc:", userLogicResultDoc);
+
+    console.info("Running Peer Sync");
+    const logicResult = await syncPeerViews(userLogicResultDoc);
+    const logicResultDocs = logicResult.documents;
+    const dstPathViewLogicDocsMap: Map<string, LogicResultDoc[]> = await expandConsolidateAndGroupByDstPath(logicResultDocs);
+
+    console.info("Distributing Peer Sync Docs");
+    await distribute(dstPathViewLogicDocsMap);
+
+    return "Processed peer sync";
+  } catch (e) {
+    console.error("PubSub message was not JSON", e);
+    throw new Error("No json in message");
+  }
+}

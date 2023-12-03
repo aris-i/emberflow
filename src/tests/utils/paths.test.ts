@@ -11,7 +11,6 @@ const projectConfig: ProjectConfig = {
   budgetAlertTopicName: "budget-alerts",
   region: "asia-southeast1",
   rtdbName: "your-rtdb-name",
-  submitFormQueueTopicName: "submit-form-queue",
   maxCostLimitPerFunction: 100,
   specialCostLimitPerFunction: {
     function1: 50,

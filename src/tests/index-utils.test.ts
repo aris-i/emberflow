@@ -38,7 +38,6 @@ const projectConfig: ProjectConfig = {
   region: "asia-southeast1",
   rtdbName: "your-rtdb-name",
   budgetAlertTopicName: "budget-alerts",
-  submitFormQueueTopicName: "submit-form-queue",
   maxCostLimitPerFunction: 100,
   specialCostLimitPerFunction: {
     function1: 50,
@@ -167,7 +166,7 @@ describe("distributeLater", () => {
       ["/users/test-user-id/documents/doc2", [doc2]],
     ]);
     const formId = "formId";
-    await distributeLater(usersDocsByDstPath, formId);
+    await distributeLater(usersDocsByDstPath);
 
     expect(submitFormSpy).toHaveBeenCalledTimes(1);
     expect(submitFormSpy.mock.calls[0][0]).toEqual({
@@ -198,7 +197,7 @@ describe("distributeLater", () => {
       ["/users/test-user-id/documents/doc2", [doc2]],
     ]);
     const formId = "formId";
-    await distributeLater(usersDocsByDstPath, formId);
+    await distributeLater(usersDocsByDstPath);
 
     expect(submitFormSpy).toHaveBeenCalledTimes(1);
     expect(submitFormSpy.mock.calls[0][0]).toEqual({
@@ -887,7 +886,6 @@ describe("runViewLogics", () => {
   });
 
   it("should run view logics properly", async () => {
-    const dstPathLogicDocsMap: Map<string, LogicResultDoc[]> = new Map();
     const logicResult1: LogicResultDoc = {
       action: "merge" as LogicResultAction,
       priority: "normal",
@@ -899,12 +897,12 @@ describe("runViewLogics", () => {
       priority: "normal",
       dstPath: "users/user124",
     };
-    dstPathLogicDocsMap.set(logicResult1.dstPath, [logicResult1]);
-    dstPathLogicDocsMap.set(logicResult2.dstPath, [logicResult2]);
     viewLogicFn1.mockResolvedValue({});
     viewLogicFn2.mockResolvedValue({});
 
-    const results = await runViewLogics(dstPathLogicDocsMap);
+    const results1 = await runViewLogics(logicResult1);
+    const results2 = await runViewLogics(logicResult2);
+    const results = [...results1, ...results2];
 
     expect(viewLogicFn1).toHaveBeenCalledTimes(2);
     expect(viewLogicFn1.mock.calls[0][0]).toBe(logicResult1);

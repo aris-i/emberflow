@@ -10,7 +10,6 @@ export interface ProjectConfig {
     region: string;
     rtdbName: string;
     budgetAlertTopicName: string;
-    submitFormQueueTopicName: string;
     maxCostLimitPerFunction: number;
     specialCostLimitPerFunction: { [key: string]: number };
 }

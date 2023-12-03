@@ -1,11 +1,11 @@
 import {FormData} from "emberflow-admin-client/lib/types";
-import {projectConfig, pubsub} from "../index";
+import {pubsub, SUBMIT_FORM_TOPIC_NAME} from "../index";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
 import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
 import {submitForm} from "emberflow-admin-client/lib";
 
 export async function queueSubmitForm(formData: FormData) {
-  const topic = pubsub.topic(projectConfig.submitFormQueueTopicName);
+  const topic = pubsub.topic(SUBMIT_FORM_TOPIC_NAME);
 
   try {
     const messageId = await topic.publishMessage({json: formData});

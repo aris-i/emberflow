@@ -28,7 +28,6 @@ const projectConfig: ProjectConfig = {
   budgetAlertTopicName: "budget-alerts",
   region: "us-central1",
   rtdbName: "rtdb",
-  submitFormQueueTopicName: "submit-form-queue",
   maxCostLimitPerFunction: 100,
   specialCostLimitPerFunction: {
     function1: 50,
@@ -684,7 +683,6 @@ describe("onFormSubmit", () => {
         otherUsersDocsByDstPath: otherUsersPeerSyncViewDocsByDstPath,
       });
     jest.spyOn(indexutils, "runViewLogics").mockResolvedValue(viewLogicResults);
-    jest.spyOn(indexutils, "runPeerSyncViews").mockResolvedValue(peerSyncViewLogicResults);
     jest.spyOn(indexutils, "distribute");
     jest.spyOn(indexutils, "distributeLater");
 
@@ -719,7 +717,6 @@ describe("onFormSubmit", () => {
     expect(indexutils.distribute).toHaveBeenNthCalledWith(4, userViewDocsByDstPath);
     expect(indexutils.distributeLater).toHaveBeenNthCalledWith(4, otherUsersViewDocsByDstPath, "test-fid-views");
 
-    expect(indexutils.runPeerSyncViews).toHaveBeenCalledWith(userDocsByDstPath);
     expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(5, peerSyncViewLogicResultDocs);
     expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(5, consolidatedPeerSyncViewLogicResults, "test-uid");
     expect(indexutils.distributeLater).toHaveBeenNthCalledWith(5, otherUsersPeerSyncViewDocsByDstPath, "test-fid-peers");

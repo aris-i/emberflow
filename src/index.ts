@@ -25,7 +25,12 @@ import {
   validateForm,
 } from "./index-utils";
 import {initDbStructure} from "./init-db-structure";
-import {createViewLogicFn} from "./logics/view-logics";
+import {
+  createViewLogicFn,
+  onMessagePeerSyncQueue,
+  onMessageViewLogicsQueue,
+  queueRunViewLogics,
+} from "./logics/view-logics";
 import {resetUsageStats, stopBillingIfBudgetExceeded, useBillProtect} from "./utils/bill-protect";
 import {Firestore} from "firebase-admin/firestore";
 import {DatabaseEvent, DataSnapshot, onValueCreated} from "firebase-functions/v2/database";
@@ -39,6 +44,7 @@ import {PubSub} from "@google-cloud/pubsub";
 import {onMessagePublished} from "firebase-functions/v2/pubsub";
 import {deleteForms} from "./utils/misc";
 import Database = database.Database;
+import {onMessageForDistributionQueue} from "./utils/distribution";
 
 
 export let admin: FirebaseAdmin;
@@ -56,6 +62,10 @@ export let docPathsRegex: Record<string, RegExp>;
 export let viewLogicConfigs: ViewLogicConfig[];
 export let projectConfig: ProjectConfig;
 export const functionsConfig: Record<string, any> = {};
+export const SUBMIT_FORM_TOPIC_NAME = "submit-form-queue";
+export const VIEW_LOGICS_TOPIC_NAME = "view-logics-queue";
+export const PEER_SYNC_TOPIC_NAME = "peer-sync-queue";
+export const FOR_DISTRIBUTION_TOPIC_NAME = "for-distribution-queue";
 
 export const _mockable = {
   createNowTimestamp: () => admin.firestore.Timestamp.now(),
@@ -121,12 +131,29 @@ export function initializeEmberFlow(
   functionsConfig["onBudgetAlert"] =
         functions.pubsub.topic(projectConfig.budgetAlertTopicName).onPublish(stopBillingIfBudgetExceeded);
   functionsConfig["onMessageSubmitFormQueue"] = onMessagePublished({
-    topic: projectConfig.submitFormQueueTopicName,
+    topic: SUBMIT_FORM_TOPIC_NAME,
     region: projectConfig.region,
-    memory: "256MiB",
     maxInstances: 5,
     timeoutSeconds: 540,
   }, onMessageSubmitFormQueue);
+  functionsConfig["onMessageViewLogicsQueue"] = onMessagePublished({
+    topic: VIEW_LOGICS_TOPIC_NAME,
+    region: projectConfig.region,
+    maxInstances: 5,
+    timeoutSeconds: 540,
+  }, onMessageViewLogicsQueue);
+  functionsConfig["onMessagePeerSyncQueue"] = onMessagePublished({
+    topic: PEER_SYNC_TOPIC_NAME,
+    region: projectConfig.region,
+    maxInstances: 5,
+    timeoutSeconds: 540,
+  }, onMessagePeerSyncQueue);
+  functionsConfig["onMessageForDistributionQueue"] = onMessagePublished({
+    topic: FOR_DISTRIBUTION_TOPIC_NAME,
+    region: projectConfig.region,
+    maxInstances: 5,
+    timeoutSeconds: 540,
+  }, onMessageForDistributionQueue);
   functionsConfig["hourlyFunctions"] = functions.pubsub.schedule("every 1 hours")
     .onRun(resetUsageStats);
   functionsConfig["minuteFunctions"] = functions.pubsub.schedule("every 1 minutes")
@@ -322,7 +349,7 @@ export async function onFormSubmit(
           otherUsersDocsByDstPath: normalPriorityOtherUsersDocsByDstPath,
         } = groupDocsByUserAndDstPath(normalPriorityDstPathLogicDocsMap, userId);
         await distribute(normalPriorityUserDocsByDstPath);
-        await distributeLater(normalPriorityOtherUsersDocsByDstPath, `${formId}-normal-${page}`);
+        await distributeLater(normalPriorityOtherUsersDocsByDstPath);
 
         console.info("Consolidating and Distributing Low Priority Logic Results", lowPriorityDocs);
         const lowPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
@@ -331,29 +358,18 @@ export async function onFormSubmit(
           userDocsByDstPath: lowPriorityUserDocsByDstPath,
           otherUsersDocsByDstPath: lowPriorityOtherUsersDocsByDstPath,
         } = groupDocsByUserAndDstPath(lowPriorityDstPathLogicDocsMap, userId);
-        await distributeLater(lowPriorityUserDocsByDstPath, `${formId}-low-user-${page}`);
-        await distributeLater(lowPriorityOtherUsersDocsByDstPath, `${formId}-low-others-${page}`);
+        await distributeLater(lowPriorityUserDocsByDstPath);
+        await distributeLater(lowPriorityOtherUsersDocsByDstPath);
 
-        // const userDocsByDstPath = new Map([
-        //   ...highPriorityUserDocsByDstPath,
-        //   ...normalPriorityUserDocsByDstPath,
-        // ]);
-
-        // console.info("Running View Logics");
-        // const viewLogicResults = await runViewLogics(userDocsByDstPath);
-        // const viewLogicResultDocs = viewLogicResults.map((result) => result.documents).flat();
-        // const dstPathViewLogicDocsMap: Map<string, LogicResultDoc[]> = await expandConsolidateAndGroupByDstPath(viewLogicResultDocs);
-        // console.info("Distributing View Logic Results");
-        // await distribute(dstPathViewLogicDocsMap);
-
-        // console.info("Running Peer Sync Views");
-        // const peerSyncViewLogicResults = await runPeerSyncViews(userDocsByDstPath);
-        // const peerSyncViewLogicResultDocs = peerSyncViewLogicResults.map((result) => result.documents).flat();
-        // const dstPathPeerSyncViewLogicDocsMap: Map<string, LogicResultDoc> = await expandConsolidateAndGroupByDstPath(peerSyncViewLogicResultDocs);
-        // const {otherUsersDocsByDstPath: otherUsersPeerSyncViewDocsByDstPath} = groupDocsByUserAndDstPath(dstPathPeerSyncViewLogicDocsMap, userId);
-        //
-        // console.info("Distributing Logic Results for Peer Sync Views");
-        // await distributeLater(otherUsersPeerSyncViewDocsByDstPath, `${formId}-peers`);
+        const userDocsMap = [
+          highPriorityUserDocsByDstPath,
+          normalPriorityOtherUsersDocsByDstPath,
+          lowPriorityUserDocsByDstPath,
+        ];
+        const userDocs = userDocsMap
+          .flatMap((map) => Array.from(map.values()))
+          .flat();
+        await queueRunViewLogics(userDocs);
       }
     );
 

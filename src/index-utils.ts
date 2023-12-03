@@ -18,7 +18,6 @@ import {
   validatorConfig,
   viewLogicConfigs,
 } from "./index";
-import {syncPeerViews} from "./logics/view-logics";
 import {expandAndGroupDocPathsByEntity, findMatchingDocPathRegex} from "./utils/paths";
 import {deepEqual} from "./utils/misc";
 import {CloudFunctionsServiceClient} from "@google-cloud/functions";
@@ -28,12 +27,76 @@ import {queueSubmitForm} from "./utils/forms";
 import QueryDocumentSnapshot = firestore.QueryDocumentSnapshot;
 import DocumentData = FirebaseFirestore.DocumentData;
 import Reference = database.Reference;
+import {queueForDistributionLater} from "./utils/distribution";
 
 export const _mockable = {
   getViewLogicsConfig: () => viewLogicConfigs,
   createNowTimestamp: () => admin.firestore.Timestamp.now(),
 };
 
+
+export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: BatchUtil) {
+  const {
+    action,
+    doc,
+    instructions,
+    dstPath,
+  } = logicResultDoc;
+  console.debug(`Distributing doc with Action: ${action}`);
+  if (action === "delete") {
+    // Delete document at dstPath
+    const dstDocRef = db.doc(dstPath);
+    if (batch) {
+      await batch.deleteDoc(dstDocRef);
+    } else {
+      await dstDocRef.delete();
+    }
+    console.log(`Document deleted at ${dstPath}`);
+  } else if (action === "merge") {
+    const updateData: { [key: string]: any } = {...doc};
+    if (instructions) {
+      for (const [property, instruction] of Object.entries(instructions)) {
+        if (instruction === "++") {
+          updateData[property] = admin.firestore.FieldValue.increment(1);
+        } else if (instruction === "--") {
+          updateData[property] = admin.firestore.FieldValue.increment(-1);
+        } else if (instruction.startsWith("+")) {
+          const incrementValue = parseInt(instruction.slice(1));
+          if (isNaN(incrementValue)) {
+            console.log(`Invalid increment value ${instruction} for property ${property}`);
+          } else {
+            updateData[property] = admin.firestore.FieldValue.increment(incrementValue);
+          }
+        } else if (instruction.startsWith("-")) {
+          const decrementValue = parseInt(instruction.slice(1));
+          if (isNaN(decrementValue)) {
+            console.log(`Invalid decrement value ${instruction} for property ${property}`);
+          } else {
+            updateData[property] = admin.firestore.FieldValue.increment(-decrementValue);
+          }
+        } else {
+          console.log(`Invalid instruction ${instruction} for property ${property}`);
+        }
+      }
+    }
+
+    const dstDocRef = db.doc(dstPath);
+    if (batch) {
+      await batch.set(dstDocRef, updateData);
+    } else {
+      await dstDocRef.set(updateData, {merge: true});
+    }
+    console.log(`Document merged to ${dstPath}`);
+  } else if (action === "submit-form") {
+    console.debug("Queuing submit form...");
+    const formData: FormData = {
+      "@docPath": dstPath,
+      "@actionType": "create",
+      ...doc,
+    };
+    await queueSubmitForm(formData);
+  }
+}
 
 export async function distribute(
   docsByDstPath: Map<string, LogicResultDoc[]> ) {
@@ -43,57 +106,7 @@ export async function distribute(
     const resultDocs = docsByDstPath.get(dstPath);
     if (!resultDocs) continue;
     for (const resultDoc of resultDocs) {
-      const {
-        action,
-        doc,
-        instructions,
-      } = resultDoc;
-      console.debug(`Distributing doc with Action: ${action}`);
-      if (action === "delete") {
-        // Delete document at dstPath
-        const dstDocRef = db.doc(dstPath);
-        await batch.deleteDoc(dstDocRef);
-        console.log(`Document deleted at ${dstPath}`);
-      } else if (action === "merge") {
-        const updateData: { [key: string]: any } = {...doc};
-        if (instructions) {
-          for (const [property, instruction] of Object.entries(instructions)) {
-            if (instruction === "++") {
-              updateData[property] = admin.firestore.FieldValue.increment(1);
-            } else if (instruction === "--") {
-              updateData[property] = admin.firestore.FieldValue.increment(-1);
-            } else if (instruction.startsWith("+")) {
-              const incrementValue = parseInt(instruction.slice(1));
-              if (isNaN(incrementValue)) {
-                console.log(`Invalid increment value ${instruction} for property ${property}`);
-              } else {
-                updateData[property] = admin.firestore.FieldValue.increment(incrementValue);
-              }
-            } else if (instruction.startsWith("-")) {
-              const decrementValue = parseInt(instruction.slice(1));
-              if (isNaN(decrementValue)) {
-                console.log(`Invalid decrement value ${instruction} for property ${property}`);
-              } else {
-                updateData[property] = admin.firestore.FieldValue.increment(-decrementValue);
-              }
-            } else {
-              console.log(`Invalid instruction ${instruction} for property ${property}`);
-            }
-          }
-        }
-
-        const dstDocRef = db.doc(dstPath);
-        await batch.set(dstDocRef, updateData);
-        console.log(`Document merged to ${dstPath}`);
-      } else if (action === "submit-form") {
-        console.debug("Queuing submit form...");
-        const formData: FormData = {
-          "@docPath": dstPath,
-          "@actionType": "create",
-          ...doc,
-        };
-        await queueSubmitForm(formData);
-      }
+      await distributeDoc(resultDoc, batch);
     }
   }
 
@@ -103,25 +116,10 @@ export async function distribute(
   }
 }
 
-export async function distributeLater(docsByDstPath: Map<string, LogicResultDoc[]>, id: string) {
+export async function distributeLater(docsByDstPath: Map<string, LogicResultDoc[]>) {
   console.log("Submitting to form for later processing...");
   const documents = Array.from(docsByDstPath.values()).flat();
-  if (documents.length === 0) {
-    return;
-  }
-  documents.forEach((doc) => {
-    if (!doc.priority || doc.priority === "normal") {
-      doc.priority = "high";
-    } else if (doc.priority === "low") {
-      doc.priority = "normal";
-    }
-  });
-  const formData: FormData = {
-    "@docPath": `@internal/forDistribution/distributions/${id}`,
-    "@actionType": "create",
-    "logicResultDocs": documents,
-  };
-  await queueSubmitForm(formData);
+  await queueForDistributionLater(...documents);
 }
 
 export async function validateForm(
@@ -399,55 +397,41 @@ export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultD
   return consolidated;
 }
 
-export async function runViewLogics(dstPathLogicDocsMap: Map<string, LogicResultDoc[]>): Promise<LogicResult[]> {
-  const logicResults: LogicResult[] = [];
-  for (const [dstPath, logicResultDocs] of dstPathLogicDocsMap.entries()) {
-    for (const logicResultDoc of logicResultDocs) {
-      const {
-        action,
-        doc,
-        instructions,
-      } = logicResultDoc;
-      const modifiedFields: string[] = [];
-      if (doc) {
-        modifiedFields.push(...Object.keys(doc));
-      }
-      if (instructions) {
-        modifiedFields.push(...Object.keys(instructions));
-      }
-      const {entity} = findMatchingDocPathRegex(dstPath);
-      if (!entity) {
-        console.error("Entity should not be blank");
-        continue;
-      }
-      const matchingLogics = _mockable.getViewLogicsConfig().filter((logic) => {
-        return (
-          (
-            action === "merge" &&
+export async function runViewLogics(userLogicResultDoc: LogicResultDoc): Promise<LogicResult[]> {
+  const {
+    action,
+    doc,
+    instructions,
+    dstPath,
+  } = userLogicResultDoc;
+  const modifiedFields: string[] = [];
+  if (doc) {
+    modifiedFields.push(...Object.keys(doc));
+  }
+  if (instructions) {
+    modifiedFields.push(...Object.keys(instructions));
+  }
+  const {entity} = findMatchingDocPathRegex(dstPath);
+  if (!entity) {
+    console.error("Entity should not be blank");
+    return [];
+  }
+  const matchingLogics = _mockable.getViewLogicsConfig().filter((logic) => {
+    return (
+      (
+        action === "merge" &&
                 logic.modifiedFields.some((field) => modifiedFields.includes(field)) &&
                 logic.entity === entity
-          ) ||
+      ) ||
             (
               action === "delete" &&
                 logic.entity === entity
             )
-        );
-      });
-      // TODO: Handle errors
-      // TODO: Add logic for execTime
-      const results = await Promise.all(matchingLogics.map((logic) => logic.viewLogicFn(logicResultDoc)));
-      logicResults.push(...results);
-    }
-  }
-  return logicResults;
-}
-
-export async function runPeerSyncViews(userDocsByDstPath: Map<string, LogicResultDoc>) : Promise<LogicResult[]> {
-  const logicResults: LogicResult[] = [];
-  for (const [_, logicResultDoc] of userDocsByDstPath.entries()) {
-    logicResults.push(await syncPeerViews(logicResultDoc));
-  }
-  return logicResults;
+    );
+  });
+  // TODO: Handle errors
+  // TODO: Add logic for execTime
+  return await Promise.all(matchingLogics.map((logic) => logic.viewLogicFn(userLogicResultDoc)));
 }
 
 export async function processScheduledEntities() {
