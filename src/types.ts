@@ -25,7 +25,7 @@ export interface Action{
     message?: string
 }
 
-export type LogicResultAction = "merge" | "delete" | "copy" | "recursive-copy" | "recursive-delete" | "submit-form";
+export type LogicResultAction = "create" | "merge" | "delete" | "copy" | "recursive-copy" | "recursive-delete" | "submit-form";
 export type LogicResultDocPriority = "high" | "normal" | "low";
 export interface LogicResultDoc{
     action: LogicResultAction;

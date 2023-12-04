@@ -7,10 +7,16 @@ import {
 } from "../types";
 import {docPaths, pubsub, PEER_SYNC_TOPIC_NAME, VIEW_LOGICS_TOPIC_NAME} from "../index";
 import * as admin from "firebase-admin";
-import {findMatchingDocPathRegex, hydrateDocPath} from "../utils/paths";
+import {hydrateDocPath} from "../utils/paths";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
 import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
-import {distribute, expandConsolidateAndGroupByDstPath, runViewLogics} from "../index-utils";
+import {
+  distribute,
+  distributeLater,
+  expandConsolidateAndGroupByDstPath,
+  groupDocsByUserAndDstPath,
+  runViewLogics
+} from "../index-utils";
 
 export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn {
   return async (logicResultDoc: LogicResultDoc) => {
@@ -32,7 +38,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn {
     if (destProp) {
       destPaths = await hydrateDocPath(destDocPath, {
         [destEntity]: {
-          fieldName: `${destProp}.id`,
+          fieldName: `${destProp}.@id`,
           operator: "==",
           value: docId,
         },
@@ -44,11 +50,22 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn {
 
     if (action === "delete") {
       const documents = destPaths.map((destPath) => {
-        return {
-          action: "delete" as LogicResultAction,
-          dstPath: destPath,
-          priority: "normal" as LogicResultDocPriority,
-        };
+        if (destProp) {
+          return {
+            action: "merge" as LogicResultAction,
+            dstPath: destPath,
+            doc: {
+              [destProp]: admin.firestore.FieldValue.delete(),
+            },
+            priority: "normal" as LogicResultDocPriority,
+          };
+        } else {
+          return {
+            action: "delete" as LogicResultAction,
+            dstPath: destPath,
+            priority: "normal" as LogicResultDocPriority,
+          };
+        }
       });
       return {
         name: `${destEntity}#${destProp} ViewLogic`,
@@ -87,64 +104,18 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn {
   };
 }
 
-export const syncPeerViews: ViewLogicFn = async (logicResultDoc: LogicResultDoc) => {
+export async function syncPeerViews(logicResultDoc: LogicResultDoc) {
   const {
     dstPath,
     doc,
     instructions,
   } = logicResultDoc;
-  const {entity, regex} = findMatchingDocPathRegex(dstPath);
-  if (!entity) {
-    return {
-      name: "SyncPeerViews",
-      status: "error",
-      message: `No matching entity found for path ${dstPath}`,
-      timeFinished: admin.firestore.Timestamp.now(),
-      documents: [],
-    };
-  }
-  const docPath = docPaths[entity];
-
-  let matchedGroups = dstPath.match(regex);
-  const matchedValues = matchedGroups?.slice(1);
-  matchedGroups = docPath.match(regex);
-  const matchedKeys = matchedGroups?.slice(1);
-
-  if (!matchedKeys || !matchedValues) {
-    return {
-      name: "SyncPeerViews",
-      status: "error",
-      message: `No matching keys or values found for path ${dstPath}`,
-      timeFinished: admin.firestore.Timestamp.now(),
-      documents: [],
-    };
-  }
-
-  const userIdKey = matchedKeys[0];
-  const userId = matchedValues[0];
-  const entityIdKey = matchedKeys[matchedKeys.length-1];
-  const entityId = matchedValues[matchedValues.length-1];
-  // Create a map combining matchedKeys and matchedValues
-  const matchedKeyValues = matchedKeys.reduce((acc, key, index) => {
-    acc[key] = matchedValues[index];
-    return acc;
-  }, {} as Record<string, string>);
-
-  // Create a dehydrated path from docPath replacing keys with values except for the first key and the last key
-  const dehydratedPath = docPath.replace(/({[^/]+Id})/g, (match, ...args) => {
-    const matchedKey = args[0];
-    if (matchedKey === userIdKey || matchedKey === entityIdKey) {
-      return matchedKey;
-    }
-    return matchedKeyValues[matchedKey];
-  });
+  const splits = dstPath.split("/");
+  const userId = splits[1];
+  splits[1] = "{userId}";
+  const dehydratedPath = splits.join("/");
 
   const forSyncPaths = await hydrateDocPath(dehydratedPath, {
-    [entity]: {
-      fieldName: "@id",
-      operator: "==",
-      value: entityId,
-    },
     user: {
       fieldName: "@id",
       operator: "!=",
@@ -170,13 +141,17 @@ export const syncPeerViews: ViewLogicFn = async (logicResultDoc: LogicResultDoc)
     timeFinished: admin.firestore.Timestamp.now(),
     documents,
   };
-};
+}
 
 export async function queueRunViewLogics(userLogicResultDocs: LogicResultDoc[]) {
   const topic = pubsub.topic(VIEW_LOGICS_TOPIC_NAME);
 
   try {
     for (const userLogicResultDoc of userLogicResultDocs) {
+      if (userLogicResultDoc.action === "create") {
+        // Since this is newly created, this means there's no existing view to sync
+        continue;
+      }
       const messageId = await topic.publishMessage({json: userLogicResultDoc});
       console.log(`Message ${messageId} published.`);
     }
@@ -193,25 +168,28 @@ export async function queueRunViewLogics(userLogicResultDocs: LogicResultDoc[]) 
 export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishedData>) {
   try {
     const userLogicResultDoc = event.data.message.json;
+    const userId = userLogicResultDoc.dstPath.split("/")[1];
     console.log("Received user logic result doc:", userLogicResultDoc);
 
     console.info("Running View Logics");
     const viewLogicResults = await runViewLogics(userLogicResultDoc);
     const viewLogicResultDocs = viewLogicResults.map((result) => result.documents).flat();
     const dstPathViewLogicDocsMap: Map<string, LogicResultDoc[]> = await expandConsolidateAndGroupByDstPath(viewLogicResultDocs);
+    const {userDocsByDstPath, otherUsersDocsByDstPath} = groupDocsByUserAndDstPath(dstPathViewLogicDocsMap, userId);
 
     console.info("Distributing View Logic Results");
-    await distribute(dstPathViewLogicDocsMap);
+    await distribute(userDocsByDstPath);
+    await distributeLater(otherUsersDocsByDstPath);
 
     console.info("Queue for Peer Sync");
-    await queueForPeerSync([userLogicResultDoc, ...viewLogicResultDocs]);
+    await queueForPeerSync(userLogicResultDoc);
     return "Processed view logics";
   } catch (e) {
     console.error("PubSub message was not JSON", e);
     throw new Error("No json in message");
   }
 }
-export async function queueForPeerSync(userLogicResultDocs: LogicResultDoc[]) {
+export async function queueForPeerSync(...userLogicResultDocs: LogicResultDoc[]) {
   const topic = pubsub.topic(PEER_SYNC_TOPIC_NAME);
 
   try {
@@ -240,7 +218,7 @@ export async function onMessagePeerSyncQueue(event: CloudEvent<MessagePublishedD
     const dstPathViewLogicDocsMap: Map<string, LogicResultDoc[]> = await expandConsolidateAndGroupByDstPath(logicResultDocs);
 
     console.info("Distributing Peer Sync Docs");
-    await distribute(dstPathViewLogicDocsMap);
+    await distributeLater(dstPathViewLogicDocsMap);
 
     return "Processed peer sync";
   } catch (e) {

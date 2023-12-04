@@ -212,17 +212,12 @@ describe("syncPeerViews", () => {
     expect(document.doc).toEqual({"title": "I like it"});
     expect(document.instructions).toEqual({"likes": "++"});
 
-    expect(hydrateDocPathSpy.mock.calls[0][0]).toEqual("users/{userId}/posts/5678/comments/{commentId}");
+    expect(hydrateDocPathSpy.mock.calls[0][0]).toEqual("users/{userId}/posts/5678/comments/9876");
     expect(hydrateDocPathSpy.mock.calls[0][1]).toEqual({
       "user": {
         fieldName: "@id",
         operator: "!=",
         value: "1234",
-      },
-      "comment": {
-        fieldName: "@id",
-        operator: "==",
-        value: "9876",
       },
     });
   });
