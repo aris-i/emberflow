@@ -42,6 +42,7 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
     instructions,
     dstPath,
   } = logicResultDoc;
+  const dstDocRef = db.doc(dstPath);
   console.debug(`Distributing doc with Action: ${action}`);
   if (action === "delete") {
     // Delete document at dstPath
@@ -53,7 +54,7 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
     }
     console.log(`Document deleted at ${dstPath}`);
   } else if (action === "merge") {
-    const updateData: { [key: string]: any } = {...doc};
+    const updateData: { [key: string]: any } = {...doc, "@id": dstDocRef.id};
     if (instructions) {
       for (const [property, instruction] of Object.entries(instructions)) {
         if (instruction === "++") {
@@ -80,7 +81,6 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
       }
     }
 
-    const dstDocRef = db.doc(dstPath);
     if (batch) {
       await batch.set(dstDocRef, updateData);
     } else {
@@ -274,24 +274,24 @@ export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultD
     }
   }
 
-  function processMerge(existingDocs: LogicResultDoc[], doc: LogicResultDoc, dstPath: string) {
+  function processMerge(existingDocs: LogicResultDoc[], logicResultDoc: LogicResultDoc, dstPath: string) {
     let merged = false;
     for (const existingDoc of existingDocs) {
       if (existingDoc.action === "merge") {
-        warnOverwritingKeys(existingDoc.doc, doc.doc, "doc", dstPath);
-        warnOverwritingKeys(existingDoc.instructions, doc.instructions, "instructions", dstPath);
-        existingDoc.instructions = {...existingDoc.instructions, ...doc.instructions};
-        existingDoc.doc = {...existingDoc.doc, ...doc.doc};
+        warnOverwritingKeys(existingDoc.doc, logicResultDoc.doc, "doc", dstPath);
+        warnOverwritingKeys(existingDoc.instructions, logicResultDoc.instructions, "instructions", dstPath);
+        existingDoc.instructions = {...existingDoc.instructions, ...logicResultDoc.instructions};
+        existingDoc.doc = {...existingDoc.doc, ...logicResultDoc.doc};
         merged = true;
         break;
       }
     }
     if (!merged) {
-      existingDocs.push(doc);
+      existingDocs.push(logicResultDoc);
     }
   }
 
-  function processDelete(existingDocs: LogicResultDoc[], doc: LogicResultDoc, dstPath: string) {
+  function processDelete(existingDocs: LogicResultDoc[], logicResultDoc: LogicResultDoc, dstPath: string) {
     for (let i = existingDocs.length-1; i >= 0; i--) {
       const existingDoc = existingDocs[i];
       if (existingDoc.action === "merge" || existingDoc.action === "delete") {
@@ -299,7 +299,7 @@ export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultD
         existingDocs.splice(i, 1);
       }
     }
-    existingDocs.push(doc);
+    existingDocs.push(logicResultDoc);
   }
 
   async function expandRecursiveActions() {

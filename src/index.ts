@@ -38,7 +38,6 @@ import {parseEntity} from "./utils/paths";
 import {database} from "firebase-admin";
 import {initClient} from "emberflow-admin-client/lib";
 import {internalDbStructure, InternalEntity} from "./db-structure";
-import {forDistributionLogicConfig} from "./logics/logics";
 import {onMessageSubmitFormQueue} from "./utils/forms";
 import {PubSub} from "@google-cloud/pubsub";
 import {onMessagePublished} from "firebase-functions/v2/pubsub";
@@ -95,7 +94,7 @@ export function initializeEmberFlow(
   Entity = {...CustomEntity, ...InternalEntity};
   securityConfig = customSecurityConfig;
   validatorConfig = customValidatorConfig;
-  logicConfigs = [...customLogicConfigs, forDistributionLogicConfig];
+  logicConfigs = [...customLogicConfigs];
   initClient(admin.app());
 
   const {
@@ -327,7 +326,7 @@ export async function onFormSubmit(
             lowPriorityDocs: [] as LogicResultDoc[],
           });
 
-        console.info("Consolidating and Distributing High Priority Logic Results", highPriorityDocs);
+        console.info("Consolidating and Distributing High Priority Logic Results");
         const highPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
             await expandConsolidateAndGroupByDstPath(highPriorityDocs);
         const {
@@ -341,7 +340,7 @@ export async function onFormSubmit(
           await formRef.update({"@status": "finished"});
         }
 
-        console.info("Consolidating and Distributing Normal Priority Logic Results", normalPriorityDocs);
+        console.info("Consolidating and Distributing Normal Priority Logic Results");
         const normalPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
             await expandConsolidateAndGroupByDstPath(normalPriorityDocs);
         const {
@@ -351,7 +350,7 @@ export async function onFormSubmit(
         await distribute(normalPriorityUserDocsByDstPath);
         await distributeLater(normalPriorityOtherUsersDocsByDstPath);
 
-        console.info("Consolidating and Distributing Low Priority Logic Results", lowPriorityDocs);
+        console.info("Consolidating and Distributing Low Priority Logic Results");
         const lowPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
             await expandConsolidateAndGroupByDstPath(lowPriorityDocs);
         const {
