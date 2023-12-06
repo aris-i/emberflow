@@ -4,7 +4,7 @@ import {CloudEvent} from "firebase-functions/lib/v2/core";
 import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
 import {distributeDoc} from "../index-utils";
 
-export async function queueForDistributionLater(...logicResultDocs: LogicResultDoc[]) {
+export const queueForDistributionLater = async (...logicResultDocs: LogicResultDoc[]) => {
   const topic = pubsub.topic(FOR_DISTRIBUTION_TOPIC_NAME);
 
   try {
@@ -20,7 +20,7 @@ export async function queueForDistributionLater(...logicResultDocs: LogicResultD
     }
     throw error;
   }
-}
+};
 
 export async function onMessageForDistributionQueue(event: CloudEvent<MessagePublishedData>) {
   try {

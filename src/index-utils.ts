@@ -46,7 +46,6 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
   console.debug(`Distributing doc with Action: ${action}`);
   if (action === "delete") {
     // Delete document at dstPath
-    const dstDocRef = db.doc(dstPath);
     if (batch) {
       await batch.deleteDoc(dstDocRef);
     } else {
@@ -277,6 +276,11 @@ export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultD
   function processMerge(existingDocs: LogicResultDoc[], logicResultDoc: LogicResultDoc, dstPath: string) {
     let merged = false;
     for (const existingDoc of existingDocs) {
+      if (existingDoc.action === "delete") {
+        console.warn(`Action ${logicResultDoc.action} ignored because a "delete" for dstPath "${logicResultDoc.dstPath}" already exists`);
+        merged = true;
+        break;
+      }
       if (existingDoc.action === "merge") {
         warnOverwritingKeys(existingDoc.doc, logicResultDoc.doc, "doc", dstPath);
         warnOverwritingKeys(existingDoc.instructions, logicResultDoc.instructions, "instructions", dstPath);

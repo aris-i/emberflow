@@ -15,7 +15,7 @@ import {
   distributeLater,
   expandConsolidateAndGroupByDstPath,
   groupDocsByUserAndDstPath,
-  runViewLogics
+  runViewLogics,
 } from "../index-utils";
 
 export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn {
@@ -104,7 +104,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn {
   };
 }
 
-export async function syncPeerViews(logicResultDoc: LogicResultDoc) {
+export const syncPeerViews = async (logicResultDoc: LogicResultDoc) => {
   const {
     dstPath,
     doc,
@@ -141,7 +141,7 @@ export async function syncPeerViews(logicResultDoc: LogicResultDoc) {
     timeFinished: admin.firestore.Timestamp.now(),
     documents,
   };
-}
+};
 
 export async function queueRunViewLogics(userLogicResultDocs: LogicResultDoc[]) {
   const topic = pubsub.topic(VIEW_LOGICS_TOPIC_NAME);
@@ -176,6 +176,7 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
     const viewLogicResultDocs = viewLogicResults.map((result) => result.documents).flat();
     const dstPathViewLogicDocsMap: Map<string, LogicResultDoc[]> = await expandConsolidateAndGroupByDstPath(viewLogicResultDocs);
     const {userDocsByDstPath, otherUsersDocsByDstPath} = groupDocsByUserAndDstPath(dstPathViewLogicDocsMap, userId);
+    console.log(userDocsByDstPath);
 
     console.info("Distributing View Logic Results");
     await distribute(userDocsByDstPath);
@@ -189,7 +190,9 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
     throw new Error("No json in message");
   }
 }
-export async function queueForPeerSync(...userLogicResultDocs: LogicResultDoc[]) {
+
+export const queueForPeerSync = async (...userLogicResultDocs: LogicResultDoc[]) => {
+  console.log("wat");
   const topic = pubsub.topic(PEER_SYNC_TOPIC_NAME);
 
   try {
@@ -205,7 +208,7 @@ export async function queueForPeerSync(...userLogicResultDocs: LogicResultDoc[])
     }
     throw error;
   }
-}
+};
 
 export async function onMessagePeerSyncQueue(event: CloudEvent<MessagePublishedData>) {
   try {
