@@ -187,7 +187,6 @@ describe("hydrateDocPath", () => {
   });
 });
 
-
 describe("filterSubDocPathsByEntity", () => {
   beforeEach(() => {
     // Clear the mock before each test
