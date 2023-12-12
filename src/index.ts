@@ -43,7 +43,9 @@ import {PubSub} from "@google-cloud/pubsub";
 import {onMessagePublished} from "firebase-functions/v2/pubsub";
 import {deleteForms} from "./utils/misc";
 import Database = database.Database;
-import {onMessageForDistributionQueue} from "./utils/distribution";
+import {onMessageForDistributionQueue, onMessageInstructionsQueue} from "./utils/distribution";
+import {cleanPubSubProcessedIds} from "./utils/pubsub";
+import {onSchedule} from "firebase-functions/v2/scheduler";
 
 
 export let admin: FirebaseAdmin;
@@ -65,6 +67,7 @@ export const SUBMIT_FORM_TOPIC_NAME = "submit-form-queue";
 export const VIEW_LOGICS_TOPIC_NAME = "view-logics-queue";
 export const PEER_SYNC_TOPIC_NAME = "peer-sync-queue";
 export const FOR_DISTRIBUTION_TOPIC_NAME = "for-distribution-queue";
+export const INSTRUCTIONS_TOPIC_NAME = "instructions-queue";
 
 export const _mockable = {
   createNowTimestamp: () => admin.firestore.Timestamp.now(),
@@ -121,6 +124,7 @@ export function initializeEmberFlow(
       ref: "forms/{userId}/{formId}",
       region: projectConfig.region,
       memory: "256MiB",
+      retry: true,
     },
     useBillProtect(onFormSubmit)
   );
@@ -153,8 +157,20 @@ export function initializeEmberFlow(
     maxInstances: 5,
     timeoutSeconds: 540,
   }, onMessageForDistributionQueue);
-  functionsConfig["hourlyFunctions"] = functions.pubsub.schedule("every 1 hours")
+  functionsConfig["onMessageInstructionsQueue"] = onMessagePublished({
+    topic: INSTRUCTIONS_TOPIC_NAME,
+    region: projectConfig.region,
+    maxInstances: 1,
+    concurrency: 5,
+    timeoutSeconds: 540,
+  }, onMessageInstructionsQueue);
+  functionsConfig["resetUsageStats"] = functions.pubsub.schedule("every 1 hours")
     .onRun(resetUsageStats);
+  functionsConfig["cleanPubSubProcessedIds"] = onSchedule({
+    schedule: "every 1 hours",
+    region: projectConfig.region,
+    timeoutSeconds: 540,
+  }, cleanPubSubProcessedIds);
   functionsConfig["minuteFunctions"] = functions.pubsub.schedule("every 1 minutes")
     .onRun(processScheduledEntities);
   functionsConfig["onDeleteFunctions"] = functions.firestore.document("@server/delete/functions/{deleteFuncId}").onCreate(

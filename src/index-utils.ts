@@ -24,10 +24,10 @@ import {CloudFunctionsServiceClient} from "@google-cloud/functions";
 import {FormData} from "emberflow-admin-client/lib/types";
 import {BatchUtil} from "./utils/batch";
 import {queueSubmitForm} from "./utils/forms";
+import {queueForDistributionLater, queueInstructions} from "./utils/distribution";
 import QueryDocumentSnapshot = firestore.QueryDocumentSnapshot;
 import DocumentData = FirebaseFirestore.DocumentData;
 import Reference = database.Reference;
-import {queueForDistributionLater} from "./utils/distribution";
 
 export const _mockable = {
   getViewLogicsConfig: () => viewLogicConfigs,
@@ -52,34 +52,12 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
       await dstDocRef.delete();
     }
     console.log(`Document deleted at ${dstPath}`);
-  } else if (action === "merge") {
-    const updateData: { [key: string]: any } = {...doc, "@id": dstDocRef.id};
+  } else if (action === "merge" || action === "create") {
     if (instructions) {
-      for (const [property, instruction] of Object.entries(instructions)) {
-        if (instruction === "++") {
-          updateData[property] = admin.firestore.FieldValue.increment(1);
-        } else if (instruction === "--") {
-          updateData[property] = admin.firestore.FieldValue.increment(-1);
-        } else if (instruction.startsWith("+")) {
-          const incrementValue = parseInt(instruction.slice(1));
-          if (isNaN(incrementValue)) {
-            console.log(`Invalid increment value ${instruction} for property ${property}`);
-          } else {
-            updateData[property] = admin.firestore.FieldValue.increment(incrementValue);
-          }
-        } else if (instruction.startsWith("-")) {
-          const decrementValue = parseInt(instruction.slice(1));
-          if (isNaN(decrementValue)) {
-            console.log(`Invalid decrement value ${instruction} for property ${property}`);
-          } else {
-            updateData[property] = admin.firestore.FieldValue.increment(-decrementValue);
-          }
-        } else {
-          console.log(`Invalid instruction ${instruction} for property ${property}`);
-        }
-      }
+      await queueInstructions(dstPath, instructions);
     }
 
+    const updateData: { [key: string]: any } = {...doc, "@id": dstDocRef.id};
     if (batch) {
       await batch.set(dstDocRef, updateData);
     } else {
@@ -273,7 +251,7 @@ export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultD
     }
   }
 
-  function processMerge(existingDocs: LogicResultDoc[], logicResultDoc: LogicResultDoc, dstPath: string) {
+  function processMergeAndCreate(existingDocs: LogicResultDoc[], logicResultDoc: LogicResultDoc, dstPath: string) {
     let merged = false;
     for (const existingDoc of existingDocs) {
       if (existingDoc.action === "delete") {
@@ -281,9 +259,13 @@ export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultD
         merged = true;
         break;
       }
-      if (existingDoc.action === "merge") {
+      if (existingDoc.action === "merge" || existingDoc.action === "create") {
         warnOverwritingKeys(existingDoc.doc, logicResultDoc.doc, "doc", dstPath);
         warnOverwritingKeys(existingDoc.instructions, logicResultDoc.instructions, "instructions", dstPath);
+        if (existingDoc.action === "merge" && logicResultDoc.action === "create") {
+          console.info(`Existing doc Action "merge" for dstPath "${dstPath}" is being converted to "create"`);
+          existingDoc.action = "create";
+        }
         existingDoc.instructions = {...existingDoc.instructions, ...logicResultDoc.instructions};
         existingDoc.doc = {...existingDoc.doc, ...logicResultDoc.doc};
         merged = true;
@@ -389,8 +371,8 @@ export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultD
       consolidated.set(dstPath, existingDocs);
     }
 
-    if (action === "merge") {
-      processMerge(existingDocs, doc, dstPath);
+    if (action === "merge" || action === "create") {
+      processMergeAndCreate(existingDocs, doc, dstPath);
     } else if (action === "delete") {
       processDelete(existingDocs, doc, dstPath);
     } else if (action === "submit-form") {

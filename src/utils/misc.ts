@@ -3,6 +3,8 @@ import {rtdb} from "../index";
 import Timestamp = firestore.Timestamp;
 import GeoPoint = firestore.GeoPoint;
 import {Request, Response} from "firebase-functions";
+import Query = firestore.Query;
+import {BatchUtil} from "./batch";
 
 function isObject(item: any): boolean {
   return (typeof item === "object" && !Array.isArray(item) && item !== null);
@@ -90,3 +92,75 @@ export function deleteForms(request: Request, response: Response) {
       response.status(500).send("Internal Server Error");
     });
 }
+
+
+export class LimitedSet<T> {
+  private maxLength: number;
+  private set: Set<T>;
+  private queue: T[];
+  constructor(maxLength: number) {
+    this.maxLength = maxLength;
+    this.set = new Set<T>();
+    this.queue = [];
+  }
+
+  add(item: T) {
+    if (this.set.has(item)) {
+      return; // Item already exists, no need to add
+    }
+
+    if (this.queue.length === this.maxLength) {
+      const oldestItem = this.queue.shift(); // Remove the oldest item from the queue
+      if (oldestItem) {
+        this.set.delete(oldestItem); // Remove the oldest item from the set
+      }
+    }
+
+    this.queue.push(item); // Add the new item to the queue
+    this.set.add(item); // Add the new item to the set
+  }
+
+  has(item: T) {
+    return this.set.has(item);
+  }
+
+  delete(item: T) {
+    if (!this.set.has(item)) {
+      return false;
+    }
+
+    this.set.delete(item);
+    const index = this.queue.indexOf(item);
+    this.queue.splice(index, 1);
+    return true;
+  }
+}
+
+
+export async function deleteCollection(query: Query): Promise<void> {
+  query = query.limit(500);
+  return new Promise((resolve, reject) => {
+    deleteQueryBatch(query, resolve).catch(reject);
+  });
+}
+
+async function deleteQueryBatch(query: Query, resolve: () => void): Promise<void> {
+  const snapshot = await query.get();
+
+  if (snapshot.size === 0) {
+    resolve();
+    return;
+  }
+
+  const batch = BatchUtil.getInstance();
+  snapshot.docs.forEach( (doc) => {
+    batch.deleteDoc(doc.ref);
+  });
+
+  await batch.commit();
+
+  process.nextTick(() => {
+    deleteQueryBatch(query, resolve);
+  });
+}
+

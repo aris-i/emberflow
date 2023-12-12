@@ -37,6 +37,11 @@ export interface LogicResultDoc{
     skipEntityDuringRecursion?: string[];
 }
 
+export interface InstructionsMessage{
+    dstPath: string;
+    instructions: { [key: string]: string };
+}
+
 export interface LogicResult{
     name: string;
     status: "finished" | "error" | "partial-result";
