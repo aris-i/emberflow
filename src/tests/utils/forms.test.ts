@@ -1,5 +1,7 @@
 import {FormData} from "emberflow-admin-client/lib/types";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
+const isProcessedMock = jest.fn();
+const trackProcessedIdsMock = jest.fn();
 import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
 import {PubSub, Topic} from "@google-cloud/pubsub";
 import * as adminClient from "emberflow-admin-client/lib";
@@ -10,6 +12,14 @@ jest.mock("../../index", () => {
   return {
     pubsub: new PubSub(),
     SUBMIT_FORM_TOPIC_NAME: "submit-form-queue",
+  };
+});
+jest.mock("../../utils/pubsub", () => {
+  return {
+    pubsubUtils: {
+      isProcessed: isProcessedMock,
+      trackProcessedIds: trackProcessedIdsMock,
+    },
   };
 });
 
@@ -46,12 +56,36 @@ describe("onMessageSubmitFormQueue", () => {
     submitFormSpy = jest.spyOn(adminClient, "submitForm").mockImplementation((formData: FormData) => Promise.resolve(formData));
   });
 
-  it("should submit doc", async () => {
+  it("should skip duplicate event", async () => {
+    isProcessedMock.mockResolvedValueOnce(true);
+    jest.spyOn(console, "log").mockImplementation();
+
     const formData: FormData = {
       "@docPath": "users/test-uid",
       "@actionType": "create",
     };
     const event = {
+      id: "test-event",
+      data: {
+        message: {
+          json: formData,
+        },
+      },
+    } as CloudEvent<MessagePublishedData>;
+    await forms.onMessageSubmitFormQueue(event);
+
+    expect(isProcessedMock).toHaveBeenCalledWith(SUBMIT_FORM_TOPIC_NAME, event.id);
+    expect(console.log).toHaveBeenCalledWith("Skipping duplicate event");
+  });
+
+  it("should submit doc", async () => {
+    isProcessedMock.mockResolvedValueOnce(false);
+    const formData: FormData = {
+      "@docPath": "users/test-uid",
+      "@actionType": "create",
+    };
+    const event = {
+      id: "test-event",
       data: {
         message: {
           json: formData,
@@ -61,6 +95,7 @@ describe("onMessageSubmitFormQueue", () => {
     const result = await forms.onMessageSubmitFormQueue(event);
 
     expect(submitFormSpy).toHaveBeenCalledWith(formData);
+    expect(trackProcessedIdsMock).toHaveBeenCalledWith(SUBMIT_FORM_TOPIC_NAME, event.id);
     expect(result).toEqual("Processed form data");
   });
 });

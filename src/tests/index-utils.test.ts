@@ -64,6 +64,7 @@ jest.mock("../utils/paths", () => {
 
 describe("distributeDoc", () => {
   let dbSpy: jest.SpyInstance;
+  let queueInstructionsSpy: jest.SpyInstance;
   let docSetMock: jest.Mock;
   let docDeleteMock: jest.Mock;
   const batch = BatchUtil.getInstance();
@@ -78,10 +79,12 @@ describe("distributeDoc", () => {
       id: "test-doc-id",
     } as unknown) as admin.firestore.DocumentReference<admin.firestore.DocumentData>;
     dbSpy = jest.spyOn(admin.firestore(), "doc").mockReturnValue(dbDoc);
+    queueInstructionsSpy = jest.spyOn(distribution, "queueInstructions").mockResolvedValue();
   });
 
   afterEach(() => {
     dbSpy.mockRestore();
+    queueInstructionsSpy.mockRestore();
   });
 
   it("should delete a document from dstPath", async () => {
@@ -133,7 +136,7 @@ describe("distributeDoc", () => {
     expect(docSetMock).toHaveBeenCalledWith(expectedData, {merge: true});
   });
 
-  it("should merge a document to dstPath with instructions", async () => {
+  it("should merge a document to dstPath and queue instructions", async () => {
     const logicResultDoc: LogicResultDoc = {
       action: "merge",
       priority: "normal",
@@ -149,15 +152,13 @@ describe("distributeDoc", () => {
     const expectedData = {
       ...logicResultDoc.doc,
       "@id": "test-doc-id",
-      "count": admin.firestore.FieldValue.increment(1),
-      "score": admin.firestore.FieldValue.increment(5),
-      "minusCount": admin.firestore.FieldValue.increment(-1),
-      "minusScore": admin.firestore.FieldValue.increment(-3),
     };
 
     await distributeDoc(logicResultDoc);
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
+    expect(queueInstructionsSpy).toHaveBeenCalledTimes(1);
+    expect(queueInstructionsSpy).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id", logicResultDoc.instructions);
     expect(docSetMock).toHaveBeenCalledTimes(1);
     expect(docSetMock).toHaveBeenCalledWith(expectedData, {merge: true});
   });
@@ -206,6 +207,7 @@ describe("distributeDoc", () => {
 describe("distribute", () => {
   let dbSpy: jest.SpyInstance;
   let colSpy: jest.SpyInstance;
+  let queueInstructionsSpy: jest.SpyInstance;
   const batch = BatchUtil.getInstance();
   jest.spyOn(BatchUtil, "getInstance").mockImplementation(() => batch);
 
@@ -214,19 +216,22 @@ describe("distribute", () => {
       get: jest.fn().mockResolvedValue({exists: true, data: () => ({})}),
       set: jest.fn().mockResolvedValue({}),
       delete: jest.fn().mockResolvedValue({}),
+      id: "test-doc-id",
     } as unknown) as admin.firestore.DocumentReference<admin.firestore.DocumentData>;
     dbSpy = jest.spyOn(admin.firestore(), "doc").mockReturnValue(dbDoc);
     colSpy = jest.spyOn(admin.firestore(), "collection").mockReturnValue({
       doc: jest.fn(() => dbDoc),
     } as any);
+    queueInstructionsSpy = jest.spyOn(distribution, "queueInstructions").mockResolvedValue();
   });
 
   afterEach(() => {
     dbSpy.mockRestore();
     colSpy.mockRestore();
+    queueInstructionsSpy.mockRestore();
   });
 
-  it("should merge a document to dstPath with instructions", async () => {
+  it("should merge a document to dstPath and queue instructions", async () => {
     const batchSetSpy = jest.spyOn(batch, "set").mockResolvedValue(undefined);
 
     const userDocsByDstPath = new Map([[
@@ -249,12 +254,16 @@ describe("distribute", () => {
 
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
+    expect(queueInstructionsSpy).toHaveBeenCalledTimes(1);
+    expect(queueInstructionsSpy).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id", {
+      "count": "++",
+      "score": "+5",
+      "minusCount": "--",
+      "minusScore": "-3",
+    });
     expect(batchSetSpy.mock.calls[0][1]).toEqual({
+      "@id": "test-doc-id",
       "name": "test-doc-name-updated",
-      "count": admin.firestore.FieldValue.increment(1),
-      "score": admin.firestore.FieldValue.increment(5),
-      "minusCount": admin.firestore.FieldValue.increment(-1),
-      "minusScore": admin.firestore.FieldValue.increment(-3),
     });
     expect(batchSetSpy).toHaveBeenCalledTimes(1);
     batchSetSpy.mockRestore();
@@ -716,6 +725,7 @@ describe("expandConsolidateAndGroupByDstPath", () => {
         timeFinished: firestore.Timestamp.now(),
         status: "finished",
         documents: [
+          {action: "create", priority: "normal", dstPath: "path8/doc8", doc: {field1: "value1"}, instructions: {}},
           {action: "merge", priority: "normal", dstPath: "path1/doc1", doc: {field1: "value1"}, instructions: {field2: "++"}},
           {action: "delete", priority: "normal", dstPath: "path2/doc2"},
         ],
@@ -725,6 +735,7 @@ describe("expandConsolidateAndGroupByDstPath", () => {
         timeFinished: firestore.Timestamp.now(),
         status: "finished",
         documents: [
+          {action: "merge", priority: "normal", dstPath: "path8/doc8", doc: {field3: "value3"}, instructions: {field4: "--"}},
           {action: "merge", priority: "normal", dstPath: "path1/doc1", doc: {field1: "value1a"}, instructions: {field2: "--"}},
           {action: "merge", priority: "normal", dstPath: "path1/doc1", doc: {field3: "value3"}, instructions: {field4: "--"}},
           {action: "copy", priority: "normal", srcPath: "path3/doc3", dstPath: "path4/doc4"},
@@ -765,6 +776,7 @@ describe("expandConsolidateAndGroupByDstPath", () => {
       ["path4/doc4", [{action: "merge", priority: "normal", dstPath: "path4/doc4", doc: {}, instructions: {}}]],
       ["path7/doc7", [{action: "delete", priority: "normal", dstPath: "path7/doc7"}]],
       ["path6/doc6", [{action: "merge", priority: "normal", dstPath: "path6/doc6", doc: {}}]],
+      ["path8/doc8", [{action: "create", priority: "normal", dstPath: "path8/doc8", doc: {field1: "value1", field3: "value3"}, instructions: {field4: "--"}}]],
     ]);
 
     expect(result).toEqual(expectedResult);
