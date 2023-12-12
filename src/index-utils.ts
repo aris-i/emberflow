@@ -245,7 +245,7 @@ export function getSecurityFn(entity: string): SecurityFn {
 export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultDoc[]): Promise<Map<string, LogicResultDoc[]>> {
   function warnOverwritingKeys(existing: any, incoming: any, type: string, dstPath: string) {
     for (const key in incoming) {
-      if (Object.prototype.hasOwnProperty.call(existing, key)) {
+      if (existing && Object.prototype.hasOwnProperty.call(existing, key)) {
         console.warn(`Overwriting key "${key}" in ${type} for dstPath "${dstPath}"`);
       }
     }

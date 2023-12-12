@@ -752,6 +752,7 @@ describe("expandConsolidateAndGroupByDstPath", () => {
           {action: "delete", priority: "normal", dstPath: "path7/doc7"},
           {action: "delete", priority: "normal", dstPath: "path7/doc7"},
           {action: "copy", priority: "normal", srcPath: "path3/doc3", dstPath: "path4/doc4"},
+          {action: "create", priority: "normal", dstPath: "path9/doc9", instructions: {field4: "++"}},
         ],
       },
       {
@@ -761,6 +762,7 @@ describe("expandConsolidateAndGroupByDstPath", () => {
         documents: [
           {action: "delete", priority: "normal", dstPath: "path2/doc2"},
           {action: "copy", priority: "normal", srcPath: "path3/doc3", dstPath: "path7/doc7"},
+          {action: "merge", priority: "normal", dstPath: "path9/doc9", doc: {field9: "value9"}},
         ],
       },
     ];
@@ -777,6 +779,7 @@ describe("expandConsolidateAndGroupByDstPath", () => {
       ["path7/doc7", [{action: "delete", priority: "normal", dstPath: "path7/doc7"}]],
       ["path6/doc6", [{action: "merge", priority: "normal", dstPath: "path6/doc6", doc: {}}]],
       ["path8/doc8", [{action: "create", priority: "normal", dstPath: "path8/doc8", doc: {field1: "value1", field3: "value3"}, instructions: {field4: "--"}}]],
+      ["path9/doc9", [{action: "create", priority: "normal", dstPath: "path9/doc9", doc: {field9: "value9"}, instructions: {field4: "++"}}]],
     ]);
 
     expect(result).toEqual(expectedResult);
