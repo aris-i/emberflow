@@ -728,6 +728,7 @@ describe("expandConsolidateAndGroupByDstPath", () => {
           {action: "create", priority: "normal", dstPath: "path8/doc8", doc: {field1: "value1"}, instructions: {}},
           {action: "merge", priority: "normal", dstPath: "path1/doc1", doc: {field1: "value1"}, instructions: {field2: "++"}},
           {action: "delete", priority: "normal", dstPath: "path2/doc2"},
+          {action: "merge", priority: "normal", dstPath: "path11/doc11", doc: {field3: "value3"}},
         ],
       },
       {
@@ -741,6 +742,7 @@ describe("expandConsolidateAndGroupByDstPath", () => {
           {action: "copy", priority: "normal", srcPath: "path3/doc3", dstPath: "path4/doc4"},
           {action: "merge", priority: "normal", dstPath: "path2/doc2", doc: {field4: "value4"}},
           {action: "merge", priority: "normal", dstPath: "path7/doc7", doc: {field6: "value7"}},
+          {action: "create", priority: "normal", dstPath: "path10/doc10", doc: {field10: "value10"}, instructions: {field6: "++"}},
         ],
       },
       {
@@ -753,6 +755,7 @@ describe("expandConsolidateAndGroupByDstPath", () => {
           {action: "delete", priority: "normal", dstPath: "path7/doc7"},
           {action: "copy", priority: "normal", srcPath: "path3/doc3", dstPath: "path4/doc4"},
           {action: "create", priority: "normal", dstPath: "path9/doc9", instructions: {field4: "++"}},
+          {action: "create", priority: "normal", dstPath: "path10/doc10", instructions: {field3: "--"}},
         ],
       },
       {
@@ -763,6 +766,7 @@ describe("expandConsolidateAndGroupByDstPath", () => {
           {action: "delete", priority: "normal", dstPath: "path2/doc2"},
           {action: "copy", priority: "normal", srcPath: "path3/doc3", dstPath: "path7/doc7"},
           {action: "merge", priority: "normal", dstPath: "path9/doc9", doc: {field9: "value9"}},
+          {action: "merge", priority: "normal", dstPath: "path11/doc11", doc: {field1: "value1"}, instructions: {field6: "++"}},
         ],
       },
     ];
@@ -780,6 +784,8 @@ describe("expandConsolidateAndGroupByDstPath", () => {
       ["path6/doc6", [{action: "merge", priority: "normal", dstPath: "path6/doc6", doc: {}}]],
       ["path8/doc8", [{action: "create", priority: "normal", dstPath: "path8/doc8", doc: {field1: "value1", field3: "value3"}, instructions: {field4: "--"}}]],
       ["path9/doc9", [{action: "create", priority: "normal", dstPath: "path9/doc9", doc: {field9: "value9"}, instructions: {field4: "++"}}]],
+      ["path10/doc10", [{action: "create", priority: "normal", dstPath: "path10/doc10", doc: {field10: "value10"}, instructions: {field3: "--", field6: "++"}}]],
+      ["path11/doc11", [{action: "merge", priority: "normal", dstPath: "path11/doc11", doc: {field3: "value3", field1: "value1"}, instructions: {field6: "++"}}]],
     ]);
 
     expect(result).toEqual(expectedResult);
