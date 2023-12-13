@@ -96,43 +96,51 @@ export function deleteForms(request: Request, response: Response) {
 
 export class LimitedSet<T> {
   private maxLength: number;
-  private set: Set<T>;
-  private queue: T[];
+  private _set: Set<T>;
+  private _queue: T[];
   constructor(maxLength: number) {
     this.maxLength = maxLength;
-    this.set = new Set<T>();
-    this.queue = [];
+    this._set = new Set<T>();
+    this._queue = [];
   }
 
   add(item: T) {
-    if (this.set.has(item)) {
+    if (this._set.has(item)) {
       return; // Item already exists, no need to add
     }
 
-    if (this.queue.length === this.maxLength) {
-      const oldestItem = this.queue.shift(); // Remove the oldest item from the queue
+    if (this._queue.length === this.maxLength) {
+      const oldestItem = this._queue.shift(); // Remove the oldest item from the queue
       if (oldestItem) {
-        this.set.delete(oldestItem); // Remove the oldest item from the set
+        this._set.delete(oldestItem); // Remove the oldest item from the set
       }
     }
 
-    this.queue.push(item); // Add the new item to the queue
-    this.set.add(item); // Add the new item to the set
+    this._queue.push(item); // Add the new item to the queue
+    this._set.add(item); // Add the new item to the set
   }
 
   has(item: T) {
-    return this.set.has(item);
+    return this._set.has(item);
   }
 
   delete(item: T) {
-    if (!this.set.has(item)) {
+    if (!this._set.has(item)) {
       return false;
     }
 
-    this.set.delete(item);
-    const index = this.queue.indexOf(item);
-    this.queue.splice(index, 1);
+    this._set.delete(item);
+    const index = this._queue.indexOf(item);
+    this._queue.splice(index, 1);
     return true;
+  }
+
+  get set(): Set<T> {
+    return this._set;
+  }
+
+  get queue(): T[] {
+    return this._queue;
   }
 }
 

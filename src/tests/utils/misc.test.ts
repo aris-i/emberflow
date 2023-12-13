@@ -1,7 +1,32 @@
-import {computeHashCode, deepEqual} from "../../utils/misc";
+import {computeHashCode, deepEqual, deleteCollection, LimitedSet} from "../../utils/misc";
 import {firestore} from "firebase-admin";
 import Timestamp = firestore.Timestamp;
 import GeoPoint = firestore.GeoPoint;
+import Query = firestore.Query;
+import {BatchUtil} from "../../utils/batch";
+import {db, initializeEmberFlow} from "../../index";
+import {ProjectConfig} from "../../types";
+import * as admin from "firebase-admin";
+import {dbStructure, Entity} from "../../sample-custom/db-structure";
+import {securityConfig} from "../../sample-custom/security";
+import {validatorConfig} from "../../sample-custom/validators";
+
+const projectConfig: ProjectConfig = {
+  projectId: "your-project-id",
+  region: "asia-southeast1",
+  rtdbName: "your-rtdb-name",
+  budgetAlertTopicName: "budget-alerts",
+  maxCostLimitPerFunction: 100,
+  specialCostLimitPerFunction: {
+    function1: 50,
+    function2: 75,
+    function3: 120,
+  },
+};
+admin.initializeApp({
+  databaseURL: "https://test-project.firebaseio.com",
+});
+initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, []);
 
 describe("deepEqual", () => {
   it("should correctly compare Firestore Field types", () => {
@@ -58,5 +83,111 @@ describe("computeHashCode", () => {
     const result = computeHashCode(str);
     expect(result).toBe(expectedOutput);
     expect(result.length).toBe(8); // Assert the length of the output string
+  });
+});
+
+describe("LimitedSet", () => {
+  let limitedSet: LimitedSet<any>;
+  const collectionRef = db.collection("example-collection");
+  const documentRef = collectionRef.doc("example-document");
+
+  beforeEach(() => {
+    limitedSet = new LimitedSet(10);
+    jest.clearAllMocks();
+  });
+
+  describe("add", () => {
+    it("should add a document to the set", () => {
+      limitedSet.add(documentRef);
+      expect(limitedSet.set.size).toBe(1);
+      expect(limitedSet.queue.length).toBe(1);
+      expect(limitedSet.has(documentRef)).toBe(true);
+    });
+
+    it("should remove oldest item when max length is reached", () => {
+      limitedSet.add(documentRef);
+      for (let i = 0; i < 10; i++) {
+        limitedSet.add(collectionRef.doc(`document-${i}`));
+      }
+      expect(limitedSet.set.size).toBe(10);
+      expect(limitedSet.queue.length).toBe(10);
+      expect(limitedSet.has(documentRef)).toBe(false);
+    });
+  });
+
+  describe("has", () => {
+    it("should return true if the item is in the set", () => {
+      limitedSet.add(documentRef);
+      expect(limitedSet.has(documentRef)).toBe(true);
+    });
+
+    it("should return false if the item is not in the set", () => {
+      expect(limitedSet.has(documentRef)).toBe(false);
+    });
+  });
+
+  describe("delete", () => {
+    it("should delete a document from the set", () => {
+      limitedSet.add(documentRef);
+      expect(limitedSet.set.size).toBe(1);
+      expect(limitedSet.queue.length).toBe(1);
+      expect(limitedSet.has(documentRef)).toBe(true);
+      limitedSet.delete(documentRef);
+      expect(limitedSet.set.size).toBe(0);
+      expect(limitedSet.queue.length).toBe(0);
+      expect(limitedSet.has(documentRef)).toBe(false);
+    });
+  });
+});
+
+describe("deleteCollection", () => {
+  const batch = BatchUtil.getInstance();
+  let batchDeleteSpy: jest.SpyInstance;
+  let batchCommitSpy: jest.SpyInstance;
+  let limitMock: jest.Mock;
+
+  beforeEach(() => {
+    jest.spyOn(BatchUtil, "getInstance").mockImplementation(() => batch);
+    batchDeleteSpy = jest.spyOn(batch, "deleteDoc").mockResolvedValue(undefined);
+    batchCommitSpy = jest.spyOn(batch, "commit").mockResolvedValue(undefined);
+  });
+
+  it("should return when snapshot size is 0", async () => {
+    limitMock = jest.fn().mockReturnValue({
+      get: jest.fn().mockResolvedValue({
+        size: 0,
+      }),
+    });
+    await deleteCollection({
+      limit: limitMock,
+    } as unknown as Query);
+
+    expect(limitMock).toHaveBeenCalledTimes(1);
+    expect(limitMock).toHaveBeenCalledWith(500);
+  });
+
+  it("should delete all documents in a collection", async () => {
+    const docs = [];
+    for (let i = 0; i < 100; i++) {
+      docs.push({ref: i});
+    }
+    const getMock = jest.fn().mockResolvedValue({
+      size: 0,
+      docs: [],
+    }).mockResolvedValueOnce({
+      size: 100,
+      docs: docs,
+    });
+    limitMock = jest.fn().mockReturnValue({
+      get: getMock,
+    });
+    await deleteCollection({
+      limit: limitMock,
+    } as unknown as Query);
+
+    expect(limitMock).toHaveBeenCalledTimes(1);
+    expect(limitMock).toHaveBeenCalledWith(500);
+    expect(batchDeleteSpy).toHaveBeenCalledTimes(100);
+    expect(batchCommitSpy).toHaveBeenCalled();
   });
 });
