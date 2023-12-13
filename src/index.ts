@@ -164,15 +164,21 @@ export function initializeEmberFlow(
     concurrency: 5,
     timeoutSeconds: 540,
   }, onMessageInstructionsQueue);
-  functionsConfig["resetUsageStats"] = functions.pubsub.schedule("every 1 hours")
-    .onRun(resetUsageStats);
+  functionsConfig["resetUsageStats"] = onSchedule({
+    schedule: "every 1 hours",
+    region: projectConfig.region,
+    timeoutSeconds: 540,
+  }, resetUsageStats);
   functionsConfig["cleanPubSubProcessedIds"] = onSchedule({
     schedule: "every 1 hours",
     region: projectConfig.region,
     timeoutSeconds: 540,
   }, cleanPubSubProcessedIds);
-  functionsConfig["minuteFunctions"] = functions.pubsub.schedule("every 1 minutes")
-    .onRun(processScheduledEntities);
+  functionsConfig["minuteFunctions"] = onSchedule({
+    schedule: "every 1 minutes",
+    region: projectConfig.region,
+    timeoutSeconds: 540,
+  }, processScheduledEntities);
   functionsConfig["onDeleteFunctions"] = functions.firestore.document("@server/delete/functions/{deleteFuncId}").onCreate(
     onDeleteFunction);
 
