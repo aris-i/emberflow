@@ -46,7 +46,8 @@ import Database = database.Database;
 import {onMessageForDistributionQueue, onMessageInstructionsQueue} from "./utils/distribution";
 import {cleanPubSubProcessedIds} from "./utils/pubsub";
 import {onSchedule} from "firebase-functions/v2/scheduler";
-
+import {onDocumentCreated} from "firebase-functions/v2/firestore";
+import {onRequest} from "firebase-functions/v2/https";
 
 export let admin: FirebaseAdmin;
 export let db: Firestore;
@@ -129,7 +130,10 @@ export function initializeEmberFlow(
     useBillProtect(onFormSubmit)
   );
   // TODO: Make this disappear when deployed to production
-  functionsConfig["deleteForms"] = functions.https.onRequest(deleteForms);
+  functionsConfig["deleteForms"] = onRequest({
+    timeoutSeconds: 540,
+    region: projectConfig.region,
+  }, deleteForms);
 
   functionsConfig["onBudgetAlert"] =
         functions.pubsub.topic(projectConfig.budgetAlertTopicName).onPublish(stopBillingIfBudgetExceeded);
@@ -164,17 +168,23 @@ export function initializeEmberFlow(
     concurrency: 5,
     timeoutSeconds: 540,
   }, onMessageInstructionsQueue);
-  functionsConfig["resetUsageStats"] = functions.pubsub.schedule("every 1 hours")
-    .onRun(resetUsageStats);
+  functionsConfig["resetUsageStats"] = onSchedule({
+    schedule: "every 1 hours",
+    region: projectConfig.region,
+    timeoutSeconds: 540,
+  }, resetUsageStats);
   functionsConfig["cleanPubSubProcessedIds"] = onSchedule({
     schedule: "every 1 hours",
     region: projectConfig.region,
     timeoutSeconds: 540,
   }, cleanPubSubProcessedIds);
-  functionsConfig["minuteFunctions"] = functions.pubsub.schedule("every 1 minutes")
-    .onRun(processScheduledEntities);
-  functionsConfig["onDeleteFunctions"] = functions.firestore.document("@server/delete/functions/{deleteFuncId}").onCreate(
-    onDeleteFunction);
+  functionsConfig["minuteFunctions"] = onSchedule({
+    schedule: "every 1 minutes",
+    region: projectConfig.region,
+    timeoutSeconds: 540,
+  }, processScheduledEntities);
+  functionsConfig["onDeleteFunctions"] = onDocumentCreated(
+    "@server/delete/functions/{deleteFuncId}", onDeleteFunction);
 
   return {docPaths, colPaths, docPathsRegex, functionsConfig};
 }

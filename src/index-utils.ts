@@ -28,6 +28,8 @@ import {queueForDistributionLater, queueInstructions} from "./utils/distribution
 import QueryDocumentSnapshot = firestore.QueryDocumentSnapshot;
 import DocumentData = FirebaseFirestore.DocumentData;
 import Reference = database.Reference;
+import {FirestoreEvent} from "firebase-functions/lib/v2/providers/firestore";
+import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
 
 export const _mockable = {
   getViewLogicsConfig: () => viewLogicConfigs,
@@ -420,7 +422,7 @@ export async function runViewLogics(userLogicResultDoc: LogicResultDoc): Promise
   return await Promise.all(matchingLogics.map((logic) => logic.viewLogicFn(userLogicResultDoc)));
 }
 
-export async function processScheduledEntities() {
+export async function processScheduledEntities(event: ScheduledEvent) {
   // Query all documents inside @scheduled collection where runAt is less than now
   const now = _mockable.createNowTimestamp();
   const scheduledDocs = await db.collection("@scheduled")
@@ -442,13 +444,13 @@ export async function processScheduledEntities() {
   }
 }
 
-export async function onDeleteFunction(snapshot: QueryDocumentSnapshot) {
-  const data = snapshot.data();
+export async function onDeleteFunction(event: FirestoreEvent<QueryDocumentSnapshot | undefined, {deleteFuncId: string}>) {
+  const data = event.data;
   if (!data) {
     console.error("Data should not be null");
     return;
   }
-  const {name} = data;
+  const {name} = data.data();
   if (!name) {
     console.error("name should not be null");
     return;

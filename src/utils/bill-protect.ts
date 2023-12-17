@@ -4,6 +4,7 @@ import {firestore} from "firebase-admin";
 import {Message} from "firebase-functions/lib/v1/providers/pubsub";
 import {findMatchingDocPathRegex} from "./paths";
 import {BatchUtil} from "../utils/batch";
+import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
 
 export const billing = new CloudBillingClient();
 
@@ -230,7 +231,7 @@ async function disableBillingForProject(projectName: string): Promise<string> {
   return `Billing disabled: ${JSON.stringify(res)}`;
 }
 
-export async function resetUsageStats() {
+export async function resetUsageStats(event: ScheduledEvent) {
   const usageCollectionPath = "@server/usage/functions";
   const collectionRef = db.collection(usageCollectionPath);
   const querySnapshot = await collectionRef.select(firestore.FieldPath.documentId()).get();
