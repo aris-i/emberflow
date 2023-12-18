@@ -86,7 +86,7 @@ describe("onMessageForDistributionQueue", () => {
     const event = {
       data: {
         message: {
-          json: doc1,
+          data: Buffer.from(JSON.stringify(doc1)).toString("base64"),
         },
       },
     } as CloudEvent<MessagePublishedData>;
@@ -106,7 +106,7 @@ describe("onMessageForDistributionQueue", () => {
     const event = {
       data: {
         message: {
-          json: doc1,
+          data: Buffer.from(JSON.stringify(doc1)).toString("base64"),
         },
       },
     } as CloudEvent<MessagePublishedData>;
@@ -127,7 +127,7 @@ describe("onMessageForDistributionQueue", () => {
     const event = {
       data: {
         message: {
-          json: doc1,
+          data: Buffer.from(JSON.stringify(doc1)).toString("base64"),
         },
       },
     } as CloudEvent<MessagePublishedData>;
@@ -148,7 +148,7 @@ describe("onMessageForDistributionQueue", () => {
     const event = {
       data: {
         message: {
-          json: doc1,
+          data: Buffer.from(JSON.stringify(doc1)).toString("base64"),
         },
       },
     } as CloudEvent<MessagePublishedData>;

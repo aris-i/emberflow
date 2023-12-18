@@ -6,6 +6,7 @@ import {distributeDoc} from "../index-utils";
 import {firestore} from "firebase-admin";
 import FieldValue = firestore.FieldValue;
 import {pubsubUtils} from "./pubsub";
+import {convertBase64ToJSON} from "./misc";
 
 export const queueForDistributionLater = async (...logicResultDocs: LogicResultDoc[]) => {
   const topic = pubsub.topic(FOR_DISTRIBUTION_TOPIC_NAME);
@@ -31,7 +32,7 @@ export async function onMessageForDistributionQueue(event: CloudEvent<MessagePub
     return;
   }
   try {
-    const logicResultDoc: LogicResultDoc = event.data.message.json;
+    const logicResultDoc: LogicResultDoc = convertBase64ToJSON(event.data.message.data);
     console.log("Received user logic result doc:", logicResultDoc);
 
     console.info("Running For Distribution");

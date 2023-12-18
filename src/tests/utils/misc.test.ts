@@ -1,4 +1,4 @@
-import {computeHashCode, deepEqual, deleteCollection, LimitedSet} from "../../utils/misc";
+import {computeHashCode, convertBase64ToJSON, deepEqual, deleteCollection, LimitedSet} from "../../utils/misc";
 import {firestore} from "firebase-admin";
 import Timestamp = firestore.Timestamp;
 import GeoPoint = firestore.GeoPoint;
@@ -189,5 +189,30 @@ describe("deleteCollection", () => {
     expect(limitMock).toHaveBeenCalledWith(500);
     expect(batchDeleteSpy).toHaveBeenCalledTimes(100);
     expect(batchCommitSpy).toHaveBeenCalled();
+  });
+});
+
+describe("convertBase64ToJSON", () => {
+  it("should convert a base64 string to JSON with every data type intact", () => {
+    const data = {
+      "@allowedUsers": [
+        "user1",
+        "user2",
+      ],
+      "title": "Sample Title",
+      "createdAt": new Date(),
+      "createdBy": {
+        "@id": "user1",
+        "name": "User 1",
+        "date": new Date(),
+      },
+      "private": false,
+      "completedTodos": 0,
+    };
+    const json = JSON.stringify(data);
+    const base64 = Buffer.from(json).toString("base64");
+
+    const result = convertBase64ToJSON(base64);
+    expect(result).toEqual(data);
   });
 });

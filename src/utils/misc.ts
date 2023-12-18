@@ -172,3 +172,11 @@ async function deleteQueryBatch(query: Query, resolve: () => void): Promise<void
   });
 }
 
+export const convertBase64ToJSON = (data: string) => {
+  return JSON.parse(Buffer.from(data, "base64").toString(), (key, value) => {
+    if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(value)) {
+      return new Date(value);
+    }
+    return value;
+  });
+};
