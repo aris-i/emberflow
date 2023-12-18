@@ -1,9 +1,10 @@
 import {FormData} from "emberflow-admin-client/lib/types";
-import {pubsub, SUBMIT_FORM_TOPIC_NAME} from "../index";
+import {pubsub, rtdb, SUBMIT_FORM_TOPIC_NAME} from "../index";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
 import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
 import {submitForm} from "emberflow-admin-client/lib";
 import {pubsubUtils} from "./pubsub";
+import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
 
 export async function queueSubmitForm(formData: FormData) {
   const topic = pubsub.topic(SUBMIT_FORM_TOPIC_NAME);
@@ -41,3 +42,20 @@ export async function onMessageSubmitFormQueue(event: CloudEvent<MessagePublishe
     throw new Error("No json in message");
   }
 }
+
+export const cleanForms = async (event: ScheduledEvent) => {
+  console.info("Running cleanForms");
+  const formsRef = rtdb.ref("forms");
+  const sevenDaysAgo = new Date(Date.now() - 1000 * 60 * 60 * 24 * 7);
+
+  let i = 0;
+  await formsRef.orderByChild("createdAt").endAt(sevenDaysAgo.getTime())
+    .once("value", (snapshot) => {
+      snapshot.forEach((form) => {
+        form.ref.remove();
+        i++;
+      });
+    });
+
+  console.info(`Cleaned ${i} forms`);
+};

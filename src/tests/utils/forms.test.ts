@@ -6,14 +6,32 @@ import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
 import {PubSub, Topic} from "@google-cloud/pubsub";
 import * as adminClient from "emberflow-admin-client/lib";
 import * as forms from "../../utils/forms";
-import {SUBMIT_FORM_TOPIC_NAME} from "../../index";
+import {initializeEmberFlow, SUBMIT_FORM_TOPIC_NAME} from "../../index";
+import {ProjectConfig} from "../../types";
+import * as admin from "firebase-admin";
+import {dbStructure, Entity} from "../../sample-custom/db-structure";
+import {securityConfig} from "../../sample-custom/security";
+import {validatorConfig} from "../../sample-custom/validators";
+import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
+import spyOn = jest.spyOn;
+import {Reference} from "@firebase/database-types";
 
-jest.mock("../../index", () => {
-  return {
-    pubsub: new PubSub(),
-    SUBMIT_FORM_TOPIC_NAME: "submit-form-queue",
-  };
+const projectConfig: ProjectConfig = {
+  projectId: "your-project-id",
+  region: "asia-southeast1",
+  rtdbName: "your-rtdb-name",
+  budgetAlertTopicName: "budget-alerts",
+  maxCostLimitPerFunction: 100,
+  specialCostLimitPerFunction: {
+    function1: 50,
+    function2: 75,
+    function3: 120,
+  },
+};
+admin.initializeApp({
+  databaseURL: "https://test-project.firebaseio.com",
 });
+initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, []);
 jest.mock("../../utils/pubsub", () => {
   return {
     pubsubUtils: {
@@ -97,5 +115,48 @@ describe("onMessageSubmitFormQueue", () => {
     expect(submitFormSpy).toHaveBeenCalledWith(formData);
     expect(trackProcessedIdsMock).toHaveBeenCalledWith(SUBMIT_FORM_TOPIC_NAME, event.id);
     expect(result).toEqual("Processed form data");
+  });
+});
+
+describe("cleanForms", () => {
+  let refSpy: jest.SpyInstance;
+  const removeMock: jest.Mock = jest.fn();
+
+  const dataSnapshot = [
+    {
+      key: "test-key-1",
+      ref: {
+        remove: removeMock,
+      },
+    },
+    {
+      key: "test-key-2",
+      ref: {
+        remove: removeMock,
+      },
+    },
+  ];
+
+  beforeEach(() => {
+    refSpy = jest.spyOn(admin.database(), "ref").mockReturnValue({
+      orderByChild: jest.fn().mockReturnValue({
+        endAt: jest.fn().mockReturnValue({
+          once: jest.fn().mockImplementation((event, callback) => {
+            return callback(dataSnapshot);
+          }),
+        }),
+      }),
+    } as unknown as Reference);
+  });
+
+  it("should clean forms", async () => {
+    spyOn(console, "info").mockImplementation();
+    const event = {} as ScheduledEvent;
+    await forms.cleanForms(event);
+
+    expect(console.info).toHaveBeenCalledWith("Running cleanForms");
+    expect(refSpy).toHaveBeenCalledWith("forms");
+    expect(removeMock).toHaveBeenCalledTimes(dataSnapshot.length);
+    expect(console.info).toHaveBeenCalledWith(`Cleaned ${dataSnapshot.length} forms`);
   });
 });
