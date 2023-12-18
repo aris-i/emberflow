@@ -49,7 +49,7 @@ export const cleanForms = async (event: ScheduledEvent) => {
   const sevenDaysAgo = new Date(Date.now() - 1000 * 60 * 60 * 24 * 7);
 
   let i = 0;
-  await formsRef.orderByChild("createdAt").endAt(sevenDaysAgo.getTime())
+  await formsRef.orderByChild("submittedAt").endAt(sevenDaysAgo.getTime())
     .once("value", (snapshot) => {
       snapshot.forEach((form) => {
         form.ref.remove();
