@@ -74,6 +74,28 @@ describe("onMessageForDistributionQueue", () => {
     queueForDistributionLaterSpy = jest.spyOn(distribution, "queueForDistributionLater").mockResolvedValue();
   });
 
+  it("should skip duplicate message", async () => {
+    isProcessedMock.mockResolvedValueOnce(true);
+    jest.spyOn(console, "log").mockImplementation();
+    const doc1: LogicResultDoc = {
+      action: "merge",
+      priority: "high",
+      doc: {name: "test-doc-name-updated"},
+      dstPath: "/users/test-user-id/documents/doc1",
+    };
+    const event = {
+      data: {
+        message: {
+          json: doc1,
+        },
+      },
+    } as CloudEvent<MessagePublishedData>;
+    await distribution.onMessageForDistributionQueue(event);
+
+    expect(isProcessedMock).toHaveBeenCalledWith(FOR_DISTRIBUTION_TOPIC_NAME, event.id);
+    expect(console.log).toHaveBeenCalledWith("Skipping duplicate message");
+  });
+
   it("should distribute high priority doc", async () => {
     const doc1: LogicResultDoc = {
       action: "merge",
@@ -91,6 +113,7 @@ describe("onMessageForDistributionQueue", () => {
     const result = await distribution.onMessageForDistributionQueue(event);
 
     expect(distributeDocSpy).toHaveBeenCalledWith(doc1);
+    expect(trackProcessedIdsMock).toHaveBeenCalledWith(FOR_DISTRIBUTION_TOPIC_NAME, event.id);
     expect(result).toEqual("Processed for distribution later");
   });
 
@@ -111,6 +134,28 @@ describe("onMessageForDistributionQueue", () => {
     const result = await distribution.onMessageForDistributionQueue(event);
 
     expect(queueForDistributionLaterSpy).toHaveBeenCalledWith({...doc1, priority: "high"});
+    expect(trackProcessedIdsMock).toHaveBeenCalledWith(FOR_DISTRIBUTION_TOPIC_NAME, event.id);
+    expect(result).toEqual("Processed for distribution later");
+  });
+
+  it("should update priority from low to normal and queue for distribution", async () => {
+    const doc1: LogicResultDoc = {
+      action: "merge",
+      priority: "low",
+      doc: {name: "test-doc-name-updated"},
+      dstPath: "/users/test-user-id/documents/doc1",
+    };
+    const event = {
+      data: {
+        message: {
+          json: doc1,
+        },
+      },
+    } as CloudEvent<MessagePublishedData>;
+    const result = await distribution.onMessageForDistributionQueue(event);
+
+    expect(queueForDistributionLaterSpy).toHaveBeenCalledWith({...doc1, priority: "normal"});
+    expect(trackProcessedIdsMock).toHaveBeenCalledWith(FOR_DISTRIBUTION_TOPIC_NAME, event.id);
     expect(result).toEqual("Processed for distribution later");
   });
 });
@@ -200,6 +245,7 @@ describe("onMessageInstructionsQueue", () => {
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
     expect(docSetMock).toHaveBeenCalledTimes(1);
     expect(docSetMock).toHaveBeenCalledWith(expectedData, {merge: true});
+    expect(trackProcessedIdsMock).toHaveBeenCalledWith(INSTRUCTIONS_TOPIC_NAME, event.id);
     expect(result).toEqual("Processed instructions");
   });
 });

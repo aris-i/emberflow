@@ -1,5 +1,7 @@
 import {LogicResult, LogicResultAction, LogicResultDoc, LogicResultDocPriority, ViewDefinition} from "../../types";
 import {PubSub, Topic} from "@google-cloud/pubsub";
+const isProcessedMock = jest.fn();
+const trackProcessedIdsMock = jest.fn();
 import * as pathsutils from "../../utils/paths";
 import * as viewLogics from "../../logics/view-logics";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
@@ -21,6 +23,15 @@ jest.mock("../../index", () => {
     pubsub: new PubSub(),
     VIEW_LOGICS_TOPIC_NAME: "view-logics-queue",
     PEER_SYNC_TOPIC_NAME: "peer-sync-queue",
+  };
+});
+
+jest.mock("../../utils/pubsub", () => {
+  return {
+    pubsubUtils: {
+      isProcessed: isProcessedMock,
+      trackProcessedIds: trackProcessedIdsMock,
+    },
   };
 });
 
@@ -315,6 +326,21 @@ describe("onMessageViewLogicsQueue", () => {
     ]),
   };
 
+  const userId = "doc1";
+  const doc1: LogicResultDoc = {
+    action: "merge",
+    priority: "normal",
+    doc: {name: "test-doc-name-updated"},
+    dstPath: `users/${userId}`,
+  };
+  const event = {
+    data: {
+      message: {
+        json: doc1,
+      },
+    },
+  } as CloudEvent<MessagePublishedData>;
+
   beforeEach(() => {
     runViewLogicsSpy = jest.spyOn(indexUtils, "runViewLogics").mockResolvedValue(viewLogicsResult);
     expandConsolidateAndGroupByDstPathSpy = jest.spyOn(indexUtils, "expandConsolidateAndGroupByDstPath").mockResolvedValue(expandConsolidateResult);
@@ -324,24 +350,18 @@ describe("onMessageViewLogicsQueue", () => {
     queueForPeerSyncSpy = jest.spyOn(viewLogics, "queueForPeerSync").mockResolvedValue();
   });
 
-  it("should distribute queued view logics", async () => {
-    const userId = "doc1";
-    const doc1: LogicResultDoc = {
-      action: "merge",
-      priority: "normal",
-      doc: {name: "test-doc-name-updated"},
-      dstPath: `users/${userId}`,
-    };
-    const event = {
-      data: {
-        message: {
-          json: doc1,
-        },
-      },
-    } as CloudEvent<MessagePublishedData>;
-    const viewLogicsResultDocs = viewLogicsResult.map((logicResult) => logicResult.documents).flat();
-
+  it("should skip duplicate message", async () => {
+    isProcessedMock.mockResolvedValueOnce(true);
+    jest.spyOn(console, "log").mockImplementation();
     await viewLogics.onMessageViewLogicsQueue(event);
+
+    expect(isProcessedMock).toHaveBeenCalledWith(VIEW_LOGICS_TOPIC_NAME, event.id);
+    expect(console.log).toHaveBeenCalledWith("Skipping duplicate message");
+  });
+
+  it("should distribute queued view logics", async () => {
+    const viewLogicsResultDocs = viewLogicsResult.map((logicResult) => logicResult.documents).flat();
+    const result = await viewLogics.onMessageViewLogicsQueue(event);
 
     expect(runViewLogicsSpy).toHaveBeenCalledWith(doc1);
     expect(expandConsolidateAndGroupByDstPathSpy).toHaveBeenCalledWith(viewLogicsResultDocs);
@@ -349,6 +369,8 @@ describe("onMessageViewLogicsQueue", () => {
     expect(distributeSpy).toHaveBeenCalledWith(groupDocsByUserResult.userDocsByDstPath);
     expect(distributeLaterSpy).toHaveBeenCalledWith(groupDocsByUserResult.otherUsersDocsByDstPath);
     expect(queueForPeerSyncSpy).toHaveBeenCalledWith(doc1);
+    expect(trackProcessedIdsMock).toHaveBeenCalledWith(VIEW_LOGICS_TOPIC_NAME, event.id);
+    expect(result).toEqual("Processed view logics");
   });
 });
 
@@ -398,6 +420,20 @@ describe("onMessagePeerSyncQueue", () => {
     ["users/random-user-id2/documents/doc1", [{action: "merge", priority: "normal", dstPath: "users/random-user-id1/documents/doc1", doc: {name: "test-doc-name-updated"}}]],
   ]);
 
+  const doc1: LogicResultDoc = {
+    action: "merge",
+    priority: "normal",
+    doc: {name: "test-doc-name-updated"},
+    dstPath: "users/test-user-id/documents/doc1",
+  };
+  const event = {
+    data: {
+      message: {
+        json: doc1,
+      },
+    },
+  } as CloudEvent<MessagePublishedData>;
+
   beforeEach(() => {
     syncPeerViewsSpy = jest.spyOn(viewLogics, "syncPeerViews").mockResolvedValue(syncPeerViewsResult);
     expandConsolidateAndGroupByDstPathSpy = jest.spyOn(indexUtils, "expandConsolidateAndGroupByDstPath").mockResolvedValue(expandConsolidateResult);
@@ -405,25 +441,22 @@ describe("onMessagePeerSyncQueue", () => {
     distributeLaterSpy = jest.spyOn(indexUtils, "distributeLater").mockResolvedValue();
   });
 
+  it("should skip duplicate message", async () => {
+    isProcessedMock.mockResolvedValueOnce(true);
+    jest.spyOn(console, "log").mockImplementation();
+    await viewLogics.onMessagePeerSyncQueue(event);
+
+    expect(isProcessedMock).toHaveBeenCalledWith(PEER_SYNC_TOPIC_NAME, event.id);
+    expect(console.log).toHaveBeenCalledWith("Skipping duplicate message");
+  });
+
   it("should distribute queued view logics", async () => {
-    const doc1: LogicResultDoc = {
-      action: "merge",
-      priority: "normal",
-      doc: {name: "test-doc-name-updated"},
-      dstPath: "users/test-user-id/documents/doc1",
-    };
-    const event = {
-      data: {
-        message: {
-          json: doc1,
-        },
-      },
-    } as CloudEvent<MessagePublishedData>;
     const result = await viewLogics.onMessagePeerSyncQueue(event);
 
     expect(syncPeerViewsSpy).toHaveBeenCalledWith(doc1);
     expect(expandConsolidateAndGroupByDstPathSpy).toHaveBeenCalledWith(syncPeerViewsResult.documents);
     expect(distributeLaterSpy).toHaveBeenCalledWith(expandConsolidateResult);
+    expect(trackProcessedIdsMock).toHaveBeenCalledWith(PEER_SYNC_TOPIC_NAME, event.id);
     expect(result).toEqual("Processed peer sync");
   });
 });

@@ -26,6 +26,10 @@ export const queueForDistributionLater = async (...logicResultDocs: LogicResultD
 };
 
 export async function onMessageForDistributionQueue(event: CloudEvent<MessagePublishedData>) {
+  if (await pubsubUtils.isProcessed(FOR_DISTRIBUTION_TOPIC_NAME, event.id)) {
+    console.log("Skipping duplicate message");
+    return;
+  }
   try {
     const logicResultDoc: LogicResultDoc = event.data.message.json;
     console.log("Received user logic result doc:", logicResultDoc);
@@ -42,6 +46,7 @@ export async function onMessageForDistributionQueue(event: CloudEvent<MessagePub
       await queueForDistributionLater(logicResultDoc);
     }
 
+    await pubsubUtils.trackProcessedIds(FOR_DISTRIBUTION_TOPIC_NAME, event.id);
     return "Processed for distribution later";
   } catch (e) {
     console.error("PubSub message was not JSON", e);
