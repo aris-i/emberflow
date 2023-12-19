@@ -38,7 +38,7 @@ import {parseEntity} from "./utils/paths";
 import {database} from "firebase-admin";
 import {initClient} from "emberflow-admin-client/lib";
 import {internalDbStructure, InternalEntity} from "./db-structure";
-import {cleanForms, onMessageSubmitFormQueue} from "./utils/forms";
+import {cleanActionsAndForms, onMessageSubmitFormQueue} from "./utils/forms";
 import {PubSub} from "@google-cloud/pubsub";
 import {onMessagePublished} from "firebase-functions/v2/pubsub";
 import {deleteForms} from "./utils/misc";
@@ -178,11 +178,11 @@ export function initializeEmberFlow(
     region: projectConfig.region,
     timeoutSeconds: 540,
   }, cleanPubSubProcessedIds);
-  functionsConfig["cleanForms"] = onSchedule({
+  functionsConfig["cleanActionsAndForms"] = onSchedule({
     schedule: "every 1 hours",
     region: projectConfig.region,
     timeoutSeconds: 540,
-  }, cleanForms);
+  }, cleanActionsAndForms);
   functionsConfig["minuteFunctions"] = onSchedule({
     schedule: "every 1 minutes",
     region: projectConfig.region,
