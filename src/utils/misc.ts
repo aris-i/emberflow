@@ -172,6 +172,35 @@ async function deleteQueryBatch(query: Query, resolve: () => void): Promise<void
   });
 }
 
+export async function deleteActionCollection(query: Query): Promise<void> {
+  query = query.limit(500);
+  return new Promise((resolve, reject) => {
+    deleteActionQueryBatch(query, resolve).catch(reject);
+  });
+}
+
+async function deleteActionQueryBatch(query: Query, resolve: () => void): Promise<void> {
+  const snapshot = await query.get();
+
+  if (snapshot.size === 0) {
+    resolve();
+    return;
+  }
+
+  const batch = BatchUtil.getInstance();
+  snapshot.docs.forEach( (doc) => {
+    const {eventContext: {formId, uid}} = doc.data();
+    rtdb.ref(`forms/${uid}/${formId}`).remove();
+    batch.deleteDoc(doc.ref);
+  });
+
+  await batch.commit();
+
+  process.nextTick(() => {
+    deleteActionQueryBatch(query, resolve);
+  });
+}
+
 export const convertBase64ToJSON = (data: string) => {
   return JSON.parse(Buffer.from(data, "base64").toString(), (key, value) => {
     if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(value)) {
