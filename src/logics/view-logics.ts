@@ -18,7 +18,6 @@ import {
   runViewLogics,
 } from "../index-utils";
 import {pubsubUtils} from "../utils/pubsub";
-import {convertBase64ToJSON} from "../utils/misc";
 
 export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn {
   return async (logicResultDoc: LogicResultDoc) => {
@@ -174,7 +173,7 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
   }
 
   try {
-    const userLogicResultDoc = convertBase64ToJSON(event.data.message.data);
+    const userLogicResultDoc = event.data.message.json;
     const userId = userLogicResultDoc.dstPath.split("/")[1];
     console.log("Received user logic result doc:", userLogicResultDoc);
 

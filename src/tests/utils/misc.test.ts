@@ -1,4 +1,11 @@
-import {computeHashCode, convertBase64ToJSON, deepEqual, deleteActionCollection, deleteCollection, LimitedSet} from "../../utils/misc";
+import {
+  computeHashCode,
+  deepEqual,
+  deleteActionCollection,
+  deleteCollection,
+  LimitedSet,
+  parseStringDate,
+} from "../../utils/misc";
 import {firestore} from "firebase-admin";
 import Timestamp = firestore.Timestamp;
 import GeoPoint = firestore.GeoPoint;
@@ -266,8 +273,8 @@ describe("deleteActionCollection", () => {
   });
 });
 
-describe("convertBase64ToJSON", () => {
-  it("should convert a base64 string to JSON with every data type intact", () => {
+describe("parseStringDate", () => {
+  it("should parse string date of an object", () => {
     const data = {
       "@allowedUsers": [
         "user1",
@@ -275,18 +282,32 @@ describe("convertBase64ToJSON", () => {
       ],
       "title": "Sample Title",
       "createdAt": new Date(),
-      "createdBy": {
-        "@id": "user1",
-        "name": "User 1",
-        "date": new Date(),
-      },
       "private": false,
       "completedTodos": 0,
     };
-    const json = JSON.stringify(data);
-    const base64 = Buffer.from(json).toString("base64");
+    const stringify = JSON.stringify(data);
+    const json = JSON.parse(stringify);
 
-    const result = convertBase64ToJSON(base64);
+    const result = parseStringDate(json);
+    expect(result).toEqual(data);
+  });
+
+  it("should parse string date of nested objects", () => {
+    const data = {
+      "createdAt": new Date(),
+      "createdBy": {
+        "@id": "user1",
+        "name": "User 1",
+        "registeredAt": new Date(),
+        "more": {
+          "addedAt": new Date(),
+        },
+      },
+    };
+    const stringify = JSON.stringify(data);
+    const json = JSON.parse(stringify);
+
+    const result = parseStringDate(json);
     expect(result).toEqual(data);
   });
 });
