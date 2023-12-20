@@ -5,6 +5,7 @@ import GeoPoint = firestore.GeoPoint;
 import {Request, Response} from "firebase-functions";
 import Query = firestore.Query;
 import {BatchUtil} from "./batch";
+import {DocumentData} from "firebase-admin/lib/firestore";
 
 function isObject(item: any): boolean {
   return (typeof item === "object" && !Array.isArray(item) && item !== null);
@@ -145,14 +146,14 @@ export class LimitedSet<T> {
 }
 
 
-export async function deleteCollection(query: Query): Promise<void> {
+export async function deleteCollection(query: Query, callback?: (doc: DocumentData) => void): Promise<void> {
   query = query.limit(500);
   return new Promise((resolve, reject) => {
-    deleteQueryBatch(query, resolve).catch(reject);
+    deleteQueryBatch(query, resolve, callback).catch(reject);
   });
 }
 
-async function deleteQueryBatch(query: Query, resolve: () => void): Promise<void> {
+async function deleteQueryBatch(query: Query, resolve: () => void, callback?: (doc: DocumentData) => void): Promise<void> {
   const snapshot = await query.get();
 
   if (snapshot.size === 0) {
@@ -163,40 +164,14 @@ async function deleteQueryBatch(query: Query, resolve: () => void): Promise<void
   const batch = BatchUtil.getInstance();
   snapshot.docs.forEach( (doc) => {
     batch.deleteDoc(doc.ref);
+    if (callback) {
+      callback(doc);
+    }
   });
 
   await batch.commit();
 
   process.nextTick(() => {
     deleteQueryBatch(query, resolve);
-  });
-}
-
-export async function deleteActionCollection(query: Query): Promise<void> {
-  query = query.limit(500);
-  return new Promise((resolve, reject) => {
-    deleteActionQueryBatch(query, resolve).catch(reject);
-  });
-}
-
-async function deleteActionQueryBatch(query: Query, resolve: () => void): Promise<void> {
-  const snapshot = await query.get();
-
-  if (snapshot.size === 0) {
-    resolve();
-    return;
-  }
-
-  const batch = BatchUtil.getInstance();
-  snapshot.docs.forEach( (doc) => {
-    const {eventContext: {formId, uid}} = doc.data();
-    rtdb.ref(`forms/${uid}/${formId}`).remove();
-    batch.deleteDoc(doc.ref);
-  });
-
-  await batch.commit();
-
-  process.nextTick(() => {
-    deleteActionQueryBatch(query, resolve);
   });
 }
