@@ -198,7 +198,7 @@ export function initializeEmberFlow(
 }
 
 async function initActionRef(actionId: string) {
-  return db.collection("actions").doc(actionId);
+  return db.collection("@actions").doc(actionId);
 }
 
 export async function onFormSubmit(
