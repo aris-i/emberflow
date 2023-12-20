@@ -19,7 +19,7 @@ import {
   viewLogicConfigs,
 } from "./index";
 import {expandAndGroupDocPathsByEntity, findMatchingDocPathRegex} from "./utils/paths";
-import {deepEqual} from "./utils/misc";
+import {deepEqual, parseStringDate} from "./utils/misc";
 import {CloudFunctionsServiceClient} from "@google-cloud/functions";
 import {FormData} from "emberflow-admin-client/lib/types";
 import {BatchUtil} from "./utils/batch";
@@ -59,7 +59,7 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
       await queueInstructions(dstPath, instructions);
     }
 
-    const updateData: { [key: string]: any } = {...doc, "@id": dstDocRef.id};
+    const updateData: { [key: string]: any } = {...parseStringDate(doc), "@id": dstDocRef.id};
     if (batch) {
       await batch.set(dstDocRef, updateData);
     } else {

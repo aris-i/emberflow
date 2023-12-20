@@ -336,7 +336,7 @@ describe("onMessageViewLogicsQueue", () => {
   const event = {
     data: {
       message: {
-        data: Buffer.from(JSON.stringify(doc1)).toString("base64"),
+        json: doc1,
       },
     },
   } as CloudEvent<MessagePublishedData>;

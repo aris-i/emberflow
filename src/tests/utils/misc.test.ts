@@ -1,4 +1,11 @@
-import {computeHashCode, convertBase64ToJSON, deepEqual, deleteCollection, LimitedSet} from "../../utils/misc";
+import {
+  computeHashCode,
+  deepEqual,
+  deleteActionCollection,
+  deleteCollection,
+  LimitedSet,
+  parseStringDate,
+} from "../../utils/misc";
 import {firestore} from "firebase-admin";
 import Timestamp = firestore.Timestamp;
 import GeoPoint = firestore.GeoPoint;
@@ -164,6 +171,8 @@ describe("deleteCollection", () => {
 
     expect(limitMock).toHaveBeenCalledTimes(1);
     expect(limitMock).toHaveBeenCalledWith(500);
+    expect(batchDeleteSpy).not.toHaveBeenCalled();
+    expect(batchCommitSpy).not.toHaveBeenCalled();
   });
 
   it("should delete all documents in a collection", async () => {
@@ -192,8 +201,80 @@ describe("deleteCollection", () => {
   });
 });
 
-describe("convertBase64ToJSON", () => {
-  it("should convert a base64 string to JSON with every data type intact", () => {
+describe("deleteActionCollection", () => {
+  const batch = BatchUtil.getInstance();
+  let batchDeleteSpy: jest.SpyInstance;
+  let batchCommitSpy: jest.SpyInstance;
+  let formRefSpy: jest.SpyInstance;
+  let formRemoveMock: jest.Mock;
+  let limitMock: jest.Mock;
+
+  beforeEach(() => {
+    jest.spyOn(BatchUtil, "getInstance").mockImplementation(() => batch);
+    batchDeleteSpy = jest.spyOn(batch, "deleteDoc").mockResolvedValue(undefined);
+    batchCommitSpy = jest.spyOn(batch, "commit").mockResolvedValue(undefined);
+    formRemoveMock = jest.fn();
+    formRefSpy = jest.spyOn(admin.database(), "ref").mockReturnValue({
+      remove: formRemoveMock,
+    } as unknown as admin.database.Reference);
+  });
+
+  it("should return when snapshot size is 0", async () => {
+    limitMock = jest.fn().mockReturnValue({
+      get: jest.fn().mockResolvedValue({
+        size: 0,
+      }),
+    });
+    await deleteActionCollection({
+      limit: limitMock,
+    } as unknown as Query);
+
+    expect(limitMock).toHaveBeenCalledTimes(1);
+    expect(limitMock).toHaveBeenCalledWith(500);
+    expect(formRefSpy).not.toHaveBeenCalled();
+    expect(formRemoveMock).not.toHaveBeenCalled();
+    expect(batchDeleteSpy).not.toHaveBeenCalled();
+    expect(batchCommitSpy).not.toHaveBeenCalled();
+  });
+
+  it("should delete all documents in a collection", async () => {
+    const docs = [];
+    for (let i = 0; i < 100; i++) {
+      docs.push({
+        ref: i,
+        data: () => ({
+          eventContext: {
+            formId: i,
+            uid: "test-user-id",
+          },
+        }),
+      });
+    }
+    const getMock = jest.fn().mockResolvedValue({
+      size: 0,
+      docs: [],
+    }).mockResolvedValueOnce({
+      size: 100,
+      docs: docs,
+    });
+    limitMock = jest.fn().mockReturnValue({
+      get: getMock,
+    });
+    await deleteActionCollection({
+      limit: limitMock,
+    } as unknown as Query);
+
+    expect(limitMock).toHaveBeenCalledTimes(1);
+    expect(limitMock).toHaveBeenCalledWith(500);
+    expect(formRefSpy).toHaveBeenCalledTimes(100);
+    expect(formRemoveMock).toHaveBeenCalledTimes(100);
+    expect(batchDeleteSpy).toHaveBeenCalledTimes(100);
+    expect(batchCommitSpy).toHaveBeenCalled();
+  });
+});
+
+describe("parseStringDate", () => {
+  it("should parse string date of an object", () => {
     const data = {
       "@allowedUsers": [
         "user1",
@@ -201,18 +282,32 @@ describe("convertBase64ToJSON", () => {
       ],
       "title": "Sample Title",
       "createdAt": new Date(),
-      "createdBy": {
-        "@id": "user1",
-        "name": "User 1",
-        "date": new Date(),
-      },
       "private": false,
       "completedTodos": 0,
     };
-    const json = JSON.stringify(data);
-    const base64 = Buffer.from(json).toString("base64");
+    const stringify = JSON.stringify(data);
+    const json = JSON.parse(stringify);
 
-    const result = convertBase64ToJSON(base64);
+    const result = parseStringDate(json);
+    expect(result).toEqual(data);
+  });
+
+  it("should parse string date of nested objects", () => {
+    const data = {
+      "createdAt": new Date(),
+      "createdBy": {
+        "@id": "user1",
+        "name": "User 1",
+        "registeredAt": new Date(),
+        "more": {
+          "addedAt": new Date(),
+        },
+      },
+    };
+    const stringify = JSON.stringify(data);
+    const json = JSON.parse(stringify);
+
+    const result = parseStringDate(json);
     expect(result).toEqual(data);
   });
 });

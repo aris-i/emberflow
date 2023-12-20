@@ -5,6 +5,7 @@ import GeoPoint = firestore.GeoPoint;
 import {Request, Response} from "firebase-functions";
 import Query = firestore.Query;
 import {BatchUtil} from "./batch";
+import {DocumentData} from "firebase-admin/lib/firestore";
 
 function isObject(item: any): boolean {
   return (typeof item === "object" && !Array.isArray(item) && item !== null);
@@ -12,6 +13,10 @@ function isObject(item: any): boolean {
 
 function isArray(item: any): boolean {
   return Array.isArray(item);
+}
+
+function isStringDate(item: any): boolean {
+  return typeof item === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(item);
 }
 
 function isFirestoreTimestamp(item: any): boolean {
@@ -172,11 +177,47 @@ async function deleteQueryBatch(query: Query, resolve: () => void): Promise<void
   });
 }
 
-export const convertBase64ToJSON = (data: string) => {
-  return JSON.parse(Buffer.from(data, "base64").toString(), (key, value) => {
-    if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(value)) {
-      return new Date(value);
-    }
-    return value;
+export async function deleteActionCollection(query: Query): Promise<void> {
+  query = query.limit(500);
+  return new Promise((resolve, reject) => {
+    deleteActionQueryBatch(query, resolve).catch(reject);
   });
+}
+
+async function deleteActionQueryBatch(query: Query, resolve: () => void): Promise<void> {
+  const snapshot = await query.get();
+
+  if (snapshot.size === 0) {
+    resolve();
+    return;
+  }
+
+  const batch = BatchUtil.getInstance();
+  snapshot.docs.forEach( (doc) => {
+    const {eventContext: {formId, uid}} = doc.data();
+    rtdb.ref(`forms/${uid}/${formId}`).remove();
+    batch.deleteDoc(doc.ref);
+  });
+
+  await batch.commit();
+
+  process.nextTick(() => {
+    deleteActionQueryBatch(query, resolve);
+  });
+}
+
+export const parseStringDate = (doc: DocumentData | undefined) => {
+  for (const key in doc) {
+    if (doc && Object.prototype.hasOwnProperty.call(doc, key)) {
+      const value = doc[key];
+      if (isStringDate(value)) {
+        doc[key] = new Date(value);
+        continue;
+      }
+      if (isObject(value)) {
+        parseStringDate(value);
+      }
+    }
+  }
+  return doc;
 };

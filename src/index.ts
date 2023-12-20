@@ -38,10 +38,10 @@ import {parseEntity} from "./utils/paths";
 import {database} from "firebase-admin";
 import {initClient} from "emberflow-admin-client/lib";
 import {internalDbStructure, InternalEntity} from "./db-structure";
-import {cleanForms, onMessageSubmitFormQueue} from "./utils/forms";
+import {cleanActionsAndForms, onMessageSubmitFormQueue} from "./utils/forms";
 import {PubSub} from "@google-cloud/pubsub";
 import {onMessagePublished} from "firebase-functions/v2/pubsub";
-import {convertBase64ToJSON, deleteForms} from "./utils/misc";
+import {deleteForms} from "./utils/misc";
 import Database = database.Database;
 import {onMessageForDistributionQueue, onMessageInstructionsQueue} from "./utils/distribution";
 import {cleanPubSubProcessedIds} from "./utils/pubsub";
@@ -179,11 +179,11 @@ export function initializeEmberFlow(
     region: projectConfig.region,
     timeoutSeconds: 540,
   }, cleanPubSubProcessedIds);
-  functionsConfig["cleanForms"] = onSchedule({
+  functionsConfig["cleanActionsAndForms"] = onSchedule({
     schedule: "every 1 hours",
     region: projectConfig.region,
     timeoutSeconds: 540,
-  }, cleanForms);
+  }, cleanActionsAndForms);
   functionsConfig["minuteFunctions"] = onSchedule({
     schedule: "every 1 minutes",
     region: projectConfig.region,
@@ -210,8 +210,7 @@ export async function onFormSubmit(
   const formRef = formSnapshot.ref;
 
   try {
-    const base64FormData = Buffer.from(formSnapshot.val().formData).toString("base64");
-    const form = convertBase64ToJSON(base64FormData);
+    const form = JSON.parse(formSnapshot.val().formData);
     console.log("form", form);
 
     console.info("Validating docPath");

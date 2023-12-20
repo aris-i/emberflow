@@ -14,7 +14,7 @@ import {securityConfig} from "../../sample-custom/security";
 import {validatorConfig} from "../../sample-custom/validators";
 import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
 import spyOn = jest.spyOn;
-import {Reference} from "@firebase/database-types";
+import * as misc from "../../utils/misc";
 
 const projectConfig: ProjectConfig = {
   projectId: "your-project-id",
@@ -118,45 +118,20 @@ describe("onMessageSubmitFormQueue", () => {
   });
 });
 
-describe("cleanForms", () => {
-  let refSpy: jest.SpyInstance;
-  const removeMock: jest.Mock = jest.fn();
-
-  const dataSnapshot = [
-    {
-      key: "test-key-1",
-      ref: {
-        remove: removeMock,
-      },
-    },
-    {
-      key: "test-key-2",
-      ref: {
-        remove: removeMock,
-      },
-    },
-  ];
-
+describe("cleanActionsAndForms", () => {
+  let deleteActionCollectionSpy: jest.SpyInstance;
   beforeEach(() => {
-    refSpy = jest.spyOn(admin.database(), "ref").mockReturnValue({
-      orderByChild: jest.fn().mockReturnValue({
-        endAt: jest.fn().mockReturnValue({
-          once: jest.fn().mockImplementation((event, callback) => {
-            return callback(dataSnapshot);
-          }),
-        }),
-      }),
-    } as unknown as Reference);
+    deleteActionCollectionSpy = jest.spyOn(misc, "deleteActionCollection")
+      .mockImplementation(() => Promise.resolve());
   });
 
   it("should clean forms", async () => {
     spyOn(console, "info").mockImplementation();
     const event = {} as ScheduledEvent;
-    await forms.cleanForms(event);
+    await forms.cleanActionsAndForms(event);
 
-    expect(console.info).toHaveBeenCalledWith("Running cleanForms");
-    expect(refSpy).toHaveBeenCalledWith("forms");
-    expect(removeMock).toHaveBeenCalledTimes(dataSnapshot.length);
-    expect(console.info).toHaveBeenCalledWith(`Cleaned ${dataSnapshot.length} forms`);
+    expect(console.info).toHaveBeenCalledWith("Running cleanActionsAndForms");
+    expect(deleteActionCollectionSpy).toHaveBeenCalled();
+    expect(console.info).toHaveBeenCalledWith("Cleaned actions and forms");
   });
 });
