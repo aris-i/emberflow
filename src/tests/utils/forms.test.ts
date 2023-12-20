@@ -119,10 +119,31 @@ describe("onMessageSubmitFormQueue", () => {
 });
 
 describe("cleanActionsAndForms", () => {
-  let deleteActionCollectionSpy: jest.SpyInstance;
+  let deleteCollectionSpy: jest.SpyInstance;
+  let formRefSpy: jest.SpyInstance;
+  let formRemoveMock: jest.Mock;
+
   beforeEach(() => {
-    deleteActionCollectionSpy = jest.spyOn(misc, "deleteActionCollection")
-      .mockImplementation(() => Promise.resolve());
+    deleteCollectionSpy = jest.spyOn(misc, "deleteCollection")
+      .mockImplementation((query, callback) => {
+        const doc = {
+          data: () => ({
+            eventContext: {
+              formId: "test-form-id",
+              uid: "test-uid",
+            },
+          }),
+        };
+        if (callback) {
+          callback(doc);
+        }
+        return Promise.resolve();
+      });
+
+    formRemoveMock = jest.fn();
+    formRefSpy = jest.spyOn(admin.database(), "ref").mockReturnValue({
+      remove: formRemoveMock,
+    } as unknown as admin.database.Reference);
   });
 
   it("should clean forms", async () => {
@@ -131,7 +152,12 @@ describe("cleanActionsAndForms", () => {
     await forms.cleanActionsAndForms(event);
 
     expect(console.info).toHaveBeenCalledWith("Running cleanActionsAndForms");
-    expect(deleteActionCollectionSpy).toHaveBeenCalled();
+    expect(deleteCollectionSpy).toHaveBeenCalled();
+    expect(deleteCollectionSpy).toHaveBeenCalledTimes(1);
+    expect(formRefSpy).toHaveBeenCalledWith("forms/test-uid/test-form-id");
+    expect(formRefSpy).toHaveBeenCalledTimes(1);
+    expect(formRemoveMock).toHaveBeenCalled();
+    expect(formRemoveMock).toHaveBeenCalledTimes(1);
     expect(console.info).toHaveBeenCalledWith("Cleaned actions and forms");
   });
 });

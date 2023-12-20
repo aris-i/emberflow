@@ -1,7 +1,6 @@
 import {
   computeHashCode,
   deepEqual,
-  deleteActionCollection,
   deleteCollection,
   LimitedSet,
   parseStringDate,
@@ -196,78 +195,6 @@ describe("deleteCollection", () => {
 
     expect(limitMock).toHaveBeenCalledTimes(1);
     expect(limitMock).toHaveBeenCalledWith(500);
-    expect(batchDeleteSpy).toHaveBeenCalledTimes(100);
-    expect(batchCommitSpy).toHaveBeenCalled();
-  });
-});
-
-describe("deleteActionCollection", () => {
-  const batch = BatchUtil.getInstance();
-  let batchDeleteSpy: jest.SpyInstance;
-  let batchCommitSpy: jest.SpyInstance;
-  let formRefSpy: jest.SpyInstance;
-  let formRemoveMock: jest.Mock;
-  let limitMock: jest.Mock;
-
-  beforeEach(() => {
-    jest.spyOn(BatchUtil, "getInstance").mockImplementation(() => batch);
-    batchDeleteSpy = jest.spyOn(batch, "deleteDoc").mockResolvedValue(undefined);
-    batchCommitSpy = jest.spyOn(batch, "commit").mockResolvedValue(undefined);
-    formRemoveMock = jest.fn();
-    formRefSpy = jest.spyOn(admin.database(), "ref").mockReturnValue({
-      remove: formRemoveMock,
-    } as unknown as admin.database.Reference);
-  });
-
-  it("should return when snapshot size is 0", async () => {
-    limitMock = jest.fn().mockReturnValue({
-      get: jest.fn().mockResolvedValue({
-        size: 0,
-      }),
-    });
-    await deleteActionCollection({
-      limit: limitMock,
-    } as unknown as Query);
-
-    expect(limitMock).toHaveBeenCalledTimes(1);
-    expect(limitMock).toHaveBeenCalledWith(500);
-    expect(formRefSpy).not.toHaveBeenCalled();
-    expect(formRemoveMock).not.toHaveBeenCalled();
-    expect(batchDeleteSpy).not.toHaveBeenCalled();
-    expect(batchCommitSpy).not.toHaveBeenCalled();
-  });
-
-  it("should delete all documents in a collection", async () => {
-    const docs = [];
-    for (let i = 0; i < 100; i++) {
-      docs.push({
-        ref: i,
-        data: () => ({
-          eventContext: {
-            formId: i,
-            uid: "test-user-id",
-          },
-        }),
-      });
-    }
-    const getMock = jest.fn().mockResolvedValue({
-      size: 0,
-      docs: [],
-    }).mockResolvedValueOnce({
-      size: 100,
-      docs: docs,
-    });
-    limitMock = jest.fn().mockReturnValue({
-      get: getMock,
-    });
-    await deleteActionCollection({
-      limit: limitMock,
-    } as unknown as Query);
-
-    expect(limitMock).toHaveBeenCalledTimes(1);
-    expect(limitMock).toHaveBeenCalledWith(500);
-    expect(formRefSpy).toHaveBeenCalledTimes(100);
-    expect(formRemoveMock).toHaveBeenCalledTimes(100);
     expect(batchDeleteSpy).toHaveBeenCalledTimes(100);
     expect(batchCommitSpy).toHaveBeenCalled();
   });

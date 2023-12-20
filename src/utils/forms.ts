@@ -1,11 +1,11 @@
 import {FormData} from "emberflow-admin-client/lib/types";
-import {db, pubsub, SUBMIT_FORM_TOPIC_NAME} from "../index";
+import {db, pubsub, rtdb, SUBMIT_FORM_TOPIC_NAME} from "../index";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
 import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
 import {submitForm} from "emberflow-admin-client/lib";
 import {pubsubUtils} from "./pubsub";
 import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
-import {deleteActionCollection} from "./misc";
+import {deleteCollection} from "./misc";
 
 export async function queueSubmitForm(formData: FormData) {
   const topic = pubsub.topic(SUBMIT_FORM_TOPIC_NAME);
@@ -48,7 +48,11 @@ export async function cleanActionsAndForms(event: ScheduledEvent) {
   console.info("Running cleanActionsAndForms");
   const query = db.collection("@actions")
     .where("timestamp", "<", new Date(Date.now() - 1000 * 60 * 60 * 24 * 7));
-  await deleteActionCollection(query);
+
+  await deleteCollection(query, (doc) => {
+    const {eventContext: {formId, uid}} = doc.data();
+    rtdb.ref(`forms/${uid}/${formId}`).remove();
+  });
 
   console.info("Cleaned actions and forms");
 }
