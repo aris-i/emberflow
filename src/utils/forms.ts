@@ -27,17 +27,18 @@ export async function onMessageSubmitFormQueue(event: CloudEvent<MessagePublishe
     console.log("Skipping duplicate event");
     return;
   }
-  try {
-    const formData = event.data.message.json;
-    console.log("Received form submission:", formData);
+  let formData = event.data.message.json;
+  console.log("Received form submission:", formData);
 
-    // TODO:  Let's make status handler optional
-    await submitForm(formData);
-
-    await pubsubUtils.trackProcessedIds(SUBMIT_FORM_TOPIC_NAME, event.id);
-    return "Processed form data";
-  } catch (e) {
-    console.error("PubSub message was not JSON", e);
-    throw new Error("No json in message");
+  formData = await submitForm(formData);
+  // TODO: Test this
+  const status = formData["@status"];
+  const message = formData["@message"];
+  if (status === "cancelled" && message.startsWith("cancel-then-retry")) {
+    console.log("Throwing error so that the message is retried");
+    throw new Error("cancel-then-retry");
   }
+
+  await pubsubUtils.trackProcessedIds(SUBMIT_FORM_TOPIC_NAME, event.id);
+  return "Processed form data";
 }
