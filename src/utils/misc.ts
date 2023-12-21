@@ -207,20 +207,24 @@ async function deleteActionQueryBatch(query: Query, resolve: () => void): Promis
   process.nextTick(() => {
     deleteActionQueryBatch(query, resolve);
   });
-};
+}
 
-export const parseStringDate = (doc: DocumentData | undefined) => {
-  for (const key in doc) {
-    if (doc && Object.prototype.hasOwnProperty.call(doc, key)) {
-      const value = doc[key];
-      if (isStringDate(value)) {
-        doc[key] = new Date(value);
-        continue;
-      }
-      if (isObject(value)) {
-        parseStringDate(value);
+export const convertStringDate = (json: { [key: string]: any }) => {
+  const stack = [json];
+  while (stack.length > 0) {
+    const obj = stack.pop();
+
+    for (const key in obj) {
+      if (obj && Object.prototype.hasOwnProperty.call(obj, key)) {
+        const value = obj[key];
+        if (isStringDate(value)) {
+          obj[key] = new Date(value);
+        } else if (isObject(value)) {
+          stack.push(value);
+        }
       }
     }
   }
-  return doc;
+
+  return json;
 };

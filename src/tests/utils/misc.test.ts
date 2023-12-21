@@ -3,7 +3,7 @@ import {
   deepEqual,
   deleteCollection,
   LimitedSet,
-  parseStringDate,
+  convertStringDate,
 } from "../../utils/misc";
 import {firestore} from "firebase-admin";
 import Timestamp = firestore.Timestamp;
@@ -200,8 +200,8 @@ describe("deleteCollection", () => {
   });
 });
 
-describe("parseStringDate", () => {
-  it("should parse string date of an object", () => {
+describe("convertStringDate", () => {
+  it("should convert string date to date", () => {
     const data = {
       "@allowedUsers": [
         "user1",
@@ -215,11 +215,11 @@ describe("parseStringDate", () => {
     const stringify = JSON.stringify(data);
     const json = JSON.parse(stringify);
 
-    const result = parseStringDate(json);
+    const result = convertStringDate(json);
     expect(result).toEqual(data);
   });
 
-  it("should parse string date of nested objects", () => {
+  it("should convert nested string date to date", () => {
     const data = {
       "createdAt": new Date(),
       "createdBy": {
@@ -227,14 +227,14 @@ describe("parseStringDate", () => {
         "name": "User 1",
         "registeredAt": new Date(),
         "more": {
-          "addedAt": new Date(),
+          "addedAt": admin.firestore.Timestamp.now(),
         },
       },
     };
     const stringify = JSON.stringify(data);
     const json = JSON.parse(stringify);
 
-    const result = parseStringDate(json);
+    const result = convertStringDate(json);
     expect(result).toEqual(data);
   });
 });

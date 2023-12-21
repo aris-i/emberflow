@@ -19,7 +19,7 @@ import {
   viewLogicConfigs,
 } from "./index";
 import {expandAndGroupDocPathsByEntity, findMatchingDocPathRegex} from "./utils/paths";
-import {deepEqual, parseStringDate} from "./utils/misc";
+import {deepEqual} from "./utils/misc";
 import {CloudFunctionsServiceClient} from "@google-cloud/functions";
 import {FormData} from "emberflow-admin-client/lib/types";
 import {BatchUtil} from "./utils/batch";
@@ -35,7 +35,6 @@ export const _mockable = {
   getViewLogicsConfig: () => viewLogicConfigs,
   createNowTimestamp: () => admin.firestore.Timestamp.now(),
 };
-
 
 export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: BatchUtil) {
   const {
@@ -59,7 +58,7 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
       await queueInstructions(dstPath, instructions);
     }
 
-    const updateData: { [key: string]: any } = {...parseStringDate(doc), "@id": dstDocRef.id};
+    const updateData: { [key: string]: any } = {...doc, "@id": dstDocRef.id};
     if (batch) {
       await batch.set(dstDocRef, updateData);
     } else {
@@ -238,11 +237,9 @@ export function groupDocsByUserAndDstPath(docsByDstPath: Map<string, LogicResult
   return {userDocsByDstPath, otherUsersDocsByDstPath};
 }
 
-
 export function getSecurityFn(entity: string): SecurityFn {
   return securityConfig[entity];
 }
-
 
 export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultDoc[]): Promise<Map<string, LogicResultDoc[]>> {
   function warnOverwritingKeys(existing: any, incoming: any, type: string, dstPath: string) {
