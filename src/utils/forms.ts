@@ -49,10 +49,12 @@ export async function cleanActionsAndForms(event: ScheduledEvent) {
   const query = db.collection("@actions")
     .where("timestamp", "<", new Date(Date.now() - 1000 * 60 * 60 * 24 * 7));
 
+  const forms: {[key: string]: null} = {};
   await deleteCollection(query, (doc) => {
     const {eventContext: {formId, uid}} = doc.data();
-    rtdb.ref(`forms/${uid}/${formId}`).remove();
+    forms[`forms/${uid}/${formId}`] = null;
   });
+  await rtdb.ref().update(forms);
 
   console.info("Cleaned actions and forms");
 }
