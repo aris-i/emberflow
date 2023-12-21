@@ -6,6 +6,7 @@ export enum Entity {
     // Add your custom entities below
     Feed = "feed",
     Friend = "friend",
+    Game = "game",
     Server = "server",
     Channel = "channel",
     Member = "member",

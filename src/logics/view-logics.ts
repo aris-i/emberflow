@@ -17,6 +17,8 @@ import {
   groupDocsByUserAndDstPath,
   runViewLogics,
 } from "../index-utils";
+import {pubsubUtils} from "../utils/pubsub";
+import {convertStringDate} from "../utils/misc";
 
 export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn {
   return async (logicResultDoc: LogicResultDoc) => {
@@ -166,8 +168,13 @@ export async function queueRunViewLogics(userLogicResultDocs: LogicResultDoc[]) 
 }
 
 export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishedData>) {
+  if (await pubsubUtils.isProcessed(VIEW_LOGICS_TOPIC_NAME, event.id)) {
+    console.log("Skipping duplicate message");
+    return;
+  }
+
   try {
-    const userLogicResultDoc = event.data.message.json;
+    const userLogicResultDoc = convertStringDate(event.data.message.json) as LogicResultDoc;
     const userId = userLogicResultDoc.dstPath.split("/")[1];
     console.log("Received user logic result doc:", userLogicResultDoc);
 
@@ -183,6 +190,7 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
 
     console.info("Queue for Peer Sync");
     await queueForPeerSync(userLogicResultDoc);
+    await pubsubUtils.trackProcessedIds(VIEW_LOGICS_TOPIC_NAME, event.id);
     return "Processed view logics";
   } catch (e) {
     console.error("PubSub message was not JSON", e);
@@ -209,8 +217,13 @@ export const queueForPeerSync = async (...userLogicResultDocs: LogicResultDoc[])
 };
 
 export async function onMessagePeerSyncQueue(event: CloudEvent<MessagePublishedData>) {
+  if (await pubsubUtils.isProcessed(PEER_SYNC_TOPIC_NAME, event.id)) {
+    console.log("Skipping duplicate message");
+    return;
+  }
+
   try {
-    const userLogicResultDoc = event.data.message.json;
+    const userLogicResultDoc = convertStringDate(event.data.message.json) as LogicResultDoc;
     console.log("Received user logic result doc:", userLogicResultDoc);
 
     console.info("Running Peer Sync");
@@ -220,7 +233,7 @@ export async function onMessagePeerSyncQueue(event: CloudEvent<MessagePublishedD
 
     console.info("Distributing Peer Sync Docs");
     await distributeLater(dstPathViewLogicDocsMap);
-
+    await pubsubUtils.trackProcessedIds(PEER_SYNC_TOPIC_NAME, event.id);
     return "Processed peer sync";
   } catch (e) {
     console.error("PubSub message was not JSON", e);

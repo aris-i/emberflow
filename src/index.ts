@@ -38,16 +38,17 @@ import {parseEntity} from "./utils/paths";
 import {database} from "firebase-admin";
 import {initClient} from "emberflow-admin-client/lib";
 import {internalDbStructure, InternalEntity} from "./db-structure";
-import {onMessageSubmitFormQueue} from "./utils/forms";
+import {cleanActionsAndForms, onMessageSubmitFormQueue} from "./utils/forms";
 import {PubSub} from "@google-cloud/pubsub";
 import {onMessagePublished} from "firebase-functions/v2/pubsub";
-import {deleteForms} from "./utils/misc";
+import {convertStringDate, deleteForms} from "./utils/misc";
 import Database = database.Database;
 import {onMessageForDistributionQueue, onMessageInstructionsQueue} from "./utils/distribution";
 import {cleanPubSubProcessedIds} from "./utils/pubsub";
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import {onDocumentCreated} from "firebase-functions/v2/firestore";
 import {onRequest} from "firebase-functions/v2/https";
+import {UserRecord} from "firebase-admin/lib/auth";
 
 export let admin: FirebaseAdmin;
 export let db: Firestore;
@@ -178,6 +179,11 @@ export function initializeEmberFlow(
     region: projectConfig.region,
     timeoutSeconds: 540,
   }, cleanPubSubProcessedIds);
+  functionsConfig["cleanActionsAndForms"] = onSchedule({
+    schedule: "every 1 hours",
+    region: projectConfig.region,
+    timeoutSeconds: 540,
+  }, cleanActionsAndForms);
   functionsConfig["minuteFunctions"] = onSchedule({
     schedule: "every 1 minutes",
     region: projectConfig.region,
@@ -185,12 +191,14 @@ export function initializeEmberFlow(
   }, processScheduledEntities);
   functionsConfig["onDeleteFunctions"] = onDocumentCreated(
     "@server/delete/functions/{deleteFuncId}", onDeleteFunction);
+  functionsConfig["onUserRegister"] =
+    functions.auth.user().onCreate(onUserRegister);
 
   return {docPaths, colPaths, docPathsRegex, functionsConfig};
 }
 
 async function initActionRef(actionId: string) {
-  return db.collection("actions").doc(actionId);
+  return db.collection("@actions").doc(actionId);
 }
 
 export async function onFormSubmit(
@@ -202,7 +210,7 @@ export async function onFormSubmit(
   const formRef = formSnapshot.ref;
 
   try {
-    const form = JSON.parse(formSnapshot.val().formData);
+    const form = convertStringDate(JSON.parse(formSnapshot.val().formData));
     console.log("form", form);
 
     console.info("Validating docPath");
@@ -415,3 +423,14 @@ export async function onFormSubmit(
     await formRef.update({"@status": "error", "@message": error});
   }
 }
+
+const onUserRegister = async (user: UserRecord) => {
+  await db.doc(`users/${user.uid}`).set({
+    "@id": user.uid,
+    "firstName": user.displayName || "",
+    "lastName": "",
+    "avatarUrl": user.photoURL || "",
+    "username": user.email ? user.email.split("@")[0] : "",
+    "registeredAt": admin.firestore.Timestamp.now(),
+  });
+};

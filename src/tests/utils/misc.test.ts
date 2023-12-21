@@ -1,4 +1,10 @@
-import {computeHashCode, deepEqual, deleteCollection, LimitedSet} from "../../utils/misc";
+import {
+  computeHashCode,
+  deepEqual,
+  deleteCollection,
+  LimitedSet,
+  convertStringDate,
+} from "../../utils/misc";
 import {firestore} from "firebase-admin";
 import Timestamp = firestore.Timestamp;
 import GeoPoint = firestore.GeoPoint;
@@ -164,6 +170,8 @@ describe("deleteCollection", () => {
 
     expect(limitMock).toHaveBeenCalledTimes(1);
     expect(limitMock).toHaveBeenCalledWith(500);
+    expect(batchDeleteSpy).not.toHaveBeenCalled();
+    expect(batchCommitSpy).not.toHaveBeenCalled();
   });
 
   it("should delete all documents in a collection", async () => {
@@ -189,5 +197,44 @@ describe("deleteCollection", () => {
     expect(limitMock).toHaveBeenCalledWith(500);
     expect(batchDeleteSpy).toHaveBeenCalledTimes(100);
     expect(batchCommitSpy).toHaveBeenCalled();
+  });
+});
+
+describe("convertStringDate", () => {
+  it("should convert string date to date", () => {
+    const data = {
+      "@allowedUsers": [
+        "user1",
+        "user2",
+      ],
+      "title": "Sample Title",
+      "createdAt": new Date(),
+      "private": false,
+      "completedTodos": 0,
+    };
+    const stringify = JSON.stringify(data);
+    const json = JSON.parse(stringify);
+
+    const result = convertStringDate(json);
+    expect(result).toEqual(data);
+  });
+
+  it("should convert nested string date to date", () => {
+    const data = {
+      "createdAt": new Date(),
+      "createdBy": {
+        "@id": "user1",
+        "name": "User 1",
+        "registeredAt": new Date(),
+        "more": {
+          "addedAt": admin.firestore.Timestamp.now(),
+        },
+      },
+    };
+    const stringify = JSON.stringify(data);
+    const json = JSON.parse(stringify);
+
+    const result = convertStringDate(json);
+    expect(result).toEqual(data);
   });
 });
