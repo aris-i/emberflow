@@ -119,10 +119,50 @@ describe("onMessageSubmitFormQueue", () => {
 });
 
 describe("cleanActionsAndForms", () => {
-  let deleteActionCollectionSpy: jest.SpyInstance;
+  let deleteCollectionSpy: jest.SpyInstance;
+  let formRefSpy: jest.SpyInstance;
+  let formUpdateMock: jest.Mock;
+
+  const docs = [
+    {
+      data: () => ({
+        eventContext: {
+          formId: "test-form-id-1",
+          uid: "test-uid-1",
+        },
+      }),
+    },
+    {
+      data: () => ({
+        eventContext: {
+          formId: "test-form-id-1",
+          uid: "test-uid-2",
+        },
+      }),
+    },
+    {
+      data: () => ({
+        eventContext: {
+          formId: "test-form-id-2",
+          uid: "test-uid-1",
+        },
+      }),
+    },
+  ];
+
   beforeEach(() => {
-    deleteActionCollectionSpy = jest.spyOn(misc, "deleteActionCollection")
-      .mockImplementation(() => Promise.resolve());
+    deleteCollectionSpy = jest.spyOn(misc, "deleteCollection")
+      .mockImplementation((query, callback) => {
+        if (callback) {
+          docs.forEach((doc) => callback(doc));
+        }
+        return Promise.resolve();
+      });
+
+    formUpdateMock = jest.fn();
+    formRefSpy = jest.spyOn(admin.database(), "ref").mockReturnValue({
+      update: formUpdateMock,
+    } as unknown as admin.database.Reference);
   });
 
   it("should clean forms", async () => {
@@ -131,7 +171,16 @@ describe("cleanActionsAndForms", () => {
     await forms.cleanActionsAndForms(event);
 
     expect(console.info).toHaveBeenCalledWith("Running cleanActionsAndForms");
-    expect(deleteActionCollectionSpy).toHaveBeenCalled();
+    expect(deleteCollectionSpy).toHaveBeenCalled();
+    expect(deleteCollectionSpy).toHaveBeenCalledTimes(1);
+    expect(formRefSpy).toHaveBeenCalled();
+    expect(formRefSpy).toHaveBeenCalledTimes(1);
+    expect(formUpdateMock).toHaveBeenCalledWith({
+      "forms/test-uid-1/test-form-id-1": null,
+      "forms/test-uid-1/test-form-id-2": null,
+      "forms/test-uid-2/test-form-id-1": null,
+    });
+    expect(formUpdateMock).toHaveBeenCalledTimes(1);
     expect(console.info).toHaveBeenCalledWith("Cleaned actions and forms");
   });
 });

@@ -18,6 +18,7 @@ import {
   runViewLogics,
 } from "../index-utils";
 import {pubsubUtils} from "../utils/pubsub";
+import {convertStringDate} from "../utils/misc";
 
 export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn {
   return async (logicResultDoc: LogicResultDoc) => {
@@ -173,7 +174,7 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
   }
 
   try {
-    const userLogicResultDoc = event.data.message.json;
+    const userLogicResultDoc = convertStringDate(event.data.message.json) as LogicResultDoc;
     const userId = userLogicResultDoc.dstPath.split("/")[1];
     console.log("Received user logic result doc:", userLogicResultDoc);
 
@@ -222,7 +223,7 @@ export async function onMessagePeerSyncQueue(event: CloudEvent<MessagePublishedD
   }
 
   try {
-    const userLogicResultDoc = event.data.message.json;
+    const userLogicResultDoc = convertStringDate(event.data.message.json) as LogicResultDoc;
     console.log("Received user logic result doc:", userLogicResultDoc);
 
     console.info("Running Peer Sync");

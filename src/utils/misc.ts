@@ -150,14 +150,14 @@ export class LimitedSet<T> {
 }
 
 
-export async function deleteCollection(query: Query): Promise<void> {
+export async function deleteCollection(query: Query, callback?: (doc: DocumentData) => void): Promise<void> {
   query = query.limit(500);
   return new Promise((resolve, reject) => {
-    deleteQueryBatch(query, resolve).catch(reject);
+    deleteQueryBatch(query, resolve, callback).catch(reject);
   });
 }
 
-async function deleteQueryBatch(query: Query, resolve: () => void): Promise<void> {
+async function deleteQueryBatch(query: Query, resolve: () => void, callback?: (doc: DocumentData) => void): Promise<void> {
   const snapshot = await query.get();
 
   if (snapshot.size === 0) {
@@ -168,6 +168,9 @@ async function deleteQueryBatch(query: Query, resolve: () => void): Promise<void
   const batch = BatchUtil.getInstance();
   snapshot.docs.forEach( (doc) => {
     batch.deleteDoc(doc.ref);
+    if (callback) {
+      callback(doc);
+    }
   });
 
   await batch.commit();
@@ -206,18 +209,22 @@ async function deleteActionQueryBatch(query: Query, resolve: () => void): Promis
   });
 }
 
-export const parseStringDate = (doc: DocumentData | undefined) => {
-  for (const key in doc) {
-    if (doc && Object.prototype.hasOwnProperty.call(doc, key)) {
-      const value = doc[key];
-      if (isStringDate(value)) {
-        doc[key] = new Date(value);
-        continue;
-      }
-      if (isObject(value)) {
-        parseStringDate(value);
+export const convertStringDate = (json: { [key: string]: any }) => {
+  const stack = [json];
+  while (stack.length > 0) {
+    const obj = stack.pop();
+
+    for (const key in obj) {
+      if (obj && Object.prototype.hasOwnProperty.call(obj, key)) {
+        const value = obj[key];
+        if (isStringDate(value)) {
+          obj[key] = new Date(value);
+        } else if (isObject(value)) {
+          stack.push(value);
+        }
       }
     }
   }
-  return doc;
+
+  return json;
 };
