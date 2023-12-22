@@ -170,35 +170,6 @@ async function deleteQueryBatch(query: Query, resolve: () => void, callback: (sn
   });
 }
 
-export async function deleteActionCollection(query: Query): Promise<void> {
-  query = query.limit(500);
-  return new Promise((resolve, reject) => {
-    deleteActionQueryBatch(query, resolve).catch(reject);
-  });
-}
-
-async function deleteActionQueryBatch(query: Query, resolve: () => void): Promise<void> {
-  const snapshot = await query.get();
-
-  if (snapshot.size === 0) {
-    resolve();
-    return;
-  }
-
-  const batch = BatchUtil.getInstance();
-  snapshot.docs.forEach( (doc) => {
-    const {eventContext: {formId, uid}} = doc.data();
-    rtdb.ref(`forms/${uid}/${formId}`).remove();
-    batch.deleteDoc(doc.ref);
-  });
-
-  await batch.commit();
-
-  process.nextTick(() => {
-    deleteActionQueryBatch(query, resolve);
-  });
-}
-
 export const convertStringDate = (json: { [key: string]: any }) => {
   const stack = [json];
   while (stack.length > 0) {
