@@ -142,14 +142,12 @@ describe("LimitedSet", () => {
 
 describe("deleteCollection", () => {
   const batch = BatchUtil.getInstance();
-  let batchDeleteSpy: jest.SpyInstance;
-  let batchCommitSpy: jest.SpyInstance;
   let limitMock: jest.Mock;
+  let callbackMock: jest.Mock;
 
   beforeEach(() => {
+    callbackMock = jest.fn();
     jest.spyOn(BatchUtil, "getInstance").mockImplementation(() => batch);
-    batchDeleteSpy = jest.spyOn(batch, "deleteDoc").mockResolvedValue(undefined);
-    batchCommitSpy = jest.spyOn(batch, "commit").mockResolvedValue(undefined);
   });
 
   it("should return when snapshot size is 0", async () => {
@@ -160,12 +158,11 @@ describe("deleteCollection", () => {
     });
     await deleteCollection({
       limit: limitMock,
-    } as unknown as Query);
+    } as unknown as Query, callbackMock);
 
     expect(limitMock).toHaveBeenCalledTimes(1);
     expect(limitMock).toHaveBeenCalledWith(500);
-    expect(batchDeleteSpy).not.toHaveBeenCalled();
-    expect(batchCommitSpy).not.toHaveBeenCalled();
+    expect(callbackMock).not.toHaveBeenCalled();
   });
 
   it("should delete all documents in a collection", async () => {
@@ -185,11 +182,10 @@ describe("deleteCollection", () => {
     });
     await deleteCollection({
       limit: limitMock,
-    } as unknown as Query);
+    } as unknown as Query, callbackMock);
 
     expect(limitMock).toHaveBeenCalledTimes(1);
     expect(limitMock).toHaveBeenCalledWith(500);
-    expect(batchDeleteSpy).toHaveBeenCalledTimes(100);
-    expect(batchCommitSpy).toHaveBeenCalled();
+    expect(callbackMock).toHaveBeenCalledTimes(1);
   });
 });
