@@ -159,7 +159,7 @@ async function deleteQueryBatch(query: Query, resolve: () => void, callback: (sn
     return;
   }
 
-  callback(snapshot);
+  await callback(snapshot);
 
   process.nextTick(() => {
     deleteQueryBatch(query, resolve, callback);
