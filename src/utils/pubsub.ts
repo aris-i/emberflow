@@ -1,6 +1,7 @@
 import {db} from "../index";
 import {deleteCollection} from "./misc";
 import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
+import {BatchUtil} from "./batch";
 
 async function trackProcessedIds(topicName: string, id: string) {
   const docRef = db.doc(`@topics/${topicName}/processedIds/${id}`);
@@ -25,7 +26,15 @@ export async function cleanPubSubProcessedIds(event: ScheduledEvent) {
   for (const topicDoc of topicsSnapshot.docs) {
     const query = topicDoc.ref.collection("processedIds")
       .where("timestamp", "<", new Date(Date.now() - 1000 * 60 * 60 * 24 * 7));
-    await deleteCollection(query);
+
+    await deleteCollection(query, async (snapshot) => {
+      const batch = BatchUtil.getInstance();
+      snapshot.docs.forEach( (doc) => {
+        batch.deleteDoc(doc.ref);
+      });
+
+      await batch.commit();
+    });
     i++;
   }
   console.info(`Cleaned ${i} topics of processedIds`);
