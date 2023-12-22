@@ -193,10 +193,11 @@ describe("filterSubDocPathsByEntity", () => {
     (fetchIds as jest.Mock).mockClear();
   });
   it("should return sub-doc paths for a given entity", () => {
-    const result = filterSubDocPathsByEntity(Entity.Friend);
+    const result = filterSubDocPathsByEntity(Entity.Server);
     expect(result).toEqual([
-      "users/{userId}/friends/{friendId}",
-      "users/{userId}/friends/{friendId}/games/{gameId}",
+      "servers/{serverId}",
+      "servers/{serverId}/channels/{channelId}",
+      "servers/{serverId}/members/{memberId}",
     ]);
   });
 
@@ -214,8 +215,8 @@ describe("filterSubDocPathsByEntity", () => {
   });
 
   it("should return an empty array if the entity does not have any sub-doc paths", () => {
-    const result = filterSubDocPathsByEntity(Entity.Game);
-    expect(result).toEqual(["users/{userId}/friends/{friendId}/games/{gameId}"]);
+    const result = filterSubDocPathsByEntity(Entity.Member);
+    expect(result).toEqual(["servers/{serverId}/members/{memberId}"]);
   });
 });
 
