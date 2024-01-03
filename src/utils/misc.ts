@@ -4,6 +4,7 @@ import Timestamp = firestore.Timestamp;
 import GeoPoint = firestore.GeoPoint;
 import {Request, Response} from "firebase-functions";
 import Query = firestore.Query;
+import {BatchUtil} from "./batch";
 
 function isObject(item: any): boolean {
   return (typeof item === "object" && !Array.isArray(item) && item !== null);
@@ -148,14 +149,14 @@ export class LimitedSet<T> {
 }
 
 
-export async function deleteCollection(query: Query, callback: (snapshot: firestore.QuerySnapshot) => void): Promise<void> {
+export async function deleteCollection(query: Query, callback?: (snapshot: firestore.QuerySnapshot) => void): Promise<void> {
   query = query.limit(500);
   return new Promise((resolve, reject) => {
     deleteQueryBatch(query, resolve, callback).catch(reject);
   });
 }
 
-async function deleteQueryBatch(query: Query, resolve: () => void, callback: (snapshot: firestore.QuerySnapshot) => void): Promise<void> {
+async function deleteQueryBatch(query: Query, resolve: () => void, callback?: (snapshot: firestore.QuerySnapshot) => void): Promise<void> {
   const snapshot = await query.get();
 
   if (snapshot.size === 0) {
@@ -163,7 +164,16 @@ async function deleteQueryBatch(query: Query, resolve: () => void, callback: (sn
     return;
   }
 
-  await callback(snapshot);
+  const batch = BatchUtil.getInstance();
+  snapshot.docs.forEach( (doc) => {
+    batch.deleteDoc(doc.ref);
+  });
+
+  await batch.commit();
+
+  if (callback) {
+    await callback(snapshot);
+  }
 
   process.nextTick(() => {
     deleteQueryBatch(query, resolve, callback);

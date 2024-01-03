@@ -7,8 +7,6 @@ import {validatorConfig} from "../../sample-custom/validators";
 import {cleanPubSubProcessedIds, pubsubUtils} from "../../utils/pubsub";
 import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
 import * as misc from "../../utils/misc";
-import {BatchUtil} from "../../utils/batch";
-import {firestore} from "firebase-admin";
 
 const projectConfig: ProjectConfig = {
   projectId: "your-project-id",
@@ -32,8 +30,6 @@ describe("pubsubUtils", () => {
   let deleteCollectionSpy: jest.SpyInstance;
   let docSetMock: jest.Mock;
   let docGetMock: jest.Mock;
-  let batchDeleteDocMock: jest.Mock;
-  let batchCommitMock: jest.Mock;
 
   beforeEach(() => {
     colGetMock = jest.fn().mockResolvedValue({
@@ -60,23 +56,8 @@ describe("pubsubUtils", () => {
     jest.spyOn(admin.firestore(), "collection").mockReturnValue({
       get: colGetMock,
     } as any);
-    batchDeleteDocMock = jest.fn();
-    batchCommitMock = jest.fn();
-    jest.spyOn(BatchUtil, "getInstance").mockImplementation(() => {
-      return {
-        deleteDoc: batchDeleteDocMock,
-        commit: batchCommitMock,
-      } as unknown as BatchUtil;
-    });
     deleteCollectionSpy = jest.spyOn(misc, "deleteCollection")
-      .mockImplementation((query, callback) => {
-        callback({
-          docs: [
-            {ref: "@topics/topic-1/doc-1"},
-            {ref: "@topics/topic-1/doc-2"},
-            {ref: "@topics/topic-1/doc-3"},
-          ],
-        } as unknown as firestore.QuerySnapshot);
+      .mockImplementation(() => {
         return Promise.resolve();
       });
   });
@@ -112,11 +93,6 @@ describe("pubsubUtils", () => {
     expect(admin.firestore().collection).toHaveBeenCalledWith("@topics");
     expect(colGetMock).toHaveBeenCalledTimes(1);
     expect(deleteCollectionSpy).toHaveBeenCalled();
-    expect(batchDeleteDocMock).toHaveBeenCalledWith("@topics/topic-1/doc-1");
-    expect(batchDeleteDocMock).toHaveBeenCalledWith("@topics/topic-1/doc-2");
-    expect(batchDeleteDocMock).toHaveBeenCalledWith("@topics/topic-1/doc-3");
-    expect(batchDeleteDocMock).toHaveBeenCalledTimes(3);
-    expect(batchCommitMock).toHaveBeenCalledTimes(1);
     expect(console.info).toHaveBeenCalledWith("Cleaned 1 topics of processedIds");
   });
 });
