@@ -1,4 +1,10 @@
-import {computeHashCode, deepEqual, deleteCollection, LimitedSet} from "../../utils/misc";
+import {
+  computeHashCode,
+  deepEqual,
+  deleteCollection,
+  LimitedSet,
+  convertStringDate,
+} from "../../utils/misc";
 import {firestore} from "firebase-admin";
 import Timestamp = firestore.Timestamp;
 import GeoPoint = firestore.GeoPoint;
@@ -142,14 +148,12 @@ describe("LimitedSet", () => {
 
 describe("deleteCollection", () => {
   const batch = BatchUtil.getInstance();
-  let batchDeleteSpy: jest.SpyInstance;
-  let batchCommitSpy: jest.SpyInstance;
   let limitMock: jest.Mock;
+  let callbackMock: jest.Mock;
 
   beforeEach(() => {
+    callbackMock = jest.fn();
     jest.spyOn(BatchUtil, "getInstance").mockImplementation(() => batch);
-    batchDeleteSpy = jest.spyOn(batch, "deleteDoc").mockResolvedValue(undefined);
-    batchCommitSpy = jest.spyOn(batch, "commit").mockResolvedValue(undefined);
   });
 
   it("should return when snapshot size is 0", async () => {
@@ -160,10 +164,11 @@ describe("deleteCollection", () => {
     });
     await deleteCollection({
       limit: limitMock,
-    } as unknown as Query);
+    } as unknown as Query, callbackMock);
 
     expect(limitMock).toHaveBeenCalledTimes(1);
     expect(limitMock).toHaveBeenCalledWith(500);
+    expect(callbackMock).not.toHaveBeenCalled();
   });
 
   it("should delete all documents in a collection", async () => {
@@ -183,11 +188,49 @@ describe("deleteCollection", () => {
     });
     await deleteCollection({
       limit: limitMock,
-    } as unknown as Query);
+    } as unknown as Query, callbackMock);
 
     expect(limitMock).toHaveBeenCalledTimes(1);
     expect(limitMock).toHaveBeenCalledWith(500);
-    expect(batchDeleteSpy).toHaveBeenCalledTimes(100);
-    expect(batchCommitSpy).toHaveBeenCalled();
+    expect(callbackMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("convertStringDate", () => {
+  it("should convert string date to date", () => {
+    const data = {
+      "@allowedUsers": [
+        "user1",
+        "user2",
+      ],
+      "title": "Sample Title",
+      "createdAt": new Date(),
+      "private": false,
+      "completedTodos": 0,
+    };
+    const stringify = JSON.stringify(data);
+    const json = JSON.parse(stringify);
+
+    const result = convertStringDate(json);
+    expect(result).toEqual(data);
+  });
+
+  it("should convert nested string date to date", () => {
+    const data = {
+      "createdAt": new Date(),
+      "createdBy": {
+        "@id": "user1",
+        "name": "User 1",
+        "registeredAt": new Date(),
+        "more": {
+          "addedAt": admin.firestore.Timestamp.now(),
+        },
+      },
+    };
+    const stringify = JSON.stringify(data);
+    const json = JSON.parse(stringify);
+
+    const result = convertStringDate(json);
+    expect(result).toEqual(data);
   });
 });

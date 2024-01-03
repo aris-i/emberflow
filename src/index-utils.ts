@@ -36,7 +36,6 @@ export const _mockable = {
   createNowTimestamp: () => admin.firestore.Timestamp.now(),
 };
 
-
 export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: BatchUtil) {
   const {
     action,
@@ -238,11 +237,9 @@ export function groupDocsByUserAndDstPath(docsByDstPath: Map<string, LogicResult
   return {userDocsByDstPath, otherUsersDocsByDstPath};
 }
 
-
 export function getSecurityFn(entity: string): SecurityFn {
   return securityConfig[entity];
 }
-
 
 export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultDoc[]): Promise<Map<string, LogicResultDoc[]>> {
   function warnOverwritingKeys(existing: any, incoming: any, type: string, dstPath: string) {
