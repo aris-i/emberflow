@@ -48,6 +48,7 @@ import {cleanPubSubProcessedIds} from "./utils/pubsub";
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import {onDocumentCreated} from "firebase-functions/v2/firestore";
 import {onRequest} from "firebase-functions/v2/https";
+import {UserRecord} from "firebase-admin/lib/auth";
 
 export let admin: FirebaseAdmin;
 export let db: Firestore;
@@ -190,6 +191,8 @@ export function initializeEmberFlow(
   }, processScheduledEntities);
   functionsConfig["onDeleteFunctions"] = onDocumentCreated(
     "@server/delete/functions/{deleteFuncId}", onDeleteFunction);
+  functionsConfig["onUserRegister"] =
+    functions.auth.user().onCreate(onUserRegister);
 
   return {docPaths, colPaths, docPathsRegex, functionsConfig};
 }
@@ -414,3 +417,14 @@ export async function onFormSubmit(
     await formRef.update({"@status": "error", "@message": error});
   }
 }
+
+const onUserRegister = async (user: UserRecord) => {
+  await db.doc(`users/${user.uid}`).set({
+    "@id": user.uid,
+    "firstName": user.displayName || "",
+    "lastName": "",
+    "avatarUrl": user.photoURL || "",
+    "username": user.email ? user.email.split("@")[0] : "",
+    "registeredAt": admin.firestore.Timestamp.now(),
+  });
+};
