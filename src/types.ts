@@ -44,7 +44,7 @@ export interface InstructionsMessage{
 
 export interface LogicResult{
     name: string;
-    status: "finished" | "error" | "partial-result";
+    status: "finished" | "error" | "partial-result" | "cancel-then-retry";
     nextPage?: AnyObject;
     message?: string;
     execTime?: number;

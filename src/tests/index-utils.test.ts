@@ -492,7 +492,7 @@ describe("runBusinessLogics", () => {
       },
     ];
     initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
-    await runBusinessLogics(actionType, formModifiedFields, entity, action, distributeFn);
+    const runStatus = await runBusinessLogics(actionType, formModifiedFields, entity, action, distributeFn);
 
     expect(logicFn1).toHaveBeenCalledWith(action, undefined);
     expect(logicFn2).toHaveBeenCalledWith(action, undefined);
@@ -510,6 +510,7 @@ describe("runBusinessLogics", () => {
         timeFinished: expect.any(Timestamp),
       }),
     ], 0);
+    expect(runStatus).toEqual("done");
   });
 
   it("should recall logic when it returns \"partial-result\" status", async () => {
@@ -531,7 +532,7 @@ describe("runBusinessLogics", () => {
       },
     ];
     initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
-    await runBusinessLogics(actionType, formModifiedFields, entity, action, distributeFn);
+    const runStatus = await runBusinessLogics(actionType, formModifiedFields, entity, action, distributeFn);
 
     expect(logicFn1).toHaveBeenCalledWith(action, undefined);
     expect(logicFn2).toHaveBeenCalledWith(action, undefined);
@@ -558,6 +559,7 @@ describe("runBusinessLogics", () => {
         timeFinished: expect.any(Timestamp),
       }),
     ], 1]);
+    expect(runStatus).toEqual("done");
   });
 
   it("should not call any logic when no matching logics are found but distributeFn should still be " +
@@ -586,13 +588,14 @@ describe("runBusinessLogics", () => {
       },
     ];
     initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
-    await runBusinessLogics(actionType, formModifiedFields, entity, action, distributeFn);
+    const runStatus = await runBusinessLogics(actionType, formModifiedFields, entity, action, distributeFn);
 
     expect(logicFn1).not.toHaveBeenCalled();
     expect(logicFn2).not.toHaveBeenCalled();
     expect(logicFn3).not.toHaveBeenCalled();
     expect(distributeFn).toHaveBeenCalledTimes(1);
     expect(distributeFn).toHaveBeenCalledWith([], 0);
+    expect(runStatus).toEqual("no-matching-logics");
   });
 
   it("should recall logic when it returns \"partial-result\" status indefinitely up to the config maxLogicResultPages",
@@ -615,14 +618,53 @@ describe("runBusinessLogics", () => {
         },
       ];
       initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
-      await runBusinessLogics(actionType, formModifiedFields, entity, action, distributeFn);
+      const runStatus = await runBusinessLogics(actionType, formModifiedFields, entity, action, distributeFn);
 
       expect(logicFn1).toHaveBeenCalledWith(action, undefined);
       expect(logicFn2).toHaveBeenCalledWith(action, undefined);
       expect(logicFn1).toHaveBeenCalledTimes(1);
       expect(logicFn2).toHaveBeenCalledTimes(10);
       expect(distributeFn).toHaveBeenCalledTimes(10);
+      expect(runStatus).toEqual("done");
     });
+
+  it("should return when a logic returns a \"cancel-then-retry\" status", async () => {
+    logicFn2.mockResolvedValue({status: "cancel-then-retry"});
+    logicFn3.mockResolvedValue({status: "finished"});
+    const logics: LogicConfig[] = [
+      {
+        name: "Logic 1",
+        actionTypes: ["create"],
+        modifiedFields: ["field1"],
+        entities: ["user"],
+        logicFn: logicFn1,
+      },
+      {
+        name: "Logic 2",
+        actionTypes: "all",
+        modifiedFields: ["field2"],
+        entities: ["user"],
+        logicFn: logicFn2,
+      },
+      {
+        name: "Logic 3",
+        actionTypes: "all",
+        modifiedFields: ["field1"],
+        entities: ["user"],
+        logicFn: logicFn3,
+      },
+    ];
+    initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
+    const runStatus = await runBusinessLogics(actionType, formModifiedFields, entity, action, distributeFn);
+
+    expect(logicFn1).not.toHaveBeenCalled();
+    expect(logicFn2).toHaveBeenCalledWith(action, undefined);
+    expect(logicFn3).toHaveBeenCalledWith(action, undefined);
+    expect(logicFn2).toHaveBeenCalledTimes(1);
+    expect(logicFn3).toHaveBeenCalledTimes(1);
+    expect(distributeFn).not.toHaveBeenCalled();
+    expect(runStatus).toEqual("cancel-then-retry");
+  });
 });
 
 describe("groupDocsByUserAndDstPath", () => {

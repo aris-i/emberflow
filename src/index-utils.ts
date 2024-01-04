@@ -156,7 +156,7 @@ export async function runBusinessLogics(
   entity: string,
   action: Action,
   distributeFn: (logicResults: LogicResult[], page: number) => Promise<void>,
-) {
+): Promise<"done" | "cancel-then-retry" | "no-matching-logics"> {
   const matchingLogics = logicConfigs.filter((logic) => {
     return (
       (logic.actionTypes === "all" || logic.actionTypes.includes(actionType)) &&
@@ -168,7 +168,7 @@ export async function runBusinessLogics(
   if (matchingLogics.length === 0) {
     console.log("No matching logics found");
     await distributeFn([], 0);
-    return;
+    return "no-matching-logics";
   }
 
   const config = (await db.doc("@server/config").get()).data();
@@ -197,6 +197,9 @@ export async function runBusinessLogics(
         }
 
         logicResults.push({...result, execTime, timeFinished: admin.firestore.Timestamp.now()});
+        if (status === "cancel-then-retry") {
+          return "cancel-then-retry";
+        }
       } catch (e) {
         const end = performance.now();
         const execTime = end - start;
@@ -218,6 +221,7 @@ export async function runBusinessLogics(
       break;
     }
   }
+  return "done";
 }
 
 export function groupDocsByUserAndDstPath(docsByDstPath: Map<string, LogicResultDoc[]>, userId: string) {

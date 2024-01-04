@@ -318,7 +318,7 @@ export async function onFormSubmit(
 
     console.info("Running Business Logics");
     let errorMessage = "";
-    await runBusinessLogics(
+    const runStatus = await runBusinessLogics(
       actionType,
       formModifiedFields,
       entity,
@@ -405,6 +405,12 @@ export async function onFormSubmit(
         await queueRunViewLogics(userDocs);
       }
     );
+
+    if (runStatus === "cancel-then-retry") {
+      await formRef.update({"@status": "cancelled", "@message": "cancel-then-retry received " +
+              "from business logic"});
+      return;
+    }
 
     if (errorMessage) {
       await actionRef.update({status: "finished-with-error", message: errorMessage});
