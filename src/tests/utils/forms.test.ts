@@ -16,7 +16,6 @@ import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
 import spyOn = jest.spyOn;
 import * as misc from "../../utils/misc";
 import {firestore} from "firebase-admin";
-import {BatchUtil} from "../../utils/batch";
 
 const projectConfig: ProjectConfig = {
   projectId: "your-project-id",
@@ -145,8 +144,6 @@ describe("onMessageSubmitFormQueue", () => {
 });
 
 describe("cleanActionsAndForms", () => {
-  let batchDeleteDocMock: jest.Mock;
-  let batchCommitMock: jest.Mock;
   let deleteCollectionSpy: jest.SpyInstance;
   let formRefSpy: jest.SpyInstance;
   let formUpdateMock: jest.Mock;
@@ -160,7 +157,6 @@ describe("cleanActionsAndForms", () => {
             uid: "test-uid-1",
           },
         }),
-        ref: "@actions/action-doc-id-1",
       },
       {
         data: () => ({
@@ -169,7 +165,6 @@ describe("cleanActionsAndForms", () => {
             uid: "test-uid-2",
           },
         }),
-        ref: "@actions/action-doc-id-2",
       },
       {
         data: () => ({
@@ -178,23 +173,16 @@ describe("cleanActionsAndForms", () => {
             uid: "test-uid-1",
           },
         }),
-        ref: "@actions/action-doc-id-3",
       },
     ],
   };
 
   beforeEach(() => {
-    batchDeleteDocMock = jest.fn();
-    batchCommitMock = jest.fn();
-    jest.spyOn(BatchUtil, "getInstance").mockImplementation(() => {
-      return {
-        deleteDoc: batchDeleteDocMock,
-        commit: batchCommitMock,
-      } as unknown as BatchUtil;
-    });
     deleteCollectionSpy = jest.spyOn(misc, "deleteCollection")
-      .mockImplementation((query, callback) => {
-        callback(snapshot as unknown as firestore.QuerySnapshot);
+      .mockImplementation(async (query, callback) => {
+        if (callback) {
+          await callback(snapshot as unknown as firestore.QuerySnapshot);
+        }
         return Promise.resolve();
       });
 
@@ -214,17 +202,12 @@ describe("cleanActionsAndForms", () => {
     expect(deleteCollectionSpy).toHaveBeenCalledTimes(1);
     expect(formRefSpy).toHaveBeenCalled();
     expect(formRefSpy).toHaveBeenCalledTimes(1);
-    expect(batchDeleteDocMock).toHaveBeenCalledWith("@actions/action-doc-id-1");
-    expect(batchDeleteDocMock).toHaveBeenCalledWith("@actions/action-doc-id-2");
-    expect(batchDeleteDocMock).toHaveBeenCalledWith("@actions/action-doc-id-3");
-    expect(batchDeleteDocMock).toHaveBeenCalledTimes(3);
     expect(formUpdateMock).toHaveBeenCalledWith({
       "forms/test-uid-1/test-form-id-1": null,
       "forms/test-uid-1/test-form-id-2": null,
       "forms/test-uid-2/test-form-id-1": null,
     });
     expect(formUpdateMock).toHaveBeenCalledTimes(1);
-    expect(batchCommitMock).toHaveBeenCalledTimes(1);
     expect(console.info).toHaveBeenCalledWith("Cleaned actions and forms");
   });
 });

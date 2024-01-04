@@ -147,13 +147,21 @@ describe("LimitedSet", () => {
 });
 
 describe("deleteCollection", () => {
-  const batch = BatchUtil.getInstance();
   let limitMock: jest.Mock;
   let callbackMock: jest.Mock;
+  let batchDeleteDocMock: jest.Mock;
+  let batchCommitMock: jest.Mock;
 
   beforeEach(() => {
     callbackMock = jest.fn();
-    jest.spyOn(BatchUtil, "getInstance").mockImplementation(() => batch);
+    batchDeleteDocMock = jest.fn();
+    batchCommitMock = jest.fn();
+    jest.spyOn(BatchUtil, "getInstance").mockImplementation(() => {
+      return {
+        deleteDoc: batchDeleteDocMock,
+        commit: batchCommitMock,
+      } as unknown as BatchUtil;
+    });
   });
 
   it("should return when snapshot size is 0", async () => {
@@ -168,6 +176,8 @@ describe("deleteCollection", () => {
 
     expect(limitMock).toHaveBeenCalledTimes(1);
     expect(limitMock).toHaveBeenCalledWith(500);
+    expect(batchDeleteDocMock).not.toHaveBeenCalled();
+    expect(batchCommitMock).not.toHaveBeenCalled();
     expect(callbackMock).not.toHaveBeenCalled();
   });
 
@@ -192,6 +202,8 @@ describe("deleteCollection", () => {
 
     expect(limitMock).toHaveBeenCalledTimes(1);
     expect(limitMock).toHaveBeenCalledWith(500);
+    expect(batchDeleteDocMock).toHaveBeenCalledTimes(100);
+    expect(batchCommitMock).toHaveBeenCalledTimes(1);
     expect(callbackMock).toHaveBeenCalledTimes(1);
   });
 });

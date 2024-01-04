@@ -6,7 +6,6 @@ import {submitForm} from "emberflow-admin-client/lib";
 import {pubsubUtils} from "./pubsub";
 import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
 import {deleteCollection} from "./misc";
-import {BatchUtil} from "./batch";
 
 export async function queueSubmitForm(formData: FormData) {
   const topic = pubsub.topic(SUBMIT_FORM_TOPIC_NAME);
@@ -51,16 +50,13 @@ export async function cleanActionsAndForms(event: ScheduledEvent) {
     .where("timestamp", "<", new Date(Date.now() - 1000 * 60 * 60 * 24 * 7));
 
   await deleteCollection(query, async (snapshot) => {
-    const batch = BatchUtil.getInstance();
     const forms: {[key: string]: null} = {};
     snapshot.docs.forEach( (doc) => {
       const {eventContext: {formId, uid}} = doc.data();
       forms[`forms/${uid}/${formId}`] = null;
-      batch.deleteDoc(doc.ref);
     });
 
     await rtdb.ref().update(forms);
-    await batch.commit();
   });
 
   console.info("Cleaned actions and forms");
