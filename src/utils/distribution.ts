@@ -80,7 +80,7 @@ export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublis
     const instructionsMessage: InstructionsMessage = event.data.message.json;
     console.log("Received user logic result doc:", instructionsMessage);
 
-    console.info("Running For Distribution");
+    console.info("Running Instructions");
     const {dstPath, instructions} = instructionsMessage;
     const updateData: {[key: string]: FieldValue} = {};
 
