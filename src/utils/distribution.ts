@@ -103,6 +103,28 @@ export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublis
         } else {
           updateData[property] = admin.firestore.FieldValue.increment(-decrementValue);
         }
+      } else if (instruction.startsWith("arr")) {
+        const operation = instruction.slice(3, 4);
+
+        const regex = /\((.*?)\)/;
+        const match = instruction.match(regex);
+        if (match) {
+          const stringValues = match[1];
+          if (stringValues) {
+            const arrayValues = stringValues.split(",").map((value) => value.trim());
+            if (operation === "+") {
+              updateData[property] = admin.firestore.FieldValue.arrayUnion(...arrayValues);
+            } else if (operation === "-") {
+              updateData[property] = admin.firestore.FieldValue.arrayRemove(...arrayValues);
+            } else {
+              console.log(`Invalid array instruction ${instruction} for property ${property}`);
+            }
+          } else {
+            console.log(`No values found in instruction ${instruction} for property ${property}`);
+          }
+        } else {
+          console.log(`Invalid array instruction ${instruction} for property ${property}`);
+        }
       } else {
         console.log(`Invalid instruction ${instruction} for property ${property}`);
       }
