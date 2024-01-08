@@ -112,17 +112,17 @@ export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublis
           continue;
         }
 
-        const params = match[1];
-        if (!params) {
+        const paramsStr = match[1];
+        if (!paramsStr) {
           console.log(`No values found in instruction ${instruction} for property ${property}`);
           continue;
         }
 
-        const arrayValues = params.split(",").map((value) => value.trim());
+        const params = paramsStr.split(",").map((value) => value.trim());
         if (instruction.startsWith("arr+")) {
-          updateData[property] = admin.firestore.FieldValue.arrayUnion(...arrayValues);
+          updateData[property] = admin.firestore.FieldValue.arrayUnion(...params);
         } else {
-          updateData[property] = admin.firestore.FieldValue.arrayRemove(...arrayValues);
+          updateData[property] = admin.firestore.FieldValue.arrayRemove(...params);
         }
       } else {
         console.log(`Invalid instruction ${instruction} for property ${property}`);
