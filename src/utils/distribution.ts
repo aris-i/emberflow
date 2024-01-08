@@ -112,13 +112,13 @@ export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublis
           continue;
         }
 
-        const stringValues = match[1];
-        if (!stringValues) {
+        const params = match[1];
+        if (!params) {
           console.log(`No values found in instruction ${instruction} for property ${property}`);
           continue;
         }
 
-        const arrayValues = stringValues.split(",").map((value) => value.trim());
+        const arrayValues = params.split(",").map((value) => value.trim());
         if (instruction.startsWith("arr+")) {
           updateData[property] = admin.firestore.FieldValue.arrayUnion(...arrayValues);
         } else {
