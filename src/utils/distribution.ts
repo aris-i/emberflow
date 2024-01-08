@@ -80,7 +80,7 @@ export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublis
     const instructionsMessage: InstructionsMessage = event.data.message.json;
     console.log("Received user logic result doc:", instructionsMessage);
 
-    console.info("Running For Distribution");
+    console.info("Running Instructions");
     const {dstPath, instructions} = instructionsMessage;
     const updateData: {[key: string]: FieldValue} = {};
 
@@ -102,6 +102,27 @@ export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublis
           console.log(`Invalid decrement value ${instruction} for property ${property}`);
         } else {
           updateData[property] = admin.firestore.FieldValue.increment(-decrementValue);
+        }
+      } else if (instruction.startsWith("arr+") || instruction.startsWith("arr-")) {
+        const regex = /\((.*?)\)/;
+        const match = instruction.match(regex);
+
+        if (!match) {
+          console.log(`Invalid instruction ${instruction} for property ${property}`);
+          continue;
+        }
+
+        const paramsStr = match[1];
+        if (!paramsStr) {
+          console.log(`No values found in instruction ${instruction} for property ${property}`);
+          continue;
+        }
+
+        const params = paramsStr.split(",").map((value) => value.trim());
+        if (instruction.startsWith("arr+")) {
+          updateData[property] = admin.firestore.FieldValue.arrayUnion(...params);
+        } else {
+          updateData[property] = admin.firestore.FieldValue.arrayRemove(...params);
         }
       } else {
         console.log(`Invalid instruction ${instruction} for property ${property}`);
