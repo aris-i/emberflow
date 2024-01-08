@@ -225,9 +225,9 @@ describe("onMessageInstructionsQueue", () => {
     } as CloudEvent<MessagePublishedData>;
     await distribution.onMessageInstructionsQueue(event);
 
-    expect(console.log).toHaveBeenCalledWith("Invalid array instruction arr~(Earth) for property planets");
-    expect(console.log).toHaveBeenCalledWith("Invalid array instruction arr-[Asia] for property continents");
-    expect(console.log).toHaveBeenCalledWith("Invalid array instruction arr+[Philippines] for property countries");
+    expect(console.log).toHaveBeenCalledWith("Invalid instruction arr~(Earth) for property planets");
+    expect(console.log).toHaveBeenCalledWith("Invalid instruction arr-[Asia] for property continents");
+    expect(console.log).toHaveBeenCalledWith("Invalid instruction arr+[Philippines] for property countries");
     expect(docSetMock.mock.calls[0][0]).toStrictEqual({});
   });
 
