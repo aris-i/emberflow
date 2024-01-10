@@ -48,10 +48,12 @@ const getMock: CollectionReference = {
   data: dataMock,
 } as unknown as CollectionReference;
 
+const updateMock: jest.Mock = jest.fn();
+
 const docMock: DocumentReference = {
   set: jest.fn(),
   get: jest.fn().mockResolvedValue(getMock),
-  update: jest.fn(),
+  update: updateMock,
   collection: jest.fn(() => collectionMock),
 } as unknown as DocumentReference;
 
@@ -122,6 +124,15 @@ describe("onFormSubmit", () => {
     entity,
   };
 
+  const document = {
+    "field1": "oldValue",
+    "field2": "oldValue",
+    "field3": {
+      nestedField1: "oldValue",
+      nestedField2: "oldValue",
+    },
+  };
+
   beforeEach(() => {
     jest.spyOn(_mockable, "createNowTimestamp").mockReturnValue(Timestamp.now());
     jest.spyOn(console, "log").mockImplementation();
@@ -131,8 +142,8 @@ describe("onFormSubmit", () => {
       entityId: "test-uid",
     });
     refMock.update.mockReset();
+    updateMock.mockReset();
   });
-
 
   it("should return when there's no matched entity", async () => {
     const form = {
@@ -146,17 +157,6 @@ describe("onFormSubmit", () => {
     };
 
     const event = createEvent(form);
-
-    const document = {
-      "field1": "oldValue",
-      "field2": "oldValue",
-      "field3": {
-        nestedField1: "oldValue",
-        nestedField2: "oldValue",
-      },
-    };
-    dataMock.mockReturnValue(document);
-
     parseEntityMock.mockReturnValue({
       entityId: "test-id",
     });
@@ -181,17 +181,6 @@ describe("onFormSubmit", () => {
     };
 
     const event = createEvent(form, "user-id");
-
-    const document = {
-      "field1": "oldValue",
-      "field2": "oldValue",
-      "field3": {
-        nestedField1: "oldValue",
-        nestedField2: "oldValue",
-      },
-    };
-    dataMock.mockReturnValue(document);
-
     await onFormSubmit(event);
 
     expect(refMock.update).toHaveBeenCalledWith({
@@ -199,6 +188,22 @@ describe("onFormSubmit", () => {
       "@message": "User id from path does not match user id from event params",
     });
     expect(console.warn).toHaveBeenCalledWith("User id from path does not match user id from event params");
+  });
+
+  it("should pass user validation when target docPath is user for service account", async () => {
+    const form = {
+      "formData": JSON.stringify({
+        "field1": "newValue",
+        "field2": "oldValue",
+        "@actionType": "update",
+        "@docPath": "users/another-user-id",
+      }),
+      "@status": "submit",
+    };
+
+    const event = createEvent(form, "service");
+    await onFormSubmit(event);
+    expect(updateMock.mock.calls[0][0]).toEqual({status: "finished"});
   });
 
   it("should return when there's no provided @actionType", async () => {
@@ -212,17 +217,6 @@ describe("onFormSubmit", () => {
     };
 
     const event = createEvent(form);
-
-    const document = {
-      "field1": "oldValue",
-      "field2": "oldValue",
-      "field3": {
-        nestedField1: "oldValue",
-        nestedField2: "oldValue",
-      },
-    };
-    dataMock.mockReturnValue(document);
-
     await onFormSubmit(event);
 
     expect(refMock.update).toHaveBeenCalledWith({
@@ -244,19 +238,7 @@ describe("onFormSubmit", () => {
     };
 
     const event = createEvent(form);
-
-    const document = {
-      "field1": "oldValue",
-      "field2": "oldValue",
-      "field3": {
-        nestedField1: "oldValue",
-        nestedField2: "oldValue",
-      },
-    };
-    dataMock.mockReturnValueOnce(document);
-
-    const user = undefined;
-    dataMock.mockReturnValueOnce(user);
+    dataMock.mockReturnValueOnce(document).mockReturnValueOnce(undefined);
 
     const validateFormMock = jest.spyOn(indexutils, "validateForm");
     validateFormMock.mockResolvedValue([false, {}] as ValidateFormResult);
@@ -289,20 +271,11 @@ describe("onFormSubmit", () => {
     };
 
     const event = createEvent(form);
-
-    const document = {
-      "field1": "oldValue",
-      "field2": "oldValue",
-      "field3": {
-        nestedField1: "oldValue",
-        nestedField2: "oldValue",
-      },
-    };
-    dataMock.mockReturnValueOnce(document);
-
     const user = {
       "@id": "forDistribution",
+      "username": "forDistribution",
     };
+    dataMock.mockReturnValueOnce(document).mockReturnValueOnce(user);
 
     const validateFormMock = jest.spyOn(indexutils, "validateForm");
     validateFormMock.mockResolvedValue([false, {}] as ValidateFormResult);
@@ -776,7 +749,7 @@ describe("onFormSubmit", () => {
 
     expect(viewLogics.queueRunViewLogics).toHaveBeenCalledWith(userDocs);
 
-    expect(docMock.update).toHaveBeenCalledTimes(1);
-    expect((docMock.update as jest.Mock).mock.calls[0][0]).toEqual({status: "finished"});
+    expect(updateMock).toHaveBeenCalledTimes(1);
+    expect(updateMock.mock.calls[0][0]).toEqual({status: "finished"});
   });
 });

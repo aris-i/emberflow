@@ -99,6 +99,7 @@ describe("onMessageSubmitFormQueue", () => {
 
   it("should submit doc", async () => {
     isProcessedMock.mockResolvedValueOnce(false);
+    const submitFormAs = "test-user";
     const formData: FormData = {
       "@docPath": "users/test-uid",
       "@actionType": "create",
@@ -107,13 +108,16 @@ describe("onMessageSubmitFormQueue", () => {
       id: "test-event",
       data: {
         message: {
-          json: formData,
+          json: {
+            ...formData,
+            "@submitFormAs": submitFormAs,
+          },
         },
       },
     } as CloudEvent<MessagePublishedData>;
     const result = await forms.onMessageSubmitFormQueue(event);
 
-    expect(submitFormSpy).toHaveBeenCalledWith(formData);
+    expect(submitFormSpy).toHaveBeenCalledWith(formData, submitFormAs);
     expect(trackProcessedIdsMock).toHaveBeenCalledWith(SUBMIT_FORM_TOPIC_NAME, event.id);
     expect(result).toEqual("Processed form data");
   });

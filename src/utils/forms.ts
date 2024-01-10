@@ -32,7 +32,9 @@ export async function onMessageSubmitFormQueue(event: CloudEvent<MessagePublishe
   let formData = event.data.message.json;
   console.log("Received form submission:", formData);
 
-  formData = await submitForm(formData);
+  const submitFormAs = formData["@submitFormAs"];
+  delete formData["@submitFormAs"];
+  formData = await submitForm(formData, submitFormAs);
   const status = formData["@status"];
   const message = formData["@message"];
   if (status === "cancelled" && message.startsWith("cancel-then-retry")) {
