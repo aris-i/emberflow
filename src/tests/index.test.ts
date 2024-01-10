@@ -122,6 +122,15 @@ describe("onFormSubmit", () => {
     entity,
   };
 
+  const document = {
+    "field1": "oldValue",
+    "field2": "oldValue",
+    "field3": {
+      nestedField1: "oldValue",
+      nestedField2: "oldValue",
+    },
+  };
+
   beforeEach(() => {
     jest.spyOn(_mockable, "createNowTimestamp").mockReturnValue(Timestamp.now());
     jest.spyOn(console, "log").mockImplementation();
@@ -132,7 +141,6 @@ describe("onFormSubmit", () => {
     });
     refMock.update.mockReset();
   });
-
 
   it("should return when there's no matched entity", async () => {
     const form = {
@@ -146,17 +154,6 @@ describe("onFormSubmit", () => {
     };
 
     const event = createEvent(form);
-
-    const document = {
-      "field1": "oldValue",
-      "field2": "oldValue",
-      "field3": {
-        nestedField1: "oldValue",
-        nestedField2: "oldValue",
-      },
-    };
-    dataMock.mockReturnValue(document);
-
     parseEntityMock.mockReturnValue({
       entityId: "test-id",
     });
@@ -181,17 +178,6 @@ describe("onFormSubmit", () => {
     };
 
     const event = createEvent(form, "user-id");
-
-    const document = {
-      "field1": "oldValue",
-      "field2": "oldValue",
-      "field3": {
-        nestedField1: "oldValue",
-        nestedField2: "oldValue",
-      },
-    };
-    dataMock.mockReturnValue(document);
-
     await onFormSubmit(event);
 
     expect(refMock.update).toHaveBeenCalledWith({
@@ -212,17 +198,6 @@ describe("onFormSubmit", () => {
     };
 
     const event = createEvent(form);
-
-    const document = {
-      "field1": "oldValue",
-      "field2": "oldValue",
-      "field3": {
-        nestedField1: "oldValue",
-        nestedField2: "oldValue",
-      },
-    };
-    dataMock.mockReturnValue(document);
-
     await onFormSubmit(event);
 
     expect(refMock.update).toHaveBeenCalledWith({
@@ -244,19 +219,7 @@ describe("onFormSubmit", () => {
     };
 
     const event = createEvent(form);
-
-    const document = {
-      "field1": "oldValue",
-      "field2": "oldValue",
-      "field3": {
-        nestedField1: "oldValue",
-        nestedField2: "oldValue",
-      },
-    };
-    dataMock.mockReturnValueOnce(document);
-
-    const user = undefined;
-    dataMock.mockReturnValueOnce(user);
+    dataMock.mockReturnValueOnce(document).mockReturnValueOnce(undefined);
 
     const validateFormMock = jest.spyOn(indexutils, "validateForm");
     validateFormMock.mockResolvedValue([false, {}] as ValidateFormResult);
@@ -289,20 +252,11 @@ describe("onFormSubmit", () => {
     };
 
     const event = createEvent(form);
-
-    const document = {
-      "field1": "oldValue",
-      "field2": "oldValue",
-      "field3": {
-        nestedField1: "oldValue",
-        nestedField2: "oldValue",
-      },
-    };
-    dataMock.mockReturnValueOnce(document);
-
     const user = {
       "@id": "forDistribution",
+      "username": "forDistribution",
     };
+    dataMock.mockReturnValueOnce(document).mockReturnValueOnce(user);
 
     const validateFormMock = jest.spyOn(indexutils, "validateForm");
     validateFormMock.mockResolvedValue([false, {}] as ValidateFormResult);

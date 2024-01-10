@@ -100,7 +100,7 @@ export function initializeEmberFlow(
   securityConfig = customSecurityConfig;
   validatorConfig = customValidatorConfig;
   logicConfigs = [...customLogicConfigs];
-  initClient(admin.app());
+  initClient(admin.app(), "service");
 
   const {
     docPaths: dp,
@@ -225,7 +225,7 @@ export async function onFormSubmit(
 
     const isUsersDocPath = docPath.startsWith("users");
 
-    console.info("Validating userId");
+    console.info(`Validating userId ${userId}`);
     if (isUsersDocPath && !docPath.startsWith(`users/${userId}`)) {
       const message = "User id from path does not match user id from event params";
       console.warn(message);
@@ -252,8 +252,9 @@ export async function onFormSubmit(
 
     const document = (await db.doc(docPath).get()).data() || {};
     const formModifiedFields = getFormModifiedFields(form, document);
+    const isServiceAccount = userId === "service";
     let user;
-    if (isUsersDocPath) {
+    if (!isServiceAccount) {
       user = (await db.doc(`users/${userId}`).get()).data();
       if (!user) {
         const message = "No user data found";
