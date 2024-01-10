@@ -224,9 +224,10 @@ export async function onFormSubmit(
     }
 
     const isUsersDocPath = docPath.startsWith("users");
+    const isServiceAccount = userId === "service";
 
-    console.info(`Validating userId ${userId}`);
-    if (isUsersDocPath && !docPath.startsWith(`users/${userId}`)) {
+    console.info(`Validating userId: ${userId}`);
+    if (!isServiceAccount && isUsersDocPath && !docPath.startsWith(`users/${userId}`)) {
       const message = "User id from path does not match user id from event params";
       console.warn(message);
       await formRef.update({"@status": "error", "@message": message});
@@ -252,7 +253,6 @@ export async function onFormSubmit(
 
     const document = (await db.doc(docPath).get()).data() || {};
     const formModifiedFields = getFormModifiedFields(form, document);
-    const isServiceAccount = userId === "service";
     let user;
     if (!isServiceAccount) {
       user = (await db.doc(`users/${userId}`).get()).data();

@@ -48,10 +48,12 @@ const getMock: CollectionReference = {
   data: dataMock,
 } as unknown as CollectionReference;
 
+const updateMock: jest.Mock = jest.fn();
+
 const docMock: DocumentReference = {
   set: jest.fn(),
   get: jest.fn().mockResolvedValue(getMock),
-  update: jest.fn(),
+  update: updateMock,
   collection: jest.fn(() => collectionMock),
 } as unknown as DocumentReference;
 
@@ -140,6 +142,7 @@ describe("onFormSubmit", () => {
       entityId: "test-uid",
     });
     refMock.update.mockReset();
+    updateMock.mockReset();
   });
 
   it("should return when there's no matched entity", async () => {
@@ -185,6 +188,22 @@ describe("onFormSubmit", () => {
       "@message": "User id from path does not match user id from event params",
     });
     expect(console.warn).toHaveBeenCalledWith("User id from path does not match user id from event params");
+  });
+
+  it("should pass user validation when target docPath is user for service account", async () => {
+    const form = {
+      "formData": JSON.stringify({
+        "field1": "newValue",
+        "field2": "oldValue",
+        "@actionType": "update",
+        "@docPath": "users/another-user-id",
+      }),
+      "@status": "submit",
+    };
+
+    const event = createEvent(form, "service");
+    await onFormSubmit(event);
+    expect(updateMock.mock.calls[0][0]).toEqual({status: "finished"});
   });
 
   it("should return when there's no provided @actionType", async () => {
@@ -730,7 +749,7 @@ describe("onFormSubmit", () => {
 
     expect(viewLogics.queueRunViewLogics).toHaveBeenCalledWith(userDocs);
 
-    expect(docMock.update).toHaveBeenCalledTimes(1);
-    expect((docMock.update as jest.Mock).mock.calls[0][0]).toEqual({status: "finished"});
+    expect(updateMock).toHaveBeenCalledTimes(1);
+    expect(updateMock.mock.calls[0][0]).toEqual({status: "finished"});
   });
 });
