@@ -16,6 +16,7 @@ jest.mock("../../index", () => {
     ...originalModule,
     docPaths: {
       user: "users/{userId}",
+      topics: "topics/{topicId}",
       friend: "users/{userId}/friends/{friendId}",
       post: "users/{userId}/posts/{postId}",
       comment: "users/{userId}/posts/{postId}/comments/{commentId}",
@@ -48,6 +49,12 @@ const vd2: ViewDefinition = {
   destProp: "postedBy",
 };
 
+const vd3: ViewDefinition = {
+  srcEntity: "",
+  srcProps: ["title", "summary"],
+  destEntity: "topics",
+};
+
 const testLogicResultDoc: LogicResultDoc = {
   action: "merge",
   dstPath: "users/1234",
@@ -72,10 +79,28 @@ const testPeerLogicResultDoc: LogicResultDoc = {
   priority: "normal",
 };
 
+const topicPeerLogicResultDoc: LogicResultDoc = {
+  action: "merge",
+  dstPath: "topics/123",
+  doc: {
+    title: "Let's start a business!",
+  },
+  priority: "normal",
+};
+
 const testLogicResultDocDelete: LogicResultDoc = {
   action: "delete",
   dstPath: "users/1234",
   priority: "normal",
+};
+
+const topicLogicResultDoc: LogicResultDoc = {
+  action: "merge",
+  dstPath: "topics/456",
+  priority: "normal",
+  doc: {
+    title: "How to start a business?",
+  },
 };
 
 describe("createViewLogicFn", () => {
@@ -96,6 +121,9 @@ describe("createViewLogicFn", () => {
       .mockReturnValueOnce(Promise.resolve([
         "users/456/friends/1234",
         "users/789/friends/1234",
+      ]))
+      .mockReturnValueOnce(Promise.resolve([
+        "topics/456",
       ]));
 
     // Create the logic function using the viewDefinition
@@ -179,6 +207,24 @@ describe("createViewLogicFn", () => {
 
     expect(hydrateDocPathSpy.mock.calls[2][0]).toEqual("users/{userId}/friends/1234");
     expect(hydrateDocPathSpy.mock.calls[2][1]).toEqual({});
+
+    // Create the logic function using the viewDefinition
+    const logicFn3 = viewLogics.createViewLogicFn(vd3);
+
+    // Call the logic function with the test action
+    const result3 = await logicFn3(topicLogicResultDoc);
+
+    expect(result3).toBeDefined();
+    expect(result3.documents).toBeDefined();
+    expect(result3.documents.length).toEqual(1);
+
+    document = result3.documents[0];
+    expect(document).toHaveProperty("action", "merge");
+    expect(document).toHaveProperty("dstPath", "topics/456");
+    expect(document.doc).toEqual({"title": "How to start a business?"});
+
+    expect(hydrateDocPathSpy.mock.calls[3][0]).toEqual("topics/456");
+    expect(hydrateDocPathSpy.mock.calls[3][1]).toEqual({});
   });
 });
 
@@ -191,14 +237,18 @@ describe("syncPeerViews", () => {
         "users/456/posts/5678/comments/9876",
         "users/789/posts/5678/comments/9876",
         "users/890/posts/5678/comments/9876",
+      ]))
+      .mockReturnValueOnce(Promise.resolve([
+        "topics/123",
       ]));
     const findMatchingDocPathRegexSpy = jest.spyOn(pathsutils, "findMatchingDocPathRegex");
     findMatchingDocPathRegexSpy
-      .mockReturnValue({entity: "comment", regex: /^users\/([^/]+)\/posts\/([^/]+)\/comments\/([^/]+)$/});
+      .mockReturnValueOnce({entity: "comment", regex: /^users\/([^/]+)\/posts\/([^/]+)\/comments\/([^/]+)$/})
+      .mockReturnValueOnce({entity: "topics", regex: /^topics\/([^/]+)$/});
 
     // Call the syncPeerViews function with the test logic result doc
     // users/1234/posts/5678/comments/9876
-    const result = await viewLogics.syncPeerViews(testPeerLogicResultDoc);
+    const result= await viewLogics.syncPeerViews(testPeerLogicResultDoc);
 
     // Add your expectations here, e.g., result.documents should have the correct properties and values
     expect(result).toBeDefined();
@@ -231,6 +281,18 @@ describe("syncPeerViews", () => {
         value: "1234",
       },
     });
+
+    const result2= await viewLogics.syncPeerViews(topicPeerLogicResultDoc);
+
+    expect(result2).toBeDefined();
+    expect(result2.documents).toBeDefined();
+    expect(result2.documents.length).toEqual(1);
+
+    document = result2.documents[0];
+    expect(document).toHaveProperty("action", "merge");
+    expect(document).toHaveProperty("dstPath", "topics/123");
+    expect(document.doc).toEqual({"title": "Let's start a business!"});
+    expect(document.instructions).toBeUndefined();
   });
 });
 
@@ -398,6 +460,19 @@ describe("queueForPeerSync", () => {
 
     expect(topicSpy).toHaveBeenCalledWith(PEER_SYNC_TOPIC_NAME);
     expect(publishMessageMock).toHaveBeenCalledWith({json: doc1});
+  });
+
+  it("should not queue docs for peer syncing", async () => {
+    const doc1: LogicResultDoc = {
+      action: "merge",
+      priority: "normal",
+      doc: {name: "test-doc-name-updated"},
+      dstPath: "topics/test-topic-id",
+    };
+    await viewLogics.queueForPeerSync(doc1);
+
+    expect(topicSpy).toHaveBeenCalledWith(PEER_SYNC_TOPIC_NAME);
+    expect(publishMessageMock).not.toHaveBeenCalled();
   });
 });
 

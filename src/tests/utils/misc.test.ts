@@ -229,13 +229,16 @@ describe("convertStringDate", () => {
 
   it("should convert nested string date to date", () => {
     const data = {
-      "createdAt": new Date(),
+      "createdDate": new Date(),
+      "createdTimestamp": admin.firestore.Timestamp.now(),
       "createdBy": {
         "@id": "user1",
         "name": "User 1",
-        "registeredAt": new Date(),
+        "registeredDate": new Date(),
+        "registeredTimestamp": admin.firestore.Timestamp.now(),
         "more": {
-          "addedAt": admin.firestore.Timestamp.now(),
+          "updatedDate": new Date(),
+          "updatedTimestamp": admin.firestore.Timestamp.now(),
         },
       },
     };
@@ -243,6 +246,6 @@ describe("convertStringDate", () => {
     const json = JSON.parse(stringify);
 
     const result = convertStringDate(json);
-    expect(result).toEqual(data);
+    expect(result).toStrictEqual(data);
   });
 });

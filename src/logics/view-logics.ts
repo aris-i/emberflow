@@ -203,6 +203,11 @@ export const queueForPeerSync = async (...userLogicResultDocs: LogicResultDoc[])
 
   try {
     for (const userLogicResultDoc of userLogicResultDocs) {
+      const {dstPath} = userLogicResultDoc;
+      if (!dstPath.startsWith("users")) {
+        // Peer sync only applies to user documents
+        continue;
+      }
       const messageId = await topic.publishMessage({json: userLogicResultDoc});
       console.log(`Message ${messageId} published.`);
     }
