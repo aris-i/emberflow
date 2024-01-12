@@ -50,9 +50,10 @@ const vd2: ViewDefinition = {
 };
 
 const vd3: ViewDefinition = {
-  srcEntity: "",
-  srcProps: ["title", "summary"],
+  srcEntity: "users",
+  srcProps: ["username", "avatarUrl"],
   destEntity: "topics",
+  destProp: "createdBy",
 };
 
 const testLogicResultDoc: LogicResultDoc = {
@@ -79,27 +80,18 @@ const testPeerLogicResultDoc: LogicResultDoc = {
   priority: "normal",
 };
 
-const topicPeerLogicResultDoc: LogicResultDoc = {
-  action: "merge",
-  dstPath: "topics/123",
-  doc: {
-    title: "Let's start a business!",
-  },
-  priority: "normal",
-};
-
 const testLogicResultDocDelete: LogicResultDoc = {
   action: "delete",
   dstPath: "users/1234",
   priority: "normal",
 };
 
-const topicLogicResultDoc: LogicResultDoc = {
+const userLogicResultDoc: LogicResultDoc = {
   action: "merge",
-  dstPath: "topics/456",
+  dstPath: "users/123",
   priority: "normal",
   doc: {
-    title: "How to start a business?",
+    username: "new_username",
   },
 };
 
@@ -123,6 +115,7 @@ describe("createViewLogicFn", () => {
         "users/789/friends/1234",
       ]))
       .mockReturnValueOnce(Promise.resolve([
+        "topics/123",
         "topics/456",
       ]));
 
@@ -212,19 +205,30 @@ describe("createViewLogicFn", () => {
     const logicFn3 = viewLogics.createViewLogicFn(vd3);
 
     // Call the logic function with the test action
-    const result3 = await logicFn3(topicLogicResultDoc);
+    const result3 = await logicFn3(userLogicResultDoc);
 
     expect(result3).toBeDefined();
     expect(result3.documents).toBeDefined();
-    expect(result3.documents.length).toEqual(1);
+    expect(result3.documents.length).toEqual(2);
 
     document = result3.documents[0];
     expect(document).toHaveProperty("action", "merge");
-    expect(document).toHaveProperty("dstPath", "topics/456");
-    expect(document.doc).toEqual({"title": "How to start a business?"});
+    expect(document).toHaveProperty("dstPath", "topics/123");
+    expect(document.doc).toEqual({"createdBy.username": "new_username"});
 
-    expect(hydrateDocPathSpy.mock.calls[3][0]).toEqual("topics/456");
-    expect(hydrateDocPathSpy.mock.calls[3][1]).toEqual({});
+    document = result3.documents[1];
+    expect(document).toHaveProperty("action", "merge");
+    expect(document).toHaveProperty("dstPath", "topics/456");
+    expect(document.doc).toEqual({"createdBy.username": "new_username"});
+
+    expect(hydrateDocPathSpy.mock.calls[3][0]).toEqual("topics/{topicId}");
+    expect(hydrateDocPathSpy.mock.calls[3][1]).toEqual({
+      topics: {
+        fieldName: "createdBy.@id",
+        operator: "==",
+        value: "123",
+      },
+    });
   });
 });
 
@@ -237,9 +241,6 @@ describe("syncPeerViews", () => {
         "users/456/posts/5678/comments/9876",
         "users/789/posts/5678/comments/9876",
         "users/890/posts/5678/comments/9876",
-      ]))
-      .mockReturnValueOnce(Promise.resolve([
-        "topics/123",
       ]));
     const findMatchingDocPathRegexSpy = jest.spyOn(pathsutils, "findMatchingDocPathRegex");
     findMatchingDocPathRegexSpy
@@ -281,18 +282,6 @@ describe("syncPeerViews", () => {
         value: "1234",
       },
     });
-
-    const result2= await viewLogics.syncPeerViews(topicPeerLogicResultDoc);
-
-    expect(result2).toBeDefined();
-    expect(result2.documents).toBeDefined();
-    expect(result2.documents.length).toEqual(1);
-
-    document = result2.documents[0];
-    expect(document).toHaveProperty("action", "merge");
-    expect(document).toHaveProperty("dstPath", "topics/123");
-    expect(document.doc).toEqual({"title": "Let's start a business!"});
-    expect(document.instructions).toBeUndefined();
   });
 });
 
@@ -460,19 +449,6 @@ describe("queueForPeerSync", () => {
 
     expect(topicSpy).toHaveBeenCalledWith(PEER_SYNC_TOPIC_NAME);
     expect(publishMessageMock).toHaveBeenCalledWith({json: doc1});
-  });
-
-  it("should not queue docs for peer syncing", async () => {
-    const doc1: LogicResultDoc = {
-      action: "merge",
-      priority: "normal",
-      doc: {name: "test-doc-name-updated"},
-      dstPath: "topics/test-topic-id",
-    };
-    await viewLogics.queueForPeerSync(doc1);
-
-    expect(topicSpy).toHaveBeenCalledWith(PEER_SYNC_TOPIC_NAME);
-    expect(publishMessageMock).not.toHaveBeenCalled();
   });
 });
 

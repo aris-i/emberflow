@@ -41,7 +41,7 @@ import {internalDbStructure, InternalEntity} from "./db-structure";
 import {cleanActionsAndForms, onMessageSubmitFormQueue} from "./utils/forms";
 import {PubSub} from "@google-cloud/pubsub";
 import {onMessagePublished} from "firebase-functions/v2/pubsub";
-import {convertStringDate, deleteForms} from "./utils/misc";
+import {reviveDateAndTimestamp, deleteForms} from "./utils/misc";
 import Database = database.Database;
 import {onMessageForDistributionQueue, onMessageInstructionsQueue} from "./utils/distribution";
 import {cleanPubSubProcessedIds} from "./utils/pubsub";
@@ -210,7 +210,7 @@ export async function onFormSubmit(
   const formRef = formSnapshot.ref;
 
   try {
-    const form = convertStringDate(JSON.parse(formSnapshot.val().formData));
+    const form = reviveDateAndTimestamp(JSON.parse(formSnapshot.val().formData));
     console.log("form", form);
 
     console.info("Validating docPath");
@@ -397,7 +397,7 @@ export async function onFormSubmit(
 
         const userDocsMap = [
           highPriorityUserDocsByDstPath,
-          normalPriorityOtherUsersDocsByDstPath,
+          normalPriorityUserDocsByDstPath,
           lowPriorityUserDocsByDstPath,
         ];
         const userDocs = userDocsMap

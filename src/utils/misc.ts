@@ -185,7 +185,7 @@ async function deleteQueryBatch(query: Query, resolve: () => void, callback?: (s
   });
 }
 
-export const convertStringDate = (json: { [key: string]: any }) => {
+export const reviveDateAndTimestamp = (json: { [key: string]: any }) => {
   const stack = [json];
   while (stack.length > 0) {
     const obj = stack.pop();

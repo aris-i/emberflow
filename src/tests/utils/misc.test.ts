@@ -3,7 +3,7 @@ import {
   deepEqual,
   deleteCollection,
   LimitedSet,
-  convertStringDate,
+  reviveDateAndTimestamp,
 } from "../../utils/misc";
 import {firestore} from "firebase-admin";
 import Timestamp = firestore.Timestamp;
@@ -208,26 +208,27 @@ describe("deleteCollection", () => {
   });
 });
 
-describe("convertStringDate", () => {
-  it("should convert string date to date", () => {
+describe("reviveDateAndTimestamp", () => {
+  it("should revive date and timestamp", () => {
     const data = {
       "@allowedUsers": [
         "user1",
         "user2",
       ],
       "title": "Sample Title",
-      "createdAt": new Date(),
+      "createdDate": new Date(),
+      "createdTimestamp": admin.firestore.Timestamp.now(),
       "private": false,
       "completedTodos": 0,
     };
     const stringify = JSON.stringify(data);
     const json = JSON.parse(stringify);
 
-    const result = convertStringDate(json);
-    expect(result).toEqual(data);
+    const result = reviveDateAndTimestamp(json);
+    expect(result).toStrictEqual(data);
   });
 
-  it("should convert nested string date to date", () => {
+  it("should revive nested date and timestamp", () => {
     const data = {
       "createdDate": new Date(),
       "createdTimestamp": admin.firestore.Timestamp.now(),
@@ -245,7 +246,7 @@ describe("convertStringDate", () => {
     const stringify = JSON.stringify(data);
     const json = JSON.parse(stringify);
 
-    const result = convertStringDate(json);
+    const result = reviveDateAndTimestamp(json);
     expect(result).toStrictEqual(data);
   });
 });

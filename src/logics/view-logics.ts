@@ -18,7 +18,7 @@ import {
   runViewLogics,
 } from "../index-utils";
 import {pubsubUtils} from "../utils/pubsub";
-import {convertStringDate} from "../utils/misc";
+import {reviveDateAndTimestamp} from "../utils/misc";
 
 export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn {
   return async (logicResultDoc: LogicResultDoc) => {
@@ -174,7 +174,7 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
   }
 
   try {
-    const userLogicResultDoc = convertStringDate(event.data.message.json) as LogicResultDoc;
+    const userLogicResultDoc = reviveDateAndTimestamp(event.data.message.json) as LogicResultDoc;
     const userId = userLogicResultDoc.dstPath.split("/")[1];
     console.log("Received user logic result doc:", userLogicResultDoc);
 
@@ -203,11 +203,6 @@ export const queueForPeerSync = async (...userLogicResultDocs: LogicResultDoc[])
 
   try {
     for (const userLogicResultDoc of userLogicResultDocs) {
-      const {dstPath} = userLogicResultDoc;
-      if (!dstPath.startsWith("users")) {
-        // Peer sync only applies to user documents
-        continue;
-      }
       const messageId = await topic.publishMessage({json: userLogicResultDoc});
       console.log(`Message ${messageId} published.`);
     }
@@ -228,7 +223,7 @@ export async function onMessagePeerSyncQueue(event: CloudEvent<MessagePublishedD
   }
 
   try {
-    const userLogicResultDoc = convertStringDate(event.data.message.json) as LogicResultDoc;
+    const userLogicResultDoc = reviveDateAndTimestamp(event.data.message.json) as LogicResultDoc;
     console.log("Received user logic result doc:", userLogicResultDoc);
 
     console.info("Running Peer Sync");
