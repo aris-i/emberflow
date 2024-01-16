@@ -18,7 +18,7 @@ import {dbStructure, Entity} from "../sample-custom/db-structure";
 import {Firestore} from "firebase-admin/firestore";
 import {DatabaseEvent, DataSnapshot} from "firebase-functions/lib/v2/providers/database";
 import * as paths from "../utils/paths";
-import * as adminClient from "emberflow-admin-client/lib";
+import * as adminClient from "@primeanalytiq/emberflow-admin-client/lib";
 import DocumentReference = firestore.DocumentReference;
 import CollectionReference = firestore.CollectionReference;
 import Timestamp = firestore.Timestamp;
@@ -164,7 +164,7 @@ describe("onFormSubmit", () => {
 
     expect(refMock.update).toHaveBeenCalledWith({
       "@status": "error",
-      "@message": "docPath does not match any known Entity",
+      "@messages": "docPath does not match any known Entity",
     });
     expect(console.warn).toHaveBeenCalledWith("docPath does not match any known Entity");
   });
@@ -185,7 +185,7 @@ describe("onFormSubmit", () => {
 
     expect(refMock.update).toHaveBeenCalledWith({
       "@status": "error",
-      "@message": "User id from path does not match user id from event params",
+      "@messages": "User id from path does not match user id from event params",
     });
     expect(console.warn).toHaveBeenCalledWith("User id from path does not match user id from event params");
   });
@@ -221,7 +221,7 @@ describe("onFormSubmit", () => {
 
     expect(refMock.update).toHaveBeenCalledWith({
       "@status": "error",
-      "@message": "No @actionType found",
+      "@messages": "No @actionType found",
     });
     expect(console.warn).toHaveBeenCalledWith("No @actionType found");
   });
@@ -245,7 +245,7 @@ describe("onFormSubmit", () => {
     await onFormSubmit(event);
     expect(refMock.update).toHaveBeenCalledWith({
       "@status": "error",
-      "@message": "No user data found",
+      "@messages": "No user data found",
     });
   });
 
@@ -286,7 +286,7 @@ describe("onFormSubmit", () => {
     expect(securityFnMock).toHaveBeenCalledWith(entity, docPath, document, "update", {field1: "newValue"}, user);
     expect(refMock.update).toHaveBeenCalledWith({
       "@status": "security-error",
-      "@message": "Unauthorized access",
+      "@messages": "Unauthorized access",
     });
     // expect(console.log).toHaveBeenCalledWith(`Security check failed: ${rejectedSecurityResult.message}`);
     getSecurityFnMock.mockReset();
@@ -466,7 +466,7 @@ describe("onFormSubmit", () => {
     expect(refMock.update).toHaveBeenCalledWith({"@status": "submitted"});
     expect(refMock.update).toHaveBeenCalledWith({
       "@status": "cancelled",
-      "@message": "cancel-then-retry received from business logic",
+      "@messages": "cancel-then-retry received from business logic",
     });
 
     expect(setActionMock).toHaveBeenCalled();

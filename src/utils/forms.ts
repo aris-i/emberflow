@@ -1,8 +1,8 @@
-import {FormData} from "emberflow-admin-client/lib/types";
+import {FormData} from "@primeanalytiq/emberflow-admin-client/lib/types";
 import {db, pubsub, rtdb, SUBMIT_FORM_TOPIC_NAME} from "../index";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
 import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
-import {submitForm} from "emberflow-admin-client/lib";
+import {submitForm} from "@primeanalytiq/emberflow-admin-client/lib";
 import {pubsubUtils} from "./pubsub";
 import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
 import {deleteCollection} from "./misc";
@@ -36,8 +36,9 @@ export async function onMessageSubmitFormQueue(event: CloudEvent<MessagePublishe
   delete formData["@submitFormAs"];
   formData = await submitForm(formData, submitFormAs);
   const status = formData["@status"];
-  const message = formData["@message"];
-  if (status === "cancelled" && message.startsWith("cancel-then-retry")) {
+  const messages = formData["@messages"];
+  console.debug("Form submission status:", status, messages);
+  if (status === "cancelled" && messages.startsWith("cancel-then-retry")) {
     console.log("Throwing error so that the message is retried");
     throw new Error("cancel-then-retry");
   }

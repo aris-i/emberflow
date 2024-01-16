@@ -21,7 +21,7 @@ import {
 import {expandAndGroupDocPathsByEntity, findMatchingDocPathRegex} from "./utils/paths";
 import {deepEqual} from "./utils/misc";
 import {CloudFunctionsServiceClient} from "@google-cloud/functions";
-import {FormData} from "emberflow-admin-client/lib/types";
+import {FormData} from "@primeanalytiq/emberflow-admin-client/lib/types";
 import {BatchUtil} from "./utils/batch";
 import {queueSubmitForm} from "./utils/forms";
 import {queueForDistributionLater, queueInstructions} from "./utils/distribution";

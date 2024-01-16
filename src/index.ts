@@ -36,7 +36,7 @@ import {Firestore} from "firebase-admin/firestore";
 import {DatabaseEvent, DataSnapshot, onValueCreated} from "firebase-functions/v2/database";
 import {parseEntity} from "./utils/paths";
 import {database} from "firebase-admin";
-import {initClient} from "emberflow-admin-client/lib";
+import {initClient} from "@primeanalytiq/emberflow-admin-client/lib";
 import {internalDbStructure, InternalEntity} from "./db-structure";
 import {cleanActionsAndForms, onMessageSubmitFormQueue} from "./utils/forms";
 import {PubSub} from "@google-cloud/pubsub";
@@ -126,7 +126,6 @@ export function initializeEmberFlow(
       ref: "forms/{userId}/{formId}",
       region: projectConfig.region,
       memory: "256MiB",
-      retry: true,
     },
     useBillProtect(onFormSubmit)
   );
@@ -143,6 +142,7 @@ export function initializeEmberFlow(
     region: projectConfig.region,
     maxInstances: 5,
     timeoutSeconds: 540,
+    retry: true,
   }, onMessageSubmitFormQueue);
   functionsConfig["onMessageViewLogicsQueue"] = onMessagePublished({
     topic: VIEW_LOGICS_TOPIC_NAME,
@@ -219,7 +219,7 @@ export async function onFormSubmit(
     if (!entity) {
       const message = "docPath does not match any known Entity";
       console.warn(message);
-      await formRef.update({"@status": "error", "@message": message});
+      await formRef.update({"@status": "error", "@messages": message});
       return;
     }
 
@@ -230,7 +230,7 @@ export async function onFormSubmit(
     if (!isServiceAccount && isUsersDocPath && !docPath.startsWith(`users/${userId}`)) {
       const message = "User id from path does not match user id from event params";
       console.warn(message);
-      await formRef.update({"@status": "error", "@message": message});
+      await formRef.update({"@status": "error", "@messages": message});
       return;
     }
 
@@ -240,14 +240,14 @@ export async function onFormSubmit(
     if (!actionType) {
       const message = "No @actionType found";
       console.warn(message);
-      await formRef.update({"@status": "error", "@message": message});
+      await formRef.update({"@status": "error", "@messages": message});
       return;
     }
 
     console.info("Validating form");
     const [hasValidationError, validationResult] = await validateForm(entity, form);
     if (hasValidationError) {
-      await formRef.update({"@status": "validation-error", "@message": validationResult});
+      await formRef.update({"@status": "validation-error", "@messages": validationResult});
       return;
     }
 
@@ -259,7 +259,7 @@ export async function onFormSubmit(
       if (!user) {
         const message = "No user data found";
         console.warn(message);
-        await formRef.update({"@status": "error", "@message": message});
+        await formRef.update({"@status": "error", "@messages": message});
         return;
       }
     } else {
@@ -273,7 +273,7 @@ export async function onFormSubmit(
         actionType, formModifiedFields, user);
       if (securityResult.status === "rejected") {
         console.log(`Security check failed: ${securityResult.message}`);
-        await formRef.update({"@status": "security-error", "@message": securityResult.message});
+        await formRef.update({"@status": "security-error", "@messages": securityResult.message});
         return;
       }
     }
@@ -408,7 +408,7 @@ export async function onFormSubmit(
     );
 
     if (runStatus === "cancel-then-retry") {
-      await formRef.update({"@status": "cancelled", "@message": "cancel-then-retry received " +
+      await formRef.update({"@status": "cancelled", "@messages": "cancel-then-retry received " +
               "from business logic"});
       return;
     }
@@ -421,7 +421,7 @@ export async function onFormSubmit(
     console.info("Finished");
   } catch (error) {
     console.error("Error in onFormSubmit", error);
-    await formRef.update({"@status": "error", "@message": error});
+    await formRef.update({"@status": "error", "@messages": error});
   }
 }
 
