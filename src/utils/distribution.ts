@@ -6,7 +6,7 @@ import {distributeDoc} from "../index-utils";
 import {firestore} from "firebase-admin";
 import FieldValue = firestore.FieldValue;
 import {pubsubUtils} from "./pubsub";
-import {convertStringDate} from "./misc";
+import {reviveDateAndTimestamp} from "./misc";
 
 export const queueForDistributionLater = async (...logicResultDocs: LogicResultDoc[]) => {
   const topic = pubsub.topic(FOR_DISTRIBUTION_TOPIC_NAME);
@@ -32,7 +32,7 @@ export async function onMessageForDistributionQueue(event: CloudEvent<MessagePub
     return;
   }
   try {
-    const logicResultDoc = convertStringDate(event.data.message.json) as LogicResultDoc;
+    const logicResultDoc = reviveDateAndTimestamp(event.data.message.json) as LogicResultDoc;
     console.log("Received user logic result doc:", logicResultDoc);
 
     console.info("Running For Distribution");
