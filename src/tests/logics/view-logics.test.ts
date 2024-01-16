@@ -16,6 +16,7 @@ jest.mock("../../index", () => {
     ...originalModule,
     docPaths: {
       user: "users/{userId}",
+      topics: "topics/{topicId}",
       friend: "users/{userId}/friends/{friendId}",
       post: "users/{userId}/posts/{postId}",
       comment: "users/{userId}/posts/{postId}/comments/{commentId}",
@@ -48,6 +49,13 @@ const vd2: ViewDefinition = {
   destProp: "postedBy",
 };
 
+const vd3: ViewDefinition = {
+  srcEntity: "users",
+  srcProps: ["username", "avatarUrl"],
+  destEntity: "topics",
+  destProp: "createdBy",
+};
+
 const testLogicResultDoc: LogicResultDoc = {
   action: "merge",
   dstPath: "users/1234",
@@ -78,6 +86,15 @@ const testLogicResultDocDelete: LogicResultDoc = {
   priority: "normal",
 };
 
+const userLogicResultDoc: LogicResultDoc = {
+  action: "merge",
+  dstPath: "users/123",
+  priority: "normal",
+  doc: {
+    username: "new_username",
+  },
+};
+
 describe("createViewLogicFn", () => {
   it("should create a logic function that processes the given logicResultDoc and view definition", async () => {
     const hydrateDocPathSpy = jest.spyOn(pathsutils, "hydrateDocPath");
@@ -96,6 +113,10 @@ describe("createViewLogicFn", () => {
       .mockReturnValueOnce(Promise.resolve([
         "users/456/friends/1234",
         "users/789/friends/1234",
+      ]))
+      .mockReturnValueOnce(Promise.resolve([
+        "topics/123",
+        "topics/456",
       ]));
 
     // Create the logic function using the viewDefinition
@@ -179,6 +200,35 @@ describe("createViewLogicFn", () => {
 
     expect(hydrateDocPathSpy.mock.calls[2][0]).toEqual("users/{userId}/friends/1234");
     expect(hydrateDocPathSpy.mock.calls[2][1]).toEqual({});
+
+    // Create the logic function using the viewDefinition
+    const logicFn3 = viewLogics.createViewLogicFn(vd3);
+
+    // Call the logic function with the test action
+    const result3 = await logicFn3(userLogicResultDoc);
+
+    expect(result3).toBeDefined();
+    expect(result3.documents).toBeDefined();
+    expect(result3.documents.length).toEqual(2);
+
+    document = result3.documents[0];
+    expect(document).toHaveProperty("action", "merge");
+    expect(document).toHaveProperty("dstPath", "topics/123");
+    expect(document.doc).toEqual({"createdBy.username": "new_username"});
+
+    document = result3.documents[1];
+    expect(document).toHaveProperty("action", "merge");
+    expect(document).toHaveProperty("dstPath", "topics/456");
+    expect(document.doc).toEqual({"createdBy.username": "new_username"});
+
+    expect(hydrateDocPathSpy.mock.calls[3][0]).toEqual("topics/{topicId}");
+    expect(hydrateDocPathSpy.mock.calls[3][1]).toEqual({
+      topics: {
+        fieldName: "createdBy.@id",
+        operator: "==",
+        value: "123",
+      },
+    });
   });
 });
 
@@ -194,11 +244,12 @@ describe("syncPeerViews", () => {
       ]));
     const findMatchingDocPathRegexSpy = jest.spyOn(pathsutils, "findMatchingDocPathRegex");
     findMatchingDocPathRegexSpy
-      .mockReturnValue({entity: "comment", regex: /^users\/([^/]+)\/posts\/([^/]+)\/comments\/([^/]+)$/});
+      .mockReturnValueOnce({entity: "comment", regex: /^users\/([^/]+)\/posts\/([^/]+)\/comments\/([^/]+)$/})
+      .mockReturnValueOnce({entity: "topics", regex: /^topics\/([^/]+)$/});
 
     // Call the syncPeerViews function with the test logic result doc
     // users/1234/posts/5678/comments/9876
-    const result = await viewLogics.syncPeerViews(testPeerLogicResultDoc);
+    const result= await viewLogics.syncPeerViews(testPeerLogicResultDoc);
 
     // Add your expectations here, e.g., result.documents should have the correct properties and values
     expect(result).toBeDefined();

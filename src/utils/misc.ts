@@ -10,6 +10,11 @@ function isObject(item: any): boolean {
   return (typeof item === "object" && !Array.isArray(item) && item !== null);
 }
 
+function isTimestamp(item: object): boolean {
+  const keys = Object.keys(item);
+  return keys.length === 2 && keys.includes("_seconds") && keys.includes("_nanoseconds");
+}
+
 function isArray(item: any): boolean {
   return Array.isArray(item);
 }
@@ -180,7 +185,7 @@ async function deleteQueryBatch(query: Query, resolve: () => void, callback?: (s
   });
 }
 
-export const convertStringDate = (json: { [key: string]: any }) => {
+export const reviveDateAndTimestamp = (json: { [key: string]: any }) => {
   const stack = [json];
   while (stack.length > 0) {
     const obj = stack.pop();
@@ -190,7 +195,15 @@ export const convertStringDate = (json: { [key: string]: any }) => {
         const value = obj[key];
         if (isStringDate(value)) {
           obj[key] = new Date(value);
-        } else if (isObject(value)) {
+          continue;
+        }
+
+        if (isObject(value)) {
+          if (isTimestamp(value)) {
+            obj[key] = new Timestamp(value._seconds, value._nanoseconds);
+            continue;
+          }
+
           stack.push(value);
         }
       }

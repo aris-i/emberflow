@@ -23,6 +23,7 @@ import DocumentReference = firestore.DocumentReference;
 import CollectionReference = firestore.CollectionReference;
 import Timestamp = firestore.Timestamp;
 import Database = database.Database;
+import {expandConsolidateAndGroupByDstPath, groupDocsByUserAndDstPath} from "../index-utils";
 
 const projectConfig: ProjectConfig = {
   projectId: "your-project-id",
@@ -89,7 +90,7 @@ const refMock = {
 };
 
 function createDocumentSnapshot(form: FirebaseFirestore.DocumentData)
-    : DataSnapshot {
+  : DataSnapshot {
   return {
     key: "test-id",
     ref: refMock,
@@ -295,12 +296,12 @@ describe("onFormSubmit", () => {
   it("should call delayFormSubmissionAndCheckIfCancelled with correct parameters", async () => {
     const validateFormMock = jest.spyOn(indexutils, "validateForm").mockResolvedValue([false, {}]);
     const getFormModifiedFieldsMock =
-            jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue({
-              "field1": "value1",
-              "field2": "value2",
-            });
+      jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue({
+        "field1": "value1",
+        "field2": "value2",
+      });
     const getSecurityFnMock = jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() =>
-      Promise.resolve({status: "allowed"})
+      Promise.resolve({status: "allowed"}),
     );
     const delayFormSubmissionAndCheckIfCancelledSpy = jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(true);
 
@@ -333,12 +334,12 @@ describe("onFormSubmit", () => {
   it("should set form @status to 'submitted' after passing all checks", async () => {
     const validateFormMock = jest.spyOn(indexutils, "validateForm").mockResolvedValue([false, {}]);
     const getFormModifiedFieldsMock =
-            jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue({
-              "field1": "value1",
-              "field2": "value2",
-            });
+      jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue({
+        "field1": "value1",
+        "field2": "value2",
+      });
     const getSecurityFnMock = jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() =>
-      Promise.resolve({status: "allowed"})
+      Promise.resolve({status: "allowed"}),
     );
     const delayFormSubmissionAndCheckIfCancelledMock = jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(false);
 
@@ -385,10 +386,10 @@ describe("onFormSubmit", () => {
 
   it("should set form @status to 'submitted' after passing all checks even with non user path", async () => {
     const getFormModifiedFieldsMock =
-        jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue({
-          "field1": "value1",
-          "field2": "value2",
-        });
+      jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue({
+        "field1": "value1",
+        "field2": "value2",
+      });
     const delayFormSubmissionAndCheckIfCancelledMock = jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(false);
 
     const setActionMock = jest.fn().mockResolvedValue({
@@ -482,10 +483,10 @@ describe("onFormSubmit", () => {
   it("should set action-status to 'finished-with-error' if there are logic error results", async () => {
     const validateFormMock = jest.spyOn(indexutils, "validateForm").mockResolvedValue([false, {}]);
     const getFormModifiedFieldsMock =
-            jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue({
-              "field1": "value1",
-              "field2": "value2",
-            });
+      jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue({
+        "field1": "value1",
+        "field2": "value2",
+      });
     const getSecurityFnMock = jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() => Promise.resolve({status: "allowed"}));
     const delayFormSubmissionAndCheckIfCancelledMock = jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(false);
 
@@ -503,7 +504,7 @@ describe("onFormSubmit", () => {
         ];
         await distributeFn(logicResults, 0);
         return "done";
-      }
+      },
     );
 
     const form = {
@@ -556,7 +557,7 @@ describe("onFormSubmit", () => {
       {"field1": "value1", "field2": "value2"},
       "user",
       expectedAction,
-      expect.any(Function)
+      expect.any(Function),
     );
 
     // form should still finish successfully
@@ -596,27 +597,74 @@ describe("onFormSubmit", () => {
     jest.spyOn(indexutils, "distributeLater").mockResolvedValue();
     jest.spyOn(viewLogics, "queueRunViewLogics").mockResolvedValue();
 
-    const highPriorityDocs: LogicResultDoc[] = [{
-      action: "create" as LogicResultAction,
-      dstPath: "users/test-uid",
-      priority: "high",
-    }];
-    const normalPriorityDocs: LogicResultDoc[] = [{
-      action: "create" as LogicResultAction,
-      dstPath: "users/test-uid",
-      priority: "normal",
-    },
-    {
-      action: "create" as LogicResultAction,
-      dstPath: "users/test-uid-2",
-      priority: "normal",
-    },
+    const highPriorityDocs: LogicResultDoc[] = [
+      {
+        action: "merge" as LogicResultAction,
+        dstPath: "users/user-1",
+        doc: {
+          title: "High priority doc for user 1",
+        },
+        priority: "high",
+      }, {
+        action: "merge" as LogicResultAction,
+        dstPath: "users/user-1",
+        doc: {
+          description: "High priority description for user 1",
+        },
+        priority: "high",
+      }, {
+        action: "create" as LogicResultAction,
+        dstPath: "users/user-2",
+        doc: {
+          title: "High priority doc for user 2",
+        },
+        priority: "high",
+      },
     ];
-    const lowPriorityDocs: LogicResultDoc[] = [{
-      action: "create" as LogicResultAction,
-      dstPath: "users/test-uid",
-      priority: "low",
-    }];
+    const normalPriorityDocs: LogicResultDoc[] = [
+      {
+        action: "merge" as LogicResultAction,
+        dstPath: "users/user-1",
+        doc: {
+          title: "Normal priority doc for user 1",
+        },
+        priority: "normal",
+      },
+    ];
+    const lowPriorityDocs: LogicResultDoc[] = [
+      {
+        action: "create" as LogicResultAction,
+        dstPath: "users/user-1",
+        doc: {
+          title: "Low priority doc for user 1",
+        },
+        priority: "low",
+      }, {
+        action: "merge" as LogicResultAction,
+        dstPath: "users/user-2",
+        doc: {
+          title: "Low priority doc for user 2",
+        },
+        priority: "low",
+      }, {
+        action: "delete" as LogicResultAction,
+        dstPath: "users/user-3",
+        doc: {
+          title: "Low priority doc for user 3",
+        },
+        priority: "low",
+      },
+    ];
+    const anotherNormalPriorityDocs: LogicResultDoc[] = [
+      {
+        action: "merge" as LogicResultAction,
+        dstPath: "users/user-1/activities/activity-1",
+        doc: {
+          title: "Normal priority activity for user 1",
+        },
+        priority: "normal",
+      },
+    ];
 
     const logicResults: LogicResult[] = [
       {
@@ -624,46 +672,60 @@ describe("onFormSubmit", () => {
         status: "finished",
         timeFinished: _mockable.createNowTimestamp(),
         documents: [...highPriorityDocs, ...normalPriorityDocs, ...lowPriorityDocs],
+      }, {
+        name: "anotherLogic",
+        status: "finished",
+        timeFinished: _mockable.createNowTimestamp(),
+        documents: [...anotherNormalPriorityDocs],
       },
     ];
 
     const runBusinessLogicsSpy =
-            jest.spyOn(indexutils, "runBusinessLogics").mockImplementation(
-              async (actionType, formModifiedFields, entity, action, distributeFn) => {
-                await distributeFn(logicResults, 0);
-                return "done";
-              }
-            );
+      jest.spyOn(indexutils, "runBusinessLogics").mockImplementation(
+        async (actionType, formModifiedFields, entity, action, distributeFn) => {
+          await distributeFn(logicResults, 0);
+          return "done";
+        },
+      );
 
     const form = {
       "formData": JSON.stringify({
         "@actionType": "create",
         "name": "test",
-        "@docPath": "users/test-uid",
+        "@docPath": "users/user-1",
       }),
       "@status": "submit",
     };
 
     const event = createEvent(form);
 
-    const consolidateHighPriorityDocs = new Map<string, LogicResultDoc[]>([["users/test-uid", [highPriorityDocs[0]]], ["users/test-uid-2", [highPriorityDocs[0]]]]);
-    const consolidateNormalPriorityDocs = new Map<string, LogicResultDoc[]>([["users/test-uid", [normalPriorityDocs[0]]], ["users/test-uid", [normalPriorityDocs[1]]], ["users/test-uid-2", [normalPriorityDocs[0]]], ["users/test-uid-2", [normalPriorityDocs[1]]]]);
-    const consolidateLowPriorityDocs = new Map<string, LogicResultDoc[]>([["users/test-uid", [lowPriorityDocs[0]]], ["users/test-uid-2", [lowPriorityDocs[0]]], ["users/test-uid-3", [lowPriorityDocs[0]]]]);
+    const userId = "user-1";
+    const highPriorityDstPathLogicDocsMap =
+      await expandConsolidateAndGroupByDstPath(highPriorityDocs);
+    const {
+      userDocsByDstPath: highPriorityUserDocsByDstPath,
+      otherUsersDocsByDstPath: highPriorityOtherUsersDocsByDstPath,
+    } = groupDocsByUserAndDstPath(highPriorityDstPathLogicDocsMap, userId);
 
-    const userHighPriorityByDstPath = new Map<string, LogicResultDoc[]>([["users/test-uid", [highPriorityDocs[0]]]]);
-    const otherUsersHighPriorityByDstPath = new Map<string, LogicResultDoc[]>([["users/test-uid-2", [highPriorityDocs[0]]]]);
-    const userNormalPriorityByDstPath = new Map<string, LogicResultDoc[]>([["users/test-uid", [normalPriorityDocs[0]]], ["users/test-uid", [normalPriorityDocs[1]]]]);
-    const otherUsersNormalPriorityByDstPath = new Map<string, LogicResultDoc[]>([["users/test-uid-2", [normalPriorityDocs[0]]], ["users/test-uid-2", [normalPriorityDocs[1]]]]);
-    const userLowPriorityByDstPath = new Map<string, LogicResultDoc[]>([["users/test-uid", [lowPriorityDocs[0]]]]);
-    const otherUsersLowPriorityByDstPath = new Map<string, LogicResultDoc[]>([["users/test-uid-2", [lowPriorityDocs[0]]], ["users/test-uid-3", [lowPriorityDocs[0]]]]);
 
-    const consolidatedViewLogicResults = new Map<string, LogicResultDoc[]>([]);
-    // const consolidatedViewLogicResults = new Map<string, LogicResultDoc>([["users/test-uid", logicResults[0]]]);
-    const consolidatedPeerSyncViewLogicResults = new Map<string, LogicResultDoc[]>([["users/test-uid-2", [highPriorityDocs[0]]]]);
+    const normalPriorityDstPathLogicDocsMap =
+      await expandConsolidateAndGroupByDstPath([...normalPriorityDocs, ...anotherNormalPriorityDocs]);
+    const {
+      userDocsByDstPath: normalPriorityUserDocsByDstPath,
+      otherUsersDocsByDstPath: normalPriorityOtherUsersDocsByDstPath,
+    } = groupDocsByUserAndDstPath(normalPriorityDstPathLogicDocsMap, userId);
+
+    const lowPriorityDstPathLogicDocsMap =
+      await expandConsolidateAndGroupByDstPath(lowPriorityDocs);
+    const {
+      userDocsByDstPath: lowPriorityUserDocsByDstPath,
+      otherUsersDocsByDstPath: lowPriorityOtherUsersDocsByDstPath,
+    } = groupDocsByUserAndDstPath(lowPriorityDstPathLogicDocsMap, userId);
+
     const userDocsMap = [
-      userHighPriorityByDstPath,
-      userNormalPriorityByDstPath,
-      userLowPriorityByDstPath,
+      highPriorityUserDocsByDstPath,
+      normalPriorityUserDocsByDstPath,
+      lowPriorityUserDocsByDstPath,
     ];
     const userDocs = userDocsMap
       .flatMap((map) => Array.from(map.values()))
@@ -674,48 +736,23 @@ describe("onFormSubmit", () => {
       timeFinished: _mockable.createNowTimestamp(),
       documents: logicResults.map((result) => result.documents).flat(),
     }];
-    const viewLogicResultDocs = viewLogicResults.map((result) => result.documents).flat();
-    const userViewDocs = viewLogicResultDocs.filter((doc) => [doc.dstPath === "users/test-uid"]);
-    const userViewDocsByDstPath = new Map<string, LogicResultDoc[]>(userViewDocs.map((doc) => [doc.dstPath, [doc]]));
-    const otherUserViewDocs = viewLogicResultDocs.filter((doc) => [doc.dstPath !== "users/test-uid"]);
-    const otherUsersViewDocsByDstPath = new Map<string, LogicResultDoc[]>(otherUserViewDocs.map((doc) => [doc.dstPath, [doc]]));
-    const peerSyncViewLogicResults: LogicResult[] = [{
-      name: "SyncPeerViews",
-      status: "finished",
-      timeFinished: _mockable.createNowTimestamp(),
-      documents: logicResults.map((result) => result.documents).flat(),
-    }];
-
-    const peerSyncViewLogicResultDocs = peerSyncViewLogicResults.map((result) => result.documents).flat();
-    const peerSyncViewDocs = peerSyncViewLogicResultDocs.filter((doc) => [doc.dstPath !== "users/test-uid"]);
-    const otherUsersPeerSyncViewDocsByDstPath = new Map<string, LogicResultDoc[]>(peerSyncViewDocs.map((doc) => [doc.dstPath, [doc]]));
 
     jest.spyOn(indexutils, "expandConsolidateAndGroupByDstPath")
-      .mockResolvedValueOnce(consolidateHighPriorityDocs)
-      .mockResolvedValueOnce(consolidateNormalPriorityDocs)
-      .mockResolvedValueOnce(consolidateLowPriorityDocs)
-      .mockResolvedValueOnce(consolidatedViewLogicResults)
-      .mockResolvedValue(consolidatedPeerSyncViewLogicResults);
+      .mockResolvedValueOnce(highPriorityDstPathLogicDocsMap)
+      .mockResolvedValueOnce(normalPriorityDstPathLogicDocsMap)
+      .mockResolvedValueOnce(lowPriorityDstPathLogicDocsMap);
     jest.spyOn(indexutils, "groupDocsByUserAndDstPath")
       .mockReturnValueOnce({
-        userDocsByDstPath: userHighPriorityByDstPath,
-        otherUsersDocsByDstPath: otherUsersHighPriorityByDstPath,
+        userDocsByDstPath: highPriorityUserDocsByDstPath,
+        otherUsersDocsByDstPath: highPriorityOtherUsersDocsByDstPath,
       })
       .mockReturnValueOnce({
-        userDocsByDstPath: userNormalPriorityByDstPath,
-        otherUsersDocsByDstPath: otherUsersNormalPriorityByDstPath,
+        userDocsByDstPath: normalPriorityUserDocsByDstPath,
+        otherUsersDocsByDstPath: normalPriorityOtherUsersDocsByDstPath,
       })
       .mockReturnValueOnce({
-        userDocsByDstPath: userLowPriorityByDstPath,
-        otherUsersDocsByDstPath: otherUsersLowPriorityByDstPath,
-      })
-      .mockReturnValueOnce({
-        userDocsByDstPath: userViewDocsByDstPath,
-        otherUsersDocsByDstPath: otherUsersViewDocsByDstPath,
-      })
-      .mockReturnValueOnce({
-        userDocsByDstPath: new Map<string, LogicResultDoc[]>(),
-        otherUsersDocsByDstPath: otherUsersPeerSyncViewDocsByDstPath,
+        userDocsByDstPath: lowPriorityUserDocsByDstPath,
+        otherUsersDocsByDstPath: lowPriorityOtherUsersDocsByDstPath,
       });
     jest.spyOn(indexutils, "runViewLogics").mockResolvedValue(viewLogicResults);
     jest.spyOn(indexutils, "distribute");
@@ -725,7 +762,7 @@ describe("onFormSubmit", () => {
 
     // Test that the runBusinessLogics function was called with the correct parameters
     expect(runBusinessLogicsSpy).toHaveBeenCalled();
-    expect(docMock.set).toHaveBeenCalledTimes(6);
+    expect(docMock.set).toHaveBeenCalledTimes(11);
     expect(refMock.update).toHaveBeenCalledTimes(3);
     expect(refMock.update).toHaveBeenNthCalledWith(1, {"@status": "processing"});
     expect(refMock.update).toHaveBeenNthCalledWith(2, {"@status": "submitted"});
@@ -733,22 +770,23 @@ describe("onFormSubmit", () => {
 
     // Test that the functions are called in the correct sequence
     expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(1, highPriorityDocs);
-    expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(1, consolidateHighPriorityDocs, "test-uid");
-    expect(indexutils.distribute).toHaveBeenNthCalledWith(1, userHighPriorityByDstPath);
-    expect(indexutils.distribute).toHaveBeenNthCalledWith(2, otherUsersHighPriorityByDstPath);
+    expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(1, highPriorityDstPathLogicDocsMap, "user-1");
+    expect(indexutils.distribute).toHaveBeenNthCalledWith(1, highPriorityUserDocsByDstPath);
+    expect(indexutils.distribute).toHaveBeenNthCalledWith(2, highPriorityOtherUsersDocsByDstPath);
 
-    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(2, normalPriorityDocs);
-    expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(2, consolidateNormalPriorityDocs, "test-uid");
-    expect(indexutils.distribute).toHaveBeenNthCalledWith(3, userNormalPriorityByDstPath);
-    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(1, otherUsersNormalPriorityByDstPath);
+    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(2, [...normalPriorityDocs, ...anotherNormalPriorityDocs]);
+    expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(2, normalPriorityDstPathLogicDocsMap, "user-1");
+    expect(indexutils.distribute).toHaveBeenNthCalledWith(3, normalPriorityUserDocsByDstPath);
+    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(1, normalPriorityOtherUsersDocsByDstPath);
 
     expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(3, lowPriorityDocs);
-    expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(3, consolidateLowPriorityDocs, "test-uid");
-    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(2, userLowPriorityByDstPath);
-    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(3, otherUsersLowPriorityByDstPath);
+    expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(3, lowPriorityDstPathLogicDocsMap, "user-1");
+    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(2, lowPriorityUserDocsByDstPath);
+    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(3, lowPriorityOtherUsersDocsByDstPath);
 
     expect(viewLogics.queueRunViewLogics).toHaveBeenCalledWith(userDocs);
 
+    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenCalledTimes(3);
     expect(updateMock).toHaveBeenCalledTimes(1);
     expect(updateMock.mock.calls[0][0]).toEqual({status: "finished"});
   });
