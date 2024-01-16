@@ -77,10 +77,6 @@ jest.spyOn(admin, "database")
     } as unknown as Database;
   });
 
-const parseEntityMock = jest.fn();
-jest.spyOn(paths, "parseEntity")
-  .mockImplementation(parseEntityMock);
-
 admin.initializeApp();
 
 initializeEmberFlow(projectConfig, admin, dbStructure, Entity, {}, {}, []);
@@ -115,6 +111,7 @@ function createEvent(form: FirebaseFirestore.DocumentData, userId?: string): Dat
 
 describe("onFormSubmit", () => {
   const entity = "user";
+  let parseEntityMock: jest.SpyInstance;
 
   const eventContext: EventContext = {
     id: "test-id",
@@ -138,12 +135,16 @@ describe("onFormSubmit", () => {
     jest.spyOn(_mockable, "createNowTimestamp").mockReturnValue(Timestamp.now());
     jest.spyOn(console, "log").mockImplementation();
     jest.spyOn(console, "warn").mockImplementation();
-    parseEntityMock.mockReturnValue({
+    parseEntityMock = jest.spyOn(paths, "parseEntity").mockReturnValue({
       entity: "user",
       entityId: "test-uid",
     });
     refMock.update.mockReset();
     updateMock.mockReset();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   it("should return when there's no matched entity", async () => {
@@ -159,7 +160,8 @@ describe("onFormSubmit", () => {
 
     const event = createEvent(form);
     parseEntityMock.mockReturnValue({
-      entityId: "test-id",
+      entity: undefined,
+      entityId: "test-uid",
     });
     await onFormSubmit(event);
 
