@@ -1,27 +1,17 @@
 import * as admin from "firebase-admin";
-import {
-  distribute,
-  distributeLater,
-  validateForm,
-  getFormModifiedFields,
-  delayFormSubmissionAndCheckIfCancelled,
-  runBusinessLogics,
-  groupDocsByUserAndDstPath,
-  expandConsolidateAndGroupByDstPath,
-  runViewLogics,
-  _mockable,
-  distributeDoc,
-} from "../index-utils";
+import * as indexUtils from "../index-utils";
 import {firestore} from "firebase-admin";
-import {initializeEmberFlow} from "../index";
+import {initializeEmberFlow, _mockable} from "../index";
 import {
   Action,
   LogicConfig,
   LogicResult,
-  LogicResultAction,
+  LogicResultDocAction,
   LogicResultDoc,
   ProjectConfig,
   ViewLogicConfig,
+  DistributeFn,
+  EventContext,
 } from "../types";
 import {Entity, dbStructure} from "../sample-custom/db-structure";
 import {securityConfig} from "../sample-custom/security";
@@ -32,6 +22,10 @@ import {BatchUtil} from "../utils/batch";
 import * as distribution from "../utils/distribution";
 import * as forms from "../utils/forms";
 import {FormData} from "@primeanalytiq/emberflow-admin-client/lib/types";
+import {DocumentData, DocumentReference} from "firebase-admin/lib/firestore";
+import * as indexutils from "../index-utils";
+import SpyInstance = jest.SpyInstance;
+import CollectionReference = firestore.CollectionReference;
 
 jest.spyOn(console, "log").mockImplementation();
 jest.spyOn(console, "info").mockImplementation();
@@ -94,7 +88,7 @@ describe("distributeDoc", () => {
       dstPath: "/users/test-user-id/documents/test-doc-id",
     };
 
-    await distributeDoc(logicResultDoc);
+    await indexUtils.distributeDoc(logicResultDoc);
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
     expect(docDeleteMock).toHaveBeenCalledTimes(1);
@@ -109,7 +103,7 @@ describe("distributeDoc", () => {
       dstPath: "/users/test-user-id/documents/test-doc-id",
     };
 
-    await distributeDoc(logicResultDoc, batch);
+    await indexUtils.distributeDoc(logicResultDoc, batch);
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
     expect(batchDeleteSpy).toHaveBeenCalledTimes(1);
@@ -129,7 +123,7 @@ describe("distributeDoc", () => {
       "@id": "test-doc-id",
     };
 
-    await distributeDoc(logicResultDoc);
+    await indexUtils.distributeDoc(logicResultDoc);
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
     expect(docSetMock).toHaveBeenCalledTimes(1);
@@ -154,7 +148,7 @@ describe("distributeDoc", () => {
       "@id": "test-doc-id",
     };
 
-    await distributeDoc(logicResultDoc);
+    await indexUtils.distributeDoc(logicResultDoc);
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
     expect(queueInstructionsSpy).toHaveBeenCalledTimes(1);
@@ -171,7 +165,7 @@ describe("distributeDoc", () => {
       dstPath: "/users/test-user-id/documents/test-doc-id",
     };
 
-    await distributeDoc(logicResultDoc, batch);
+    await indexUtils.distributeDoc(logicResultDoc, batch);
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
     expect(batchSetSpy).toHaveBeenCalledTimes(1);
@@ -194,7 +188,7 @@ describe("distributeDoc", () => {
       ...logicResultDoc.doc,
     };
 
-    await distributeDoc(logicResultDoc, batch);
+    await indexUtils.distributeDoc(logicResultDoc, batch);
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
     expect(queueSubmitFormSpy).toHaveBeenCalledTimes(1);
@@ -250,7 +244,7 @@ describe("distribute", () => {
       } as LogicResultDoc],
     ]]);
     initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, []);
-    await distribute(userDocsByDstPath);
+    await indexUtils.distribute(userDocsByDstPath);
 
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
@@ -279,7 +273,7 @@ describe("distribute", () => {
         dstPath: "/users/test-user-id/documents/test-doc-id",
       } as LogicResultDoc],
     ]]);
-    await distribute(userDocsByDstPath);
+    await indexUtils.distribute(userDocsByDstPath);
 
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
@@ -318,7 +312,7 @@ describe("distributeLater", () => {
       ["/users/test-user-id/documents/doc1", [doc1]],
       ["/users/test-user-id/documents/doc2", [doc2]],
     ]);
-    await distributeLater(usersDocsByDstPath);
+    await indexUtils.distributeLater(usersDocsByDstPath);
 
     expect(queueForDistributionLaterSpy).toHaveBeenCalledTimes(1);
     expect(queueForDistributionLaterSpy).toHaveBeenCalledWith(doc1, doc2);
@@ -333,7 +327,7 @@ describe("validateForm", () => {
       email: "johndoe@example.com",
       password: "abc123",
     };
-    const [hasValidationError, validationResult] = await validateForm(entity, document);
+    const [hasValidationError, validationResult] = await indexUtils.validateForm(entity, document);
     expect(hasValidationError).toBe(false);
     expect(validationResult).toEqual({});
   });
@@ -345,7 +339,7 @@ describe("validateForm", () => {
       email: "johndoe@example.com",
       password: "abc",
     };
-    const [hasValidationError, validationResult] = await validateForm(entity, document);
+    const [hasValidationError, validationResult] = await indexUtils.validateForm(entity, document);
     expect(hasValidationError).toBe(true);
     expect(validationResult).toEqual({name: ["Name is required"]});
   });
@@ -354,7 +348,7 @@ describe("validateForm", () => {
 describe("getFormModifiedFields", () => {
   it("should return an empty object when there are no form fields", () => {
     const document = {name: "John Doe", age: 30};
-    const modifiedFields = getFormModifiedFields({}, document);
+    const modifiedFields = indexUtils.getFormModifiedFields({}, document);
     expect(modifiedFields).toEqual({});
   });
 
@@ -363,7 +357,7 @@ describe("getFormModifiedFields", () => {
       "name": "John Doe",
       "age": 30,
     };
-    const modifiedFields = getFormModifiedFields({
+    const modifiedFields = indexUtils.getFormModifiedFields({
       "name": "Jane Doe",
       "address": "123 Main St",
       "@status": "submit",
@@ -381,7 +375,7 @@ describe("delayFormSubmissionAndCheckIfCancelled", () => {
         val: () => ({"@form": {"@status": "delay"}}),
       }),
     };
-    const cancelFormSubmission = await delayFormSubmissionAndCheckIfCancelled(delay, formResponseRef as any);
+    const cancelFormSubmission = await indexUtils.delayFormSubmissionAndCheckIfCancelled(delay, formResponseRef as any);
     expect(cancelFormSubmission).toBe(false);
     expect(formResponseRef.update).toHaveBeenCalledTimes(1);
     expect(formResponseRef.update).toHaveBeenCalledWith({"@status": "delay"});
@@ -397,7 +391,7 @@ describe("delayFormSubmissionAndCheckIfCancelled", () => {
         val: () => ({"@status": "cancel"}),
       }),
     };
-    const cancelFormSubmission = await delayFormSubmissionAndCheckIfCancelled(delay, formResponseRef as any);
+    const cancelFormSubmission = await indexUtils.delayFormSubmissionAndCheckIfCancelled(delay, formResponseRef as any);
     expect(cancelFormSubmission).toBe(true);
     expect(formResponseRef.update).toHaveBeenCalledTimes(1);
     expect(formResponseRef.update).toHaveBeenCalledWith({"@status": "delay"});
@@ -422,7 +416,7 @@ describe("runBusinessLogics", () => {
       docId: "document123",
       formId: "form123",
       docPath: "users/user123",
-      entity: "user",
+      entity: entity,
     },
     actionType,
     document: {
@@ -441,12 +435,20 @@ describe("runBusinessLogics", () => {
   let logicFn3: jest.Mock;
 
   let dbSpy: jest.SpyInstance;
+  let simulateSubmitFormSpy: jest.SpyInstance;
+  let actionRef: DocumentReference;
 
   beforeEach(() => {
     distributeFn = jest.fn();
     logicFn1 = jest.fn().mockResolvedValue({status: "finished"});
     logicFn2 = jest.fn().mockResolvedValue({status: "finished"});
     logicFn3 = jest.fn().mockResolvedValue({status: "error", message: "Error message"});
+
+    simulateSubmitFormSpy = jest.spyOn(indexUtils._mockable, "simulateSubmitForm").mockImplementation((
+      logicResults: LogicResult[], action: Action, distributeFn: DistributeFn
+    ) => {
+      return Promise.resolve();
+    });
 
     const dbDoc = ({
       get: jest.fn().mockResolvedValue({
@@ -456,6 +458,21 @@ describe("runBusinessLogics", () => {
       }),
     } as unknown) as admin.firestore.DocumentReference<admin.firestore.DocumentData>;
     dbSpy = jest.spyOn(admin.firestore(), "doc").mockReturnValue(dbDoc);
+
+    const setActionMock = jest.fn().mockResolvedValue({
+      update: jest.fn(),
+    });
+
+    const updateActionMock = jest.fn().mockResolvedValue({
+      update: jest.fn(),
+    });
+
+    actionRef = {
+      set: setActionMock,
+      update: updateActionMock,
+    } as any as DocumentReference;
+
+    jest.spyOn(_mockable, "initActionRef").mockReturnValue(actionRef);
   });
 
   afterEach(() => {
@@ -465,6 +482,7 @@ describe("runBusinessLogics", () => {
     logicFn3.mockRestore();
     distributeFn.mockRestore();
     dbSpy.mockRestore();
+    simulateSubmitFormSpy.mockRestore();
   });
 
   it("should call all matching logics and pass their results to distributeFn", async () => {
@@ -492,14 +510,14 @@ describe("runBusinessLogics", () => {
       },
     ];
     initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
-    const runStatus = await runBusinessLogics(actionType, formModifiedFields, entity, action, distributeFn);
+    const runStatus = await indexUtils.runBusinessLogics(actionRef, action, distributeFn);
 
     expect(logicFn1).toHaveBeenCalledWith(action, undefined);
     expect(logicFn2).toHaveBeenCalledWith(action, undefined);
     expect(logicFn3).not.toHaveBeenCalled();
     expect(distributeFn).toHaveBeenCalledTimes(1);
-    expect(distributeFn).toHaveBeenCalledWith([
-      expect.objectContaining({
+    expect(distributeFn).toHaveBeenCalledWith(actionRef,
+      [expect.objectContaining({
         status: "finished",
         execTime: expect.any(Number),
         timeFinished: expect.any(Timestamp),
@@ -508,9 +526,9 @@ describe("runBusinessLogics", () => {
         status: "finished",
         execTime: expect.any(Number),
         timeFinished: expect.any(Timestamp),
-      }),
-    ], 0);
+      })], 0);
     expect(runStatus).toEqual("done");
+    expect(simulateSubmitFormSpy).toHaveBeenCalledTimes(1);
   });
 
   it("should recall logic when it returns \"partial-result\" status", async () => {
@@ -532,13 +550,13 @@ describe("runBusinessLogics", () => {
       },
     ];
     initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
-    const runStatus = await runBusinessLogics(actionType, formModifiedFields, entity, action, distributeFn);
+    const runStatus = await indexUtils.runBusinessLogics(actionRef, action, distributeFn);
 
     expect(logicFn1).toHaveBeenCalledWith(action, undefined);
     expect(logicFn2).toHaveBeenCalledWith(action, undefined);
     expect(distributeFn).toHaveBeenCalledTimes(2);
-    expect(distributeFn.mock.calls[0]).toEqual([[
-      expect.objectContaining({
+    expect(distributeFn.mock.calls[0]).toEqual([actionRef,
+      [expect.objectContaining({
         status: "partial-result",
         nextPage: {},
         execTime: expect.any(Number),
@@ -548,17 +566,15 @@ describe("runBusinessLogics", () => {
         status: "finished",
         execTime: expect.any(Number),
         timeFinished: expect.any(Timestamp),
-      }),
-    ], 0]);
+      })], 0]);
 
     expect(logicFn2).toHaveBeenCalledWith(action, {});
-    expect(distributeFn.mock.calls[1]).toEqual([[
-      expect.objectContaining({
+    expect(distributeFn.mock.calls[1]).toEqual([actionRef,
+      [expect.objectContaining({
         status: "finished",
         execTime: expect.any(Number),
         timeFinished: expect.any(Timestamp),
-      }),
-    ], 1]);
+      })], 1]);
     expect(runStatus).toEqual("done");
   });
 
@@ -588,13 +604,13 @@ describe("runBusinessLogics", () => {
       },
     ];
     initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
-    const runStatus = await runBusinessLogics(actionType, formModifiedFields, entity, action, distributeFn);
+    const runStatus = await indexUtils.runBusinessLogics(actionRef, action, distributeFn);
 
     expect(logicFn1).not.toHaveBeenCalled();
     expect(logicFn2).not.toHaveBeenCalled();
     expect(logicFn3).not.toHaveBeenCalled();
     expect(distributeFn).toHaveBeenCalledTimes(1);
-    expect(distributeFn).toHaveBeenCalledWith([], 0);
+    expect(distributeFn).toHaveBeenCalledWith(actionRef, [], 0);
     expect(runStatus).toEqual("no-matching-logics");
   });
 
@@ -618,7 +634,7 @@ describe("runBusinessLogics", () => {
         },
       ];
       initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
-      const runStatus = await runBusinessLogics(actionType, formModifiedFields, entity, action, distributeFn);
+      const runStatus = await indexUtils.runBusinessLogics(actionRef, action, distributeFn);
 
       expect(logicFn1).toHaveBeenCalledWith(action, undefined);
       expect(logicFn2).toHaveBeenCalledWith(action, undefined);
@@ -655,7 +671,7 @@ describe("runBusinessLogics", () => {
       },
     ];
     initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
-    const runStatus = await runBusinessLogics(actionType, formModifiedFields, entity, action, distributeFn);
+    const runStatus = await indexUtils.runBusinessLogics(actionRef, action, distributeFn);
 
     expect(logicFn1).not.toHaveBeenCalled();
     expect(logicFn2).toHaveBeenCalledWith(action, undefined);
@@ -664,6 +680,388 @@ describe("runBusinessLogics", () => {
     expect(logicFn3).toHaveBeenCalledTimes(1);
     expect(distributeFn).not.toHaveBeenCalled();
     expect(runStatus).toEqual("cancel-then-retry");
+  });
+});
+
+describe("simulateSubmitForm", () => {
+  const eventContext: EventContext = {
+    id: "test-event-id",
+    uid: "test-user-id",
+    docPath: "servers/test-doc-id",
+    docId: "test-doc-id",
+    formId: "test-form-id",
+    entity: "servers",
+  };
+  const user: DocumentData = {
+    "@id": "test-user-id",
+    "username": "Topic Creator",
+    "avatarUrl": "Avatar URL",
+    "firstName": "Topic",
+    "lastName": "Creator",
+  };
+  const action: Action = {
+    actionType: "create",
+    eventContext: eventContext,
+    user: user,
+    document: {},
+    status: "new",
+    timeCreated: admin.firestore.Timestamp.now(),
+    modifiedFields: {},
+  };
+  const distributeFn = jest.fn();
+
+  let runBusinessLogicsSpy: jest.SpyInstance;
+  let dataMock: jest.Mock;
+  let docMock: DocumentReference;
+  let now: Timestamp;
+
+  beforeEach(() => {
+    jest.spyOn(console, "debug").mockImplementation();
+    jest.spyOn(console, "warn").mockImplementation();
+
+    dataMock = jest.fn().mockReturnValue({});
+
+    const getMock: CollectionReference = {
+      data: dataMock,
+    } as unknown as CollectionReference;
+
+    docMock = {
+      set: jest.fn(),
+      get: jest.fn().mockResolvedValue(getMock),
+      collection: jest.fn(() => collectionMock),
+    } as unknown as DocumentReference;
+
+    const collectionMock: CollectionReference = {
+      doc: jest.fn(() => docMock),
+    } as unknown as CollectionReference;
+
+    jest.spyOn(admin.firestore(), "doc").mockReturnValue(docMock);
+    jest.spyOn(admin.firestore(), "collection").mockReturnValue(collectionMock);
+
+    now = Timestamp.now();
+    jest.spyOn(indexUtils._mockable, "createNowTimestamp").mockReturnValue(now);
+
+    runBusinessLogicsSpy =
+      jest.spyOn(indexutils, "runBusinessLogics").mockResolvedValue("done");
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("should skip when there is no logic result doc with 'simulate-submit-form' action", async () => {
+    await indexUtils._mockable.simulateSubmitForm([], action, distributeFn);
+    expect(console.debug).toHaveBeenCalledTimes(1);
+    expect(console.debug).toHaveBeenCalledWith("Simulating submit form: ", 0);
+    expect(runBusinessLogicsSpy).not.toHaveBeenCalled();
+  });
+
+  it("should skip when entity is undefined", async () => {
+    const logicResults: LogicResult[] = [];
+    const logicResultDoc: LogicResultDoc = {
+      action: "simulate-submit-form",
+      dstPath: "no-entity/sample-doc-id",
+      doc: {
+        "@id": "no-entity/sample-doc-id",
+      },
+    };
+    const logicResult: LogicResult = {
+      name: "sampleLogicResult",
+      status: "finished",
+      documents: [logicResultDoc],
+    };
+    logicResults.push(logicResult);
+
+    await indexUtils._mockable.simulateSubmitForm(logicResults, action, distributeFn);
+    expect(console.warn).toHaveBeenCalledTimes(1);
+    expect(console.warn).toHaveBeenCalledWith("No matching entity found for logic no-entity/sample-doc-id. Skipping");
+    expect(runBusinessLogicsSpy).not.toHaveBeenCalled();
+  });
+
+  it("should skip when logic result doc is undefined", async () => {
+    const logicResults: LogicResult[] = [];
+    const logicResultDoc: LogicResultDoc = {
+      action: "simulate-submit-form",
+      dstPath: "servers/sample-server-id",
+    };
+    const logicResult: LogicResult = {
+      name: "sampleLogicResult",
+      status: "finished",
+      documents: [logicResultDoc],
+    };
+    logicResults.push(logicResult);
+
+    await indexUtils._mockable.simulateSubmitForm(logicResults, action, distributeFn);
+    expect(console.warn).toHaveBeenCalledTimes(1);
+    expect(console.warn).toHaveBeenCalledWith("LogicResultDoc.doc should not be undefined. Skipping");
+    expect(runBusinessLogicsSpy).not.toHaveBeenCalled();
+  });
+
+  it("should skip when @actionType is undefined", async () => {
+    const logicResults: LogicResult[] = [];
+    const logicResultDoc: LogicResultDoc = {
+      action: "simulate-submit-form",
+      dstPath: "servers/sample-server-id",
+      doc: {"@id": "sample-server-id"},
+    };
+    const logicResult: LogicResult = {
+      name: "sampleLogicResult",
+      status: "finished",
+      documents: [logicResultDoc],
+    };
+    logicResults.push(logicResult);
+
+    await indexUtils._mockable.simulateSubmitForm(logicResults, action, distributeFn);
+    expect(console.warn).toHaveBeenCalledTimes(1);
+    expect(console.warn).toHaveBeenCalledWith("No @actionType found. Skipping");
+    expect(runBusinessLogicsSpy).not.toHaveBeenCalled();
+  });
+
+  it("should skip when submitFormAs data is undefined", async () => {
+    dataMock.mockReturnValueOnce(undefined);
+    const logicResults: LogicResult[] = [];
+    const logicResultDoc: LogicResultDoc = {
+      action: "simulate-submit-form",
+      dstPath: "servers/sample-server-id",
+      doc: {
+        "@actionType": "create",
+        "@submitFormAs": "test-user-id",
+      },
+    };
+    const logicResult: LogicResult = {
+      name: "sampleLogicResult",
+      status: "finished",
+      documents: [logicResultDoc],
+    };
+    logicResults.push(logicResult);
+
+    await indexUtils._mockable.simulateSubmitForm(logicResults, action, distributeFn);
+    expect(console.warn).toHaveBeenCalledTimes(1);
+    expect(console.warn).toHaveBeenCalledWith("User test-user-id not found. Skipping");
+    expect(runBusinessLogicsSpy).not.toHaveBeenCalled();
+  });
+
+  it("should simulate submit form correctly when submitFormAs is defined", async () => {
+    dataMock.mockReturnValueOnce({"@id": "test-user-id"});
+    const logicResults: LogicResult[] = [];
+    const logicResultDoc: LogicResultDoc = {
+      action: "simulate-submit-form",
+      dstPath: "servers/sample-server-id",
+      doc: {
+        "@actionType": "create",
+        "@submitFormAs": "test-user-id",
+        "name": "sample-server-name",
+        "createdAt": now,
+      },
+    };
+    const logicResult: LogicResult = {
+      name: "sampleLogicResult",
+      status: "finished",
+      documents: [logicResultDoc],
+    };
+    logicResults.push(logicResult);
+
+    const expectedEventContext: EventContext = {
+      id: action.eventContext.id + "-1",
+      uid: action.eventContext.uid,
+      formId: action.eventContext.formId + "-1",
+      docId: "sample-server-id",
+      docPath: logicResultDoc.dstPath,
+      entity: "server",
+    };
+    const expectedAction: Action = {
+      eventContext: expectedEventContext,
+      actionType: "create",
+      document: {},
+      modifiedFields: {
+        "name": "sample-server-name",
+        "createdAt": now,
+      },
+      user: {"@id": "test-user-id"},
+      status: "new",
+      timeCreated: now,
+    };
+
+    await indexUtils._mockable.simulateSubmitForm(logicResults, action, distributeFn);
+    expect(docMock.set).toHaveBeenCalledTimes(1);
+    expect(docMock.set).toHaveBeenCalledWith(expectedAction);
+    expect(runBusinessLogicsSpy).toHaveBeenCalledTimes(1);
+    expect(runBusinessLogicsSpy).toHaveBeenCalledWith(docMock, expectedAction, distributeFn);
+  });
+
+  it("should simulate submit form correctly when submitFormAs is undefined", async () => {
+    const logicResults: LogicResult[] = [];
+    const logicResultDoc: LogicResultDoc = {
+      action: "simulate-submit-form",
+      dstPath: "servers/sample-server-id",
+      doc: {
+        "@actionType": "create",
+        "name": "sample-server-name",
+        "createdAt": now,
+      },
+    };
+    const logicResult: LogicResult = {
+      name: "sampleLogicResult",
+      status: "finished",
+      documents: [logicResultDoc],
+    };
+    logicResults.push(logicResult);
+
+    const expectedEventContext: EventContext = {
+      id: action.eventContext.id + "-1",
+      uid: action.eventContext.uid,
+      formId: action.eventContext.formId + "-1",
+      docId: "sample-server-id",
+      docPath: logicResultDoc.dstPath,
+      entity: "server",
+    };
+    const expectedAction: Action = {
+      eventContext: expectedEventContext,
+      actionType: "create",
+      document: {},
+      modifiedFields: {
+        "name": "sample-server-name",
+        "createdAt": now,
+      },
+      user: user,
+      status: "new",
+      timeCreated: now,
+    };
+
+    await indexUtils._mockable.simulateSubmitForm(logicResults, action, distributeFn);
+    expect(docMock.set).toHaveBeenCalledTimes(1);
+    expect(docMock.set).toHaveBeenCalledWith(expectedAction);
+    expect(runBusinessLogicsSpy).toHaveBeenCalledTimes(1);
+    expect(runBusinessLogicsSpy).toHaveBeenCalledWith(docMock, expectedAction, distributeFn);
+  });
+
+  it("should simulate submit form correctly with multiple logic result docs", async () => {
+    const logicResults: LogicResult[] = [];
+    const logicResultDoc1: LogicResultDoc = {
+      action: "simulate-submit-form",
+      dstPath: "servers/sample-server-id",
+      doc: {
+        "@actionType": "create",
+        "name": "sample-server-name",
+        "createdAt": now,
+      },
+    };
+    const logicResultDoc2: LogicResultDoc = {
+      action: "merge",
+      dstPath: "servers/merge-server-id",
+      doc: {
+        "@actionType": "update",
+        "name": "sample-server-name",
+      },
+    };
+    const logicResultDoc3: LogicResultDoc = {
+      action: "simulate-submit-form",
+      dstPath: "users/sample-user-id",
+      doc: {
+        "@actionType": "create",
+        "name": "sample-user-name",
+      },
+    };
+    const logicResult1: LogicResult = {
+      name: "serverLogicResult",
+      status: "finished",
+      documents: [logicResultDoc1, logicResultDoc2],
+    };
+    const logicResult2: LogicResult = {
+      name: "userLogicResult",
+      status: "finished",
+      documents: [logicResultDoc3],
+    };
+    logicResults.push(logicResult1);
+    logicResults.push(logicResult2);
+
+    const expectedServerEventContext: EventContext = {
+      id: action.eventContext.id + "-1",
+      uid: action.eventContext.uid,
+      formId: action.eventContext.formId + "-1",
+      docId: "sample-server-id",
+      docPath: logicResultDoc1.dstPath,
+      entity: "server",
+    };
+    const expectedServerAction: Action = {
+      eventContext: expectedServerEventContext,
+      actionType: "create",
+      document: {},
+      modifiedFields: {
+        "name": "sample-server-name",
+        "createdAt": now,
+      },
+      user: user,
+      status: "new",
+      timeCreated: now,
+    };
+
+    const expectedUserEventContext: EventContext = {
+      id: action.eventContext.id + "-2",
+      uid: action.eventContext.uid,
+      formId: action.eventContext.formId + "-2",
+      docId: "sample-user-id",
+      docPath: logicResultDoc3.dstPath,
+      entity: "user",
+    };
+    const expectedUserAction: Action = {
+      eventContext: expectedUserEventContext,
+      actionType: "create",
+      document: {},
+      modifiedFields: {
+        "name": "sample-user-name",
+      },
+      user: user,
+      status: "new",
+      timeCreated: now,
+    };
+
+    await indexUtils._mockable.simulateSubmitForm(logicResults, action, distributeFn);
+    expect(docMock.set).toHaveBeenCalledTimes(2);
+    expect(docMock.set).toHaveBeenNthCalledWith(1, expectedServerAction);
+    expect(docMock.set).toHaveBeenNthCalledWith(2, expectedUserAction);
+    expect(runBusinessLogicsSpy).toHaveBeenCalledTimes(2);
+    expect(runBusinessLogicsSpy).toHaveBeenNthCalledWith(1, docMock, expectedServerAction, distributeFn);
+    expect(runBusinessLogicsSpy).toHaveBeenNthCalledWith(2, docMock, expectedUserAction, distributeFn);
+  });
+
+  it("should skip when maximum retry count is reached", async () => {
+    runBusinessLogicsSpy.mockResolvedValueOnce("cancel-then-retry")
+      .mockResolvedValueOnce("cancel-then-retry")
+      .mockResolvedValueOnce("cancel-then-retry")
+      .mockResolvedValueOnce("cancel-then-retry")
+      .mockResolvedValueOnce("cancel-then-retry")
+      .mockResolvedValueOnce("cancel-then-retry");
+    const logicResults: LogicResult[] = [];
+    const doc: DocumentData = {
+      "@actionType": "create",
+    };
+    const logicResultDoc: LogicResultDoc = {
+      action: "simulate-submit-form",
+      dstPath: "servers/sample-server-id",
+      doc: doc,
+    };
+    const logicResult: LogicResult = {
+      name: "sampleLogicResult",
+      status: "finished",
+      documents: [logicResultDoc],
+    };
+    logicResults.push(logicResult);
+
+    const dateSpy: SpyInstance = jest.spyOn(Date, "now");
+    dateSpy.mockReturnValueOnce(now.toMillis())
+      .mockReturnValueOnce(now.toMillis() + 2000)
+      .mockReturnValueOnce(now.toMillis())
+      .mockReturnValueOnce(now.toMillis() + 4000)
+      .mockReturnValueOnce(now.toMillis())
+      .mockReturnValueOnce(now.toMillis() + 8000)
+      .mockReturnValueOnce(now.toMillis())
+      .mockReturnValueOnce(now.toMillis() + 16000)
+      .mockReturnValueOnce(now.toMillis())
+      .mockReturnValueOnce(now.toMillis() + 32000);
+    await indexUtils._mockable.simulateSubmitForm(logicResults, action, distributeFn);
+    expect(console.warn).toHaveBeenCalledTimes(1);
+    expect(console.warn).toHaveBeenCalledWith("Maximum retry count reached for logic servers/sample-server-id");
   });
 });
 
@@ -691,7 +1089,7 @@ describe("groupDocsByUserAndDstPath", () => {
       ]),
     };
 
-    const results = groupDocsByUserAndDstPath(docsByDstPath, userId);
+    const results = indexUtils.groupDocsByUserAndDstPath(docsByDstPath, userId);
 
     expect(results).toEqual(expectedResults);
   });
@@ -815,7 +1213,7 @@ describe("expandConsolidateAndGroupByDstPath", () => {
 
     // Act
     const logicResultDocs = logicResults.map((logicResult) => logicResult.documents).flat();
-    const result = await expandConsolidateAndGroupByDstPath(logicResultDocs);
+    const result = await indexUtils.expandConsolidateAndGroupByDstPath(logicResultDocs);
 
     // Assert
     const expectedResult = new Map<string, LogicResultDoc[]>([
@@ -867,7 +1265,7 @@ describe("expandConsolidateAndGroupByDstPath", () => {
 
     // Act
     const logicResultDocs = logicResults.map((logicResult) => logicResult.documents).flat();
-    const result = await expandConsolidateAndGroupByDstPath(logicResultDocs);
+    const result = await indexUtils.expandConsolidateAndGroupByDstPath(logicResultDocs);
 
     // Assert
     const expectedResult = new Map<string, LogicResultDoc[]>([
@@ -935,7 +1333,7 @@ describe("expandConsolidateAndGroupByDstPath", () => {
 
     // Act
     const logicResultDocs = logicResults.map((logicResult) => logicResult.documents).flat();
-    const result = await expandConsolidateAndGroupByDstPath(logicResultDocs);
+    const result = await indexUtils.expandConsolidateAndGroupByDstPath(logicResultDocs);
 
     // Assert
     const expectedResult = new Map<string, LogicResultDoc[]>([
@@ -997,7 +1395,7 @@ describe("expandConsolidateAndGroupByDstPath", () => {
 
     // Act
     const logicResultDocs = logicResults.map((logicResult) => logicResult.documents).flat();
-    const result = await expandConsolidateAndGroupByDstPath(logicResultDocs);
+    const result = await indexUtils.expandConsolidateAndGroupByDstPath(logicResultDocs);
 
     // Assert
     const expectedResult = new Map<string, LogicResultDoc[]>([
@@ -1050,26 +1448,26 @@ describe("runViewLogics", () => {
   ];
 
   beforeEach(() => {
-    jest.spyOn(_mockable, "getViewLogicsConfig").mockReturnValue(customViewLogicsConfig);
+    jest.spyOn(indexUtils._mockable, "getViewLogicsConfig").mockReturnValue(customViewLogicsConfig);
   });
 
   it("should run view logics properly", async () => {
     const logicResult1: LogicResultDoc = {
-      action: "merge" as LogicResultAction,
+      action: "merge" as LogicResultDocAction,
       priority: "normal",
       doc: {name: "value1", sampleField2: "value2"},
       dstPath: "users/user123",
     };
     const logicResult2: LogicResultDoc = {
-      action: "delete" as LogicResultAction,
+      action: "delete" as LogicResultDocAction,
       priority: "normal",
       dstPath: "users/user124",
     };
     viewLogicFn1.mockResolvedValue({});
     viewLogicFn2.mockResolvedValue({});
 
-    const results1 = await runViewLogics(logicResult1);
-    const results2 = await runViewLogics(logicResult2);
+    const results1 = await indexUtils.runViewLogics(logicResult1);
+    const results2 = await indexUtils.runViewLogics(logicResult2);
     const results = [...results1, ...results2];
 
     expect(viewLogicFn1).toHaveBeenCalledTimes(2);

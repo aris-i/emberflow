@@ -2,6 +2,7 @@ import * as admin from "firebase-admin";
 import {firestore} from "firebase-admin";
 import Timestamp = firestore.Timestamp;
 import DocumentData = firestore.DocumentData;
+import {DocumentReference} from "firebase-admin/lib/firestore";
 
 export type FirebaseAdmin = typeof admin;
 
@@ -13,10 +14,10 @@ export interface ProjectConfig {
     maxCostLimitPerFunction: number;
     specialCostLimitPerFunction: { [key: string]: number };
 }
-
+export type ActionType = "create" | "update" | "delete";
 export interface Action{
     eventContext: EventContext,
-    actionType: string;
+    actionType: ActionType;
     document: FirebaseFirestore.DocumentData;
     modifiedFields: DocumentData;
     user: DocumentData;
@@ -25,10 +26,11 @@ export interface Action{
     message?: string
 }
 
-export type LogicResultAction = "create" | "merge" | "delete" | "copy" | "recursive-copy" | "recursive-delete" | "submit-form";
+export type LogicResultDocAction = "create" | "merge" | "delete" | "copy" | "recursive-copy" | "recursive-delete"
+    | "submit-form" | "simulate-submit-form";
 export type LogicResultDocPriority = "high" | "normal" | "low";
 export interface LogicResultDoc{
-    action: LogicResultAction;
+    action: LogicResultDocAction;
     dstPath: string;
     priority?: LogicResultDocPriority;
     srcPath?: string;
@@ -116,3 +118,5 @@ export interface EventContext {
     docPath: string;
     entity: string;
 }
+
+export type DistributeFn = (actionRef: DocumentReference, logicResults: LogicResult[], page: number) => Promise<void>;

@@ -1,5 +1,5 @@
 import {
-  LogicResultAction,
+  LogicResultDocAction,
   LogicResultDoc,
   LogicResultDocPriority,
   ViewDefinition,
@@ -54,7 +54,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn {
       const documents = destPaths.map((destPath) => {
         if (destProp) {
           return {
-            action: "merge" as LogicResultAction,
+            action: "merge" as LogicResultDocAction,
             dstPath: destPath,
             doc: {
               [destProp]: admin.firestore.FieldValue.delete(),
@@ -63,7 +63,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn {
           };
         } else {
           return {
-            action: "delete" as LogicResultAction,
+            action: "delete" as LogicResultDocAction,
             dstPath: destPath,
             priority: "normal" as LogicResultDocPriority,
           };
@@ -88,7 +88,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn {
       }
       const documents = destPaths.map((destPath) => {
         return {
-          action: "merge" as LogicResultAction,
+          action: "merge" as LogicResultDocAction,
           dstPath: destPath,
           doc: viewDoc,
           instructions: viewInstructions,
@@ -128,7 +128,7 @@ export const syncPeerViews = async (logicResultDoc: LogicResultDoc) => {
   // Loop through all the paths and create a document for each
   const documents = forSyncPaths.map((forSyncPath) => {
     return {
-      action: "merge" as LogicResultAction,
+      action: "merge" as LogicResultDocAction,
       dstPath: forSyncPath,
       doc: doc,
       instructions: instructions,

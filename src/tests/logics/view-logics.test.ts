@@ -1,4 +1,4 @@
-import {LogicResult, LogicResultAction, LogicResultDoc, LogicResultDocPriority, ViewDefinition} from "../../types";
+import {LogicResult, LogicResultDocAction, LogicResultDoc, LogicResultDocPriority, ViewDefinition} from "../../types";
 import {PubSub, Topic} from "@google-cloud/pubsub";
 const isProcessedMock = jest.fn();
 const trackProcessedIdsMock = jest.fn();
@@ -462,8 +462,8 @@ describe("onMessagePeerSyncQueue", () => {
     status: "finished",
     timeFinished: firestore.Timestamp.now(),
     documents: [
-      {action: "merge" as LogicResultAction, priority: "normal" as LogicResultDocPriority, dstPath: "users/random-user-id1/documents/doc1", doc: {name: "test-doc-name-updated"}, instructions: {}},
-      {action: "merge" as LogicResultAction, priority: "normal" as LogicResultDocPriority, dstPath: "users/random-user-id2/documents/doc1", doc: {name: "test-doc-name-updated"}, instructions: {}},
+      {action: "merge" as LogicResultDocAction, priority: "normal" as LogicResultDocPriority, dstPath: "users/random-user-id1/documents/doc1", doc: {name: "test-doc-name-updated"}, instructions: {}},
+      {action: "merge" as LogicResultDocAction, priority: "normal" as LogicResultDocPriority, dstPath: "users/random-user-id2/documents/doc1", doc: {name: "test-doc-name-updated"}, instructions: {}},
     ],
   };
   const expandConsolidateResult = new Map<string, LogicResultDoc[]>([

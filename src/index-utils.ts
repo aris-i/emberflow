@@ -1,6 +1,5 @@
 import {
-  Action,
-  LogicActionType,
+  Action, DistributeFn, LogicActionType,
   LogicResult,
   LogicResultDoc,
   ScheduledEntity,
@@ -26,6 +25,7 @@ import {BatchUtil} from "./utils/batch";
 import {queueSubmitForm} from "./utils/forms";
 import {queueForDistributionLater, queueInstructions} from "./utils/distribution";
 import QueryDocumentSnapshot = firestore.QueryDocumentSnapshot;
+import DocumentReference = FirebaseFirestore.DocumentReference;
 import DocumentData = FirebaseFirestore.DocumentData;
 import Reference = database.Reference;
 import {FirestoreEvent} from "firebase-functions/lib/v2/providers/firestore";
@@ -34,6 +34,7 @@ import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
 export const _mockable = {
   getViewLogicsConfig: () => viewLogicConfigs,
   createNowTimestamp: () => admin.firestore.Timestamp.now(),
+  simulateSubmitForm,
 };
 
 export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: BatchUtil) {
@@ -73,6 +74,8 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
       ...doc,
     };
     await queueSubmitForm(formData);
+  } else if (action === "simulate-submit-form") {
+    console.debug("Not distributing doc for action simulate-submit-form");
   }
 }
 
@@ -150,24 +153,118 @@ export async function delayFormSubmissionAndCheckIfCancelled(delay: number, form
   return cancelFormSubmission;
 }
 
-export async function runBusinessLogics(
-  actionType: LogicActionType,
-  formModifiedFields: DocumentData,
-  entity: string,
+async function simulateSubmitForm(logicResults: LogicResult[], action: Action,
+  distributeFn: DistributeFn) {
+  const forSimulateSubmitForm = logicResults
+    .map((result: LogicResult) => result.documents)
+    .flat()
+    .filter((doc: LogicResultDoc) => doc.action === "simulate-submit-form")
+    .map((doc: LogicResultDoc) => ({logicResultDoc: doc, retryCount: 0}));
+  console.debug("Simulating submit form: ", forSimulateSubmitForm.length);
+
+  const retryQueue = [];
+  const backoffTime = 1000; // Starting with 1 second
+  const maxRetryCount = 5;
+  let runCount = 1;
+  while (forSimulateSubmitForm.length > 0 || retryQueue.length > 0) {
+    if (forSimulateSubmitForm.length > 0) {
+      const forRunning = forSimulateSubmitForm.shift();
+      if (!forRunning) continue;
+      const {logicResultDoc, retryCount} = forRunning;
+      const {entity} = findMatchingDocPathRegex(logicResultDoc.dstPath);
+      if (!entity) {
+        console.warn(`No matching entity found for logic ${logicResultDoc.dstPath}. Skipping`);
+        continue;
+      }
+      const docId = logicResultDoc.dstPath.split("/").pop();
+      if (!docId) {
+        console.warn("docId should not be blank. Skipping");
+        continue;
+      }
+      if (!logicResultDoc.doc) {
+        console.warn("LogicResultDoc.doc should not be undefined. Skipping");
+        continue;
+      }
+      if (!logicResultDoc.doc["@actionType"]) {
+        console.warn("No @actionType found. Skipping");
+        continue;
+      }
+      const eventContext = {
+        id: action.eventContext.id + `-${runCount}`,
+        uid: action.eventContext.uid,
+        formId: action.eventContext.formId + `-${runCount}`,
+        docId,
+        docPath: logicResultDoc.dstPath,
+        entity,
+      };
+      let user;
+      const submitFormAs = logicResultDoc.doc["@submitFormAs"];
+      if (submitFormAs) {
+        user = (await db.collection("users").doc(submitFormAs).get()).data();
+        if (!user) {
+          console.warn(`User ${submitFormAs} not found. Skipping`);
+          continue;
+        }
+      }
+      const modifiedFields: DocumentData = {};
+      for (const key in logicResultDoc.doc) {
+        if (!key.startsWith("@")) {
+          modifiedFields[key] = logicResultDoc.doc[key];
+        }
+      }
+      const _action: Action = {
+        eventContext,
+        actionType: logicResultDoc.doc["@actionType"],
+        document: (await db.doc(logicResultDoc.dstPath).get()).data() || {},
+        modifiedFields: modifiedFields,
+        user: user || action.user,
+        status: "new",
+        timeCreated: _mockable.createNowTimestamp(),
+      };
+      const _actionRef = db.collection("@actions").doc(eventContext.formId);
+      await _actionRef.set(_action);
+
+      const status = await runBusinessLogics(_actionRef, _action, distributeFn);
+      if (status === "cancel-then-retry") {
+        if (retryCount + 1 > maxRetryCount) {
+          console.warn(`Maximum retry count reached for logic ${logicResultDoc.dstPath}`);
+          continue;
+        } else {
+          retryQueue.unshift({logicResultDoc, retryCount: retryCount + 1, timeAdded: Date.now()});
+        }
+      }
+    }
+
+    const currentTime = Date.now();
+    for (let i = retryQueue.length - 1; i >= 0; i--) {
+      if (currentTime >= retryQueue[i].timeAdded + Math.pow(2, retryQueue[i].retryCount) * backoffTime) {
+        const {logicResultDoc, retryCount} = retryQueue.splice(i, 1)[0];
+        forSimulateSubmitForm.push({logicResultDoc, retryCount});
+      }
+    }
+
+    // Avoid tight looping
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    runCount++;
+  }
+}
+
+export const runBusinessLogics = async (
+  actionRef: DocumentReference,
   action: Action,
-  distributeFn: (logicResults: LogicResult[], page: number) => Promise<void>,
-): Promise<"done" | "cancel-then-retry" | "no-matching-logics"> {
+  distributeFn: DistributeFn): Promise<"done" | "cancel-then-retry" | "no-matching-logics"> => {
+  const {actionType, modifiedFields, eventContext: {entity}} = action;
   const matchingLogics = logicConfigs.filter((logic) => {
     return (
-      (logic.actionTypes === "all" || logic.actionTypes.includes(actionType)) &&
-            (logic.modifiedFields === "all" || logic.modifiedFields.some((field) => field in formModifiedFields)) &&
+      (logic.actionTypes === "all" || logic.actionTypes.includes(actionType as LogicActionType)) &&
+            (logic.modifiedFields === "all" || logic.modifiedFields.some((field) => field in modifiedFields)) &&
             (logic.entities === "all" || logic.entities.includes(entity))
     );
   });
   console.debug("Matching logics:", matchingLogics.map((logic) => logic.name));
   if (matchingLogics.length === 0) {
     console.log("No matching logics found");
-    await distributeFn([], 0);
+    await distributeFn(actionRef, [], 0);
     return "no-matching-logics";
   }
 
@@ -215,14 +312,17 @@ export async function runBusinessLogics(
         });
       }
     }
-    await distributeFn(logicResults, page++);
+    await distributeFn(actionRef, logicResults, page++);
     if (page >= maxLogicResultPages) {
       console.warn(`Maximum number of logic result pages (${maxLogicResultPages}) reached`);
       break;
     }
+
+    await _mockable.simulateSubmitForm(logicResults, action, distributeFn);
   }
+
   return "done";
-}
+};
 
 export function groupDocsByUserAndDstPath(docsByDstPath: Map<string, LogicResultDoc[]>, userId: string) {
   const userDocPath = docPaths["user"].replace("{userId}", userId);
@@ -379,6 +479,8 @@ export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultD
     } else if (action === "delete") {
       processDelete(existingDocs, doc, dstPath);
     } else if (action === "submit-form") {
+      existingDocs.push(doc);
+    } else if (action === "simulate-submit-form") {
       existingDocs.push(doc);
     }
   }
