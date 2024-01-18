@@ -197,7 +197,7 @@ export function initializeEmberFlow(
   return {docPaths, colPaths, docPathsRegex, functionsConfig};
 }
 
-async function initActionRef(actionId: string) {
+function initActionRef(actionId: string) {
   return db.collection("@actions").doc(actionId);
 }
 
@@ -312,20 +312,16 @@ export async function onFormSubmit(
       modifiedFields: formModifiedFields,
       user,
     };
-    const actionRef = await _mockable.initActionRef(formId);
+    const actionRef = _mockable.initActionRef(formId);
     await actionRef.set(action);
 
     await formRef.update({"@status": "submitted"});
 
     console.info("Running Business Logics");
     let errorMessage = "";
-    const runStatus = await runBusinessLogics(
-      actionType,
-      formModifiedFields,
-      entity,
-      action,
-      async (logicResults, page) => {
-        // Save all logic results under logicResults collection of action form
+    const runStatus = await runBusinessLogics(actionRef, action,
+      async (actionRef, logicResults, page) => {
+      // Save all logic results under logicResults collection of action form
         for (let i = 0; i < logicResults.length; i++) {
           const {documents, ...logicResult} = logicResults[i];
           const logicResultsRef = actionRef.collection("logicResults")
@@ -363,7 +359,7 @@ export async function onFormSubmit(
 
         console.info("Consolidating and Distributing High Priority Logic Results");
         const highPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
-            await expandConsolidateAndGroupByDstPath(highPriorityDocs);
+          await expandConsolidateAndGroupByDstPath(highPriorityDocs);
         const {
           userDocsByDstPath: highPriorityUserDocsByDstPath,
           otherUsersDocsByDstPath: highPriorityOtherUsersDocsByDstPath,
@@ -377,7 +373,7 @@ export async function onFormSubmit(
 
         console.info("Consolidating and Distributing Normal Priority Logic Results");
         const normalPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
-            await expandConsolidateAndGroupByDstPath(normalPriorityDocs);
+          await expandConsolidateAndGroupByDstPath(normalPriorityDocs);
         const {
           userDocsByDstPath: normalPriorityUserDocsByDstPath,
           otherUsersDocsByDstPath: normalPriorityOtherUsersDocsByDstPath,
@@ -387,7 +383,7 @@ export async function onFormSubmit(
 
         console.info("Consolidating and Distributing Low Priority Logic Results");
         const lowPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
-            await expandConsolidateAndGroupByDstPath(lowPriorityDocs);
+          await expandConsolidateAndGroupByDstPath(lowPriorityDocs);
         const {
           userDocsByDstPath: lowPriorityUserDocsByDstPath,
           otherUsersDocsByDstPath: lowPriorityOtherUsersDocsByDstPath,

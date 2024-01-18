@@ -7,7 +7,7 @@ import {database, firestore} from "firebase-admin";
 import {
   EventContext,
   LogicResult,
-  LogicResultAction,
+  LogicResultDocAction,
   LogicResultDoc,
   ProjectConfig,
   SecurityResult,
@@ -601,21 +601,21 @@ describe("onFormSubmit", () => {
 
     const highPriorityDocs: LogicResultDoc[] = [
       {
-        action: "merge" as LogicResultAction,
+        action: "merge" as LogicResultDocAction,
         dstPath: "users/user-1",
         doc: {
           title: "High priority doc for user 1",
         },
         priority: "high",
       }, {
-        action: "merge" as LogicResultAction,
+        action: "merge" as LogicResultDocAction,
         dstPath: "users/user-1",
         doc: {
           description: "High priority description for user 1",
         },
         priority: "high",
       }, {
-        action: "create" as LogicResultAction,
+        action: "create" as LogicResultDocAction,
         dstPath: "users/user-2",
         doc: {
           title: "High priority doc for user 2",
@@ -625,7 +625,7 @@ describe("onFormSubmit", () => {
     ];
     const normalPriorityDocs: LogicResultDoc[] = [
       {
-        action: "merge" as LogicResultAction,
+        action: "merge" as LogicResultDocAction,
         dstPath: "users/user-1",
         doc: {
           title: "Normal priority doc for user 1",
@@ -635,21 +635,21 @@ describe("onFormSubmit", () => {
     ];
     const lowPriorityDocs: LogicResultDoc[] = [
       {
-        action: "create" as LogicResultAction,
+        action: "create" as LogicResultDocAction,
         dstPath: "users/user-1",
         doc: {
           title: "Low priority doc for user 1",
         },
         priority: "low",
       }, {
-        action: "merge" as LogicResultAction,
+        action: "merge" as LogicResultDocAction,
         dstPath: "users/user-2",
         doc: {
           title: "Low priority doc for user 2",
         },
         priority: "low",
       }, {
-        action: "delete" as LogicResultAction,
+        action: "delete" as LogicResultDocAction,
         dstPath: "users/user-3",
         doc: {
           title: "Low priority doc for user 3",
@@ -659,7 +659,7 @@ describe("onFormSubmit", () => {
     ];
     const anotherNormalPriorityDocs: LogicResultDoc[] = [
       {
-        action: "merge" as LogicResultAction,
+        action: "merge" as LogicResultDocAction,
         dstPath: "users/user-1/activities/activity-1",
         doc: {
           title: "Normal priority activity for user 1",

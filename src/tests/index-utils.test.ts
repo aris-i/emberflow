@@ -18,7 +18,7 @@ import {
   Action,
   LogicConfig,
   LogicResult,
-  LogicResultAction,
+  LogicResultDocAction,
   LogicResultDoc,
   ProjectConfig,
   ViewLogicConfig,
@@ -492,7 +492,7 @@ describe("runBusinessLogics", () => {
       },
     ];
     initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
-    const runStatus = await runBusinessLogics(actionType, formModifiedFields, entity, action, distributeFn);
+    const runStatus = await runBusinessLogics(actionRef, action, distributeFn);
 
     expect(logicFn1).toHaveBeenCalledWith(action, undefined);
     expect(logicFn2).toHaveBeenCalledWith(action, undefined);
@@ -532,7 +532,7 @@ describe("runBusinessLogics", () => {
       },
     ];
     initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
-    const runStatus = await runBusinessLogics(actionType, formModifiedFields, entity, action, distributeFn);
+    const runStatus = await runBusinessLogics(actionRef, action, distributeFn);
 
     expect(logicFn1).toHaveBeenCalledWith(action, undefined);
     expect(logicFn2).toHaveBeenCalledWith(action, undefined);
@@ -588,7 +588,7 @@ describe("runBusinessLogics", () => {
       },
     ];
     initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
-    const runStatus = await runBusinessLogics(actionType, formModifiedFields, entity, action, distributeFn);
+    const runStatus = await runBusinessLogics(actionRef, action, distributeFn);
 
     expect(logicFn1).not.toHaveBeenCalled();
     expect(logicFn2).not.toHaveBeenCalled();
@@ -618,7 +618,7 @@ describe("runBusinessLogics", () => {
         },
       ];
       initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
-      const runStatus = await runBusinessLogics(actionType, formModifiedFields, entity, action, distributeFn);
+      const runStatus = await runBusinessLogics(actionRef, action, distributeFn);
 
       expect(logicFn1).toHaveBeenCalledWith(action, undefined);
       expect(logicFn2).toHaveBeenCalledWith(action, undefined);
@@ -655,7 +655,7 @@ describe("runBusinessLogics", () => {
       },
     ];
     initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
-    const runStatus = await runBusinessLogics(actionType, formModifiedFields, entity, action, distributeFn);
+    const runStatus = await runBusinessLogics(actionRef, action, distributeFn);
 
     expect(logicFn1).not.toHaveBeenCalled();
     expect(logicFn2).toHaveBeenCalledWith(action, undefined);
@@ -1055,13 +1055,13 @@ describe("runViewLogics", () => {
 
   it("should run view logics properly", async () => {
     const logicResult1: LogicResultDoc = {
-      action: "merge" as LogicResultAction,
+      action: "merge" as LogicResultDocAction,
       priority: "normal",
       doc: {name: "value1", sampleField2: "value2"},
       dstPath: "users/user123",
     };
     const logicResult2: LogicResultDoc = {
-      action: "delete" as LogicResultAction,
+      action: "delete" as LogicResultDocAction,
       priority: "normal",
       dstPath: "users/user124",
     };
