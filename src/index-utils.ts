@@ -34,6 +34,7 @@ import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
 export const _mockable = {
   getViewLogicsConfig: () => viewLogicConfigs,
   createNowTimestamp: () => admin.firestore.Timestamp.now(),
+  simulateSubmitForm,
 };
 
 export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: BatchUtil) {
@@ -177,11 +178,15 @@ async function simulateSubmitForm(logicResults: LogicResult[], action: Action,
       }
       const docId = logicResultDoc.dstPath.split("/").pop();
       if (!docId) {
-        console.warn("docId should not be blank.  Skipping");
+        console.warn("docId should not be blank. Skipping");
         continue;
       }
       if (!logicResultDoc.doc) {
-        console.warn("LogicResultDoc.doc should not be undefined.  Skipping");
+        console.warn("LogicResultDoc.doc should not be undefined. Skipping");
+        continue;
+      }
+      if (!logicResultDoc.doc["@actionType"]) {
+        console.warn("No @actionType found. Skipping");
         continue;
       }
       const eventContext = {
@@ -197,21 +202,27 @@ async function simulateSubmitForm(logicResults: LogicResult[], action: Action,
       if (submitFormAs) {
         user = (await db.collection("users").doc(submitFormAs).get()).data();
         if (!user) {
-          console.warn(`User ${submitFormAs} not found.  Skipping`);
+          console.warn(`User ${submitFormAs} not found. Skipping`);
           continue;
+        }
+      }
+      const modifiedFields: DocumentData = {};
+      for (const key in logicResultDoc.doc) {
+        if (!key.startsWith("@")) {
+          modifiedFields[key] = logicResultDoc.doc[key];
         }
       }
       const _action: Action = {
         eventContext,
         actionType: logicResultDoc.doc["@actionType"],
         document: (await db.doc(logicResultDoc.dstPath).get()).data() || {},
-        modifiedFields: logicResultDoc.doc,
+        modifiedFields: modifiedFields,
         user: user || action.user,
         status: "new",
-        timeCreated: admin.firestore.Timestamp.now(),
+        timeCreated: _mockable.createNowTimestamp(),
       };
       const _actionRef = db.collection("@actions").doc(eventContext.formId);
-      await _actionRef.set(action);
+      await _actionRef.set(_action);
 
       const status = await runBusinessLogics(_actionRef, _action, distributeFn);
       if (status === "cancel-then-retry") {
@@ -238,10 +249,10 @@ async function simulateSubmitForm(logicResults: LogicResult[], action: Action,
   }
 }
 
-export async function runBusinessLogics(
+export const runBusinessLogics = async (
   actionRef: DocumentReference,
   action: Action,
-  distributeFn: DistributeFn): Promise<"done" | "cancel-then-retry" | "no-matching-logics"> {
+  distributeFn: DistributeFn): Promise<"done" | "cancel-then-retry" | "no-matching-logics"> => {
   const {actionType, modifiedFields, eventContext: {entity}} = action;
   const matchingLogics = logicConfigs.filter((logic) => {
     return (
@@ -307,11 +318,11 @@ export async function runBusinessLogics(
       break;
     }
 
-    await simulateSubmitForm(logicResults, action, distributeFn);
+    await _mockable.simulateSubmitForm(logicResults, action, distributeFn);
   }
 
   return "done";
-}
+};
 
 export function groupDocsByUserAndDstPath(docsByDstPath: Map<string, LogicResultDoc[]>, userId: string) {
   const userDocPath = docPaths["user"].replace("{userId}", userId);

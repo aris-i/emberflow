@@ -353,10 +353,10 @@ describe("onFormSubmit", () => {
       update: jest.fn(),
     });
 
-    const initActionRefMock = jest.spyOn(_mockable, "initActionRef").mockResolvedValue({
+    const initActionRefMock = jest.spyOn(_mockable, "initActionRef").mockReturnValue({
       set: setActionMock,
       update: updateActionMock,
-    } as any);
+    } as any as DocumentReference);
 
     const form = {
       "formData": JSON.stringify({
@@ -402,10 +402,10 @@ describe("onFormSubmit", () => {
       update: jest.fn(),
     });
 
-    const initActionRefMock = jest.spyOn(_mockable, "initActionRef").mockResolvedValue({
+    const initActionRefMock = jest.spyOn(_mockable, "initActionRef").mockReturnValue({
       set: setActionMock,
       update: updateActionMock,
-    } as any);
+    } as any as DocumentReference);
 
     const form = {
       "formData": JSON.stringify({
@@ -445,10 +445,10 @@ describe("onFormSubmit", () => {
       update: jest.fn(),
     });
 
-    const initActionRefMock = jest.spyOn(_mockable, "initActionRef").mockResolvedValue({
+    const initActionRefMock = jest.spyOn(_mockable, "initActionRef").mockReturnValue({
       set: setActionMock,
       update: updateActionMock,
-    } as any);
+    } as any as DocumentReference);
 
     const runBusinessLogicsSpy =
       jest.spyOn(indexutils, "runBusinessLogics").mockResolvedValue("cancel-then-retry");
@@ -494,7 +494,7 @@ describe("onFormSubmit", () => {
 
     const errorMessage = "logic error message";
     const runBusinessLogicsMock = jest.spyOn(indexutils, "runBusinessLogics").mockImplementation(
-      async (actionType, formModifiedFields, entity, action, distributeFn) => {
+      async (actionRef, action, distributeFn) => {
         const logicResults: LogicResult[] = [
           {
             name: "testLogic",
@@ -504,7 +504,7 @@ describe("onFormSubmit", () => {
             documents: [],
           },
         ];
-        await distributeFn(logicResults, 0);
+        await distributeFn(actionRef, logicResults, 0);
         return "done";
       },
     );
@@ -555,9 +555,7 @@ describe("onFormSubmit", () => {
 
     // Test that the runBusinessLogics function was called with the correct parameters
     expect(runBusinessLogicsMock).toHaveBeenCalledWith(
-      "create",
-      {"field1": "value1", "field2": "value2"},
-      "user",
+      docMock,
       expectedAction,
       expect.any(Function),
     );
@@ -684,8 +682,8 @@ describe("onFormSubmit", () => {
 
     const runBusinessLogicsSpy =
       jest.spyOn(indexutils, "runBusinessLogics").mockImplementation(
-        async (actionType, formModifiedFields, entity, action, distributeFn) => {
-          await distributeFn(logicResults, 0);
+        async (actionRef, action, distributeFn) => {
+          await distributeFn(actionRef, logicResults, 0);
           return "done";
         },
       );
