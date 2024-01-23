@@ -26,8 +26,9 @@ export async function cleanPubSubProcessedIds(event: ScheduledEvent) {
     const query = topicDoc.ref.collection("processedIds")
       .where("timestamp", "<", new Date(Date.now() - 1000 * 60 * 60 * 24 * 7));
 
-    await deleteCollection(query);
-    i++;
+    await deleteCollection(query, (snapshot) => {
+      i += snapshot.size;
+    });
   }
   console.info(`Cleaned ${i} topics of processedIds`);
 }

@@ -7,6 +7,7 @@ import {validatorConfig} from "../../sample-custom/validators";
 import {cleanPubSubProcessedIds, pubsubUtils} from "../../utils/pubsub";
 import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
 import * as misc from "../../utils/misc";
+import {firestore} from "firebase-admin";
 
 const projectConfig: ProjectConfig = {
   projectId: "your-project-id",
@@ -57,7 +58,10 @@ describe("pubsubUtils", () => {
       get: colGetMock,
     } as any);
     deleteCollectionSpy = jest.spyOn(misc, "deleteCollection")
-      .mockImplementation(() => {
+      .mockImplementation(async (query, callback) => {
+        if (callback) {
+          await callback({size: 1} as unknown as firestore.QuerySnapshot);
+        }
         return Promise.resolve();
       });
   });

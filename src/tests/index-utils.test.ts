@@ -217,6 +217,7 @@ describe("distribute", () => {
       doc: jest.fn(() => dbDoc),
     } as any);
     queueInstructionsSpy = jest.spyOn(distribution, "queueInstructions").mockResolvedValue();
+    jest.spyOn(indexUtils, "createPubSubTopics").mockResolvedValue();
   });
 
   afterEach(() => {
@@ -1476,5 +1477,40 @@ describe("runViewLogics", () => {
     expect(viewLogicFn2).toHaveBeenCalledTimes(1);
     expect(viewLogicFn2).toHaveBeenCalledWith(logicResult2);
     expect(results).toHaveLength(3);
+  });
+});
+
+describe("createPubSubTopics", () => {
+  let docSetMock: jest.Mock;
+  let docGetMock: jest.Mock;
+
+  beforeEach(() => {
+    docSetMock = jest.fn();
+    docGetMock = jest.fn();
+    const dbDoc = ({
+      set: docSetMock,
+      get: docGetMock,
+    } as unknown) as admin.firestore.DocumentReference<admin.firestore.DocumentData>;
+    jest.spyOn(admin.firestore(), "doc").mockReturnValue(dbDoc);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("should create pubsub topics when not existing", async () => {
+    docGetMock.mockResolvedValue({exists: false});
+    await indexUtils.createPubSubTopics(["SAMPLE_TOPIC_NAME", "ANOTHER_TOPIC_NAME"]);
+
+    expect(docGetMock).toHaveBeenCalledTimes(2);
+    expect(docSetMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("should skip creating pubsub topics when existing", async () => {
+    docGetMock.mockResolvedValue({exists: true});
+    await indexUtils.createPubSubTopics(["SAMPLE_TOPIC_NAME", "ANOTHER_TOPIC_NAME"]);
+
+    expect(docGetMock).toHaveBeenCalledTimes(2);
+    expect(docSetMock).toHaveBeenCalledTimes(0);
   });
 });

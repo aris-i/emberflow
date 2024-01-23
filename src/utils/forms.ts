@@ -50,7 +50,7 @@ export async function onMessageSubmitFormQueue(event: CloudEvent<MessagePublishe
 export async function cleanActionsAndForms(event: ScheduledEvent) {
   console.info("Running cleanActionsAndForms");
   const query = db.collection("@actions")
-    .where("timestamp", "<", new Date(Date.now() - 1000 * 60 * 60 * 24 * 7));
+    .where("timeCreated", "<", new Date(Date.now() - 1000 * 60 * 60 * 24 * 7));
 
   await deleteCollection(query, async (snapshot) => {
     const forms: {[key: string]: null} = {};

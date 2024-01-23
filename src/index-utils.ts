@@ -286,7 +286,7 @@ export const runBusinessLogics = async (
         const end = performance.now();
         const execTime = end - start;
         const {status, nextPage} = result;
-        if (status === "finished") {
+        if (status === "finished" || status === "error") {
           matchingLogics.splice(i, 1);
           nextPageMarkers.splice(i, 1);
         } else if (status === "partial-result") {
@@ -588,5 +588,16 @@ async function deleteFunction(projectId: string, functionName: string): Promise<
     console.log(`Function '${functionName}' in location '${location}' deleted successfully.`);
   } else {
     console.log(`Function '${functionName}' not found or location not available.`);
+  }
+}
+
+export async function createPubSubTopics(pubSubTopics: string[]) {
+  for (const topicName of pubSubTopics) {
+    const pubSubTopicRef = db.doc(`@topics/${topicName}`);
+    const pubSubTopic = await pubSubTopicRef.get();
+    if (pubSubTopic.exists) {
+      continue;
+    }
+    await pubSubTopicRef.set({timestamp: new Date()});
   }
 }

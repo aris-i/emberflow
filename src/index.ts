@@ -12,6 +12,7 @@ import {
   ViewLogicConfig,
 } from "./types";
 import {
+  createPubSubTopics,
   delayFormSubmissionAndCheckIfCancelled,
   distribute,
   distributeLater,
@@ -70,13 +71,20 @@ export const VIEW_LOGICS_TOPIC_NAME = "view-logics-queue";
 export const PEER_SYNC_TOPIC_NAME = "peer-sync-queue";
 export const FOR_DISTRIBUTION_TOPIC_NAME = "for-distribution-queue";
 export const INSTRUCTIONS_TOPIC_NAME = "instructions-queue";
+const PUB_SUB_TOPICS = [
+  SUBMIT_FORM_TOPIC_NAME,
+  VIEW_LOGICS_TOPIC_NAME,
+  PEER_SYNC_TOPIC_NAME,
+  FOR_DISTRIBUTION_TOPIC_NAME,
+  INSTRUCTIONS_TOPIC_NAME,
+];
 
 export const _mockable = {
   createNowTimestamp: () => admin.firestore.Timestamp.now(),
   initActionRef,
 };
 
-export function initializeEmberFlow(
+export async function initializeEmberFlow(
   customProjectConfig: ProjectConfig,
   adminInstance: FirebaseAdmin,
   customDbStructure: Record<string, object>,
@@ -84,12 +92,12 @@ export function initializeEmberFlow(
   customSecurityConfig: SecurityConfig,
   customValidatorConfig: ValidatorConfig,
   customLogicConfigs: LogicConfig[],
-) : {
-  docPaths: Record<string, string>;
-  colPaths: Record<string, string>;
-  docPathsRegex: Record<string, RegExp>;
-  functionsConfig: Record<string, any>,
-} {
+) : Promise<{
+    docPaths: Record<string, string>;
+    colPaths: Record<string, string>;
+    docPathsRegex: Record<string, RegExp>;
+    functionsConfig: Record<string, any>,
+  }> {
   projectConfig = customProjectConfig;
   admin = adminInstance;
   db = admin.firestore();
@@ -101,6 +109,7 @@ export function initializeEmberFlow(
   validatorConfig = customValidatorConfig;
   logicConfigs = [...customLogicConfigs];
   initClient(admin.app(), "service");
+  await createPubSubTopics(PUB_SUB_TOPICS);
 
   const {
     docPaths: dp,
