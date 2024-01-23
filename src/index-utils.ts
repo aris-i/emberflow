@@ -35,6 +35,7 @@ export const _mockable = {
   getViewLogicsConfig: () => viewLogicConfigs,
   createNowTimestamp: () => admin.firestore.Timestamp.now(),
   simulateSubmitForm,
+  updateLogicMetrics,
 };
 
 export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: BatchUtil) {
@@ -313,6 +314,7 @@ export const runBusinessLogics = async (
       }
     }
     await distributeFn(actionRef, logicResults, page++);
+    await _mockable.updateLogicMetrics(logicResults);
     if (page >= maxLogicResultPages) {
       console.warn(`Maximum number of logic result pages (${maxLogicResultPages}) reached`);
       break;
@@ -599,5 +601,21 @@ export async function createPubSubTopics(pubSubTopics: string[]) {
       continue;
     }
     await pubSubTopicRef.set({timestamp: new Date()});
+  }
+}
+
+async function updateLogicMetrics(logicResults: LogicResult[]) {
+  const metricsRef = db.collection("@metrics");
+  for (const logicResult of logicResults) {
+    const {name, execTime} = logicResult;
+    if (!execTime) {
+      continue;
+    }
+
+    const logicRef = metricsRef.doc(name);
+    await queueInstructions(logicRef.path, {
+      totalExecTime: `+${execTime}`,
+      totalExecCount: "++",
+    });
   }
 }

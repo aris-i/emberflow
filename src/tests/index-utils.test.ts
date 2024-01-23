@@ -10,7 +10,6 @@ import {
   LogicResultDoc,
   ProjectConfig,
   ViewLogicConfig,
-  DistributeFn,
   EventContext,
 } from "../types";
 import {Entity, dbStructure} from "../sample-custom/db-structure";
@@ -437,6 +436,7 @@ describe("runBusinessLogics", () => {
 
   let dbSpy: jest.SpyInstance;
   let simulateSubmitFormSpy: jest.SpyInstance;
+  let updateLogicMetricsSpy: jest.SpyInstance;
   let actionRef: DocumentReference;
 
   beforeEach(() => {
@@ -445,11 +445,8 @@ describe("runBusinessLogics", () => {
     logicFn2 = jest.fn().mockResolvedValue({status: "finished"});
     logicFn3 = jest.fn().mockResolvedValue({status: "error", message: "Error message"});
 
-    simulateSubmitFormSpy = jest.spyOn(indexUtils._mockable, "simulateSubmitForm").mockImplementation((
-      logicResults: LogicResult[], action: Action, distributeFn: DistributeFn
-    ) => {
-      return Promise.resolve();
-    });
+    simulateSubmitFormSpy = jest.spyOn(indexUtils._mockable, "simulateSubmitForm").mockResolvedValue();
+    updateLogicMetricsSpy = jest.spyOn(indexUtils._mockable, "updateLogicMetrics").mockResolvedValue();
 
     const dbDoc = ({
       get: jest.fn().mockResolvedValue({
@@ -484,6 +481,7 @@ describe("runBusinessLogics", () => {
     distributeFn.mockRestore();
     dbSpy.mockRestore();
     simulateSubmitFormSpy.mockRestore();
+    updateLogicMetricsSpy.mockRestore();
   });
 
   it("should call all matching logics and pass their results to distributeFn", async () => {
@@ -529,6 +527,7 @@ describe("runBusinessLogics", () => {
         timeFinished: expect.any(Timestamp),
       })], 0);
     expect(runStatus).toEqual("done");
+    expect(updateLogicMetricsSpy).toHaveBeenCalledTimes(1);
     expect(simulateSubmitFormSpy).toHaveBeenCalledTimes(1);
   });
 
@@ -1512,5 +1511,79 @@ describe("createPubSubTopics", () => {
 
     expect(docGetMock).toHaveBeenCalledTimes(2);
     expect(docSetMock).toHaveBeenCalledTimes(0);
+  });
+});
+
+describe("updateLogicMetrics", () => {
+  let colSpy: jest.SpyInstance;
+  let docMock: jest.Mock;
+  let queueInstructionsSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    docMock = jest.fn().mockImplementation((doc: string) => {
+      return {
+        path: `@metrics/${doc}`,
+      } as unknown as DocumentReference;
+    });
+    colSpy = jest.spyOn(admin.firestore(), "collection").mockReturnValue({
+      doc: docMock,
+    } as unknown as CollectionReference);
+    queueInstructionsSpy = jest.spyOn(distribution, "queueInstructions").mockResolvedValue();
+  });
+
+  afterEach(() => {
+    colSpy.mockRestore();
+    docMock.mockRestore();
+    queueInstructionsSpy.mockRestore();
+  });
+
+  it("should skip logic result when execTime is undefined", async () => {
+    const logicResults: LogicResult[] = [];
+    const logicResult = {
+      name: "sampleLogicResult",
+    } as LogicResult;
+    logicResults.push(logicResult);
+
+    await indexUtils._mockable.updateLogicMetrics(logicResults);
+    expect(colSpy).toHaveBeenCalledTimes(1);
+    expect(colSpy).toHaveBeenCalledWith("@metrics");
+    expect(docMock).not.toHaveBeenCalled();
+    expect(queueInstructionsSpy).not.toHaveBeenCalled();
+  });
+
+  it("should queue logic result metrics", async () => {
+    const logicResults: LogicResult[] = [];
+    const logicResult1 = {
+      name: "sampleLogicResult",
+      execTime: 100,
+    } as LogicResult;
+    const logicResult2 = {
+      name: "anotherLogicResult",
+      execTime: 200,
+    } as LogicResult;
+    logicResults.push(logicResult1);
+    logicResults.push(logicResult2);
+
+    await indexUtils._mockable.updateLogicMetrics(logicResults);
+    expect(colSpy).toHaveBeenCalledTimes(1);
+    expect(colSpy).toHaveBeenCalledWith("@metrics");
+    expect(docMock).toHaveBeenCalledTimes(2);
+    expect(docMock).toHaveBeenNthCalledWith(1, "sampleLogicResult");
+    expect(docMock).toHaveBeenNthCalledWith(2, "anotherLogicResult");
+    expect(queueInstructionsSpy).toHaveBeenCalledTimes(2);
+    expect(queueInstructionsSpy).toHaveBeenNthCalledWith(1,
+      `@metrics/${logicResult1.name}`,
+      {
+        totalExecTime: `+${logicResult1.execTime}`,
+        totalExecCount: "++",
+      },
+    );
+    expect(queueInstructionsSpy).toHaveBeenNthCalledWith(2,
+      `@metrics/${logicResult2.name}`,
+      {
+        totalExecTime: `+${logicResult2.execTime}`,
+        totalExecCount: "++",
+      },
+    );
   });
 });
