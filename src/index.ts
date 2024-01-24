@@ -43,7 +43,7 @@ import {PubSub} from "@google-cloud/pubsub";
 import {onMessagePublished} from "firebase-functions/v2/pubsub";
 import {reviveDateAndTimestamp, deleteForms} from "./utils/misc";
 import Database = database.Database;
-import {onMessageForDistributionQueue, onMessageInstructionsQueue} from "./utils/distribution";
+import {onMessageForDistributionQueue, onMessageInstructionsQueue, reduceInstructions} from "./utils/distribution";
 import {cleanPubSubProcessedIds} from "./utils/pubsub";
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import {onDocumentCreated} from "firebase-functions/v2/firestore";
@@ -70,6 +70,7 @@ export const VIEW_LOGICS_TOPIC_NAME = "view-logics-queue";
 export const PEER_SYNC_TOPIC_NAME = "peer-sync-queue";
 export const FOR_DISTRIBUTION_TOPIC_NAME = "for-distribution-queue";
 export const INSTRUCTIONS_TOPIC_NAME = "instructions-queue";
+export const INSTRUCTIONS_REDUCER_TOPIC_NAME = "instructions-reducer-queue";
 
 export const _mockable = {
   createNowTimestamp: () => admin.firestore.Timestamp.now(),
@@ -189,6 +190,11 @@ export function initializeEmberFlow(
     region: projectConfig.region,
     timeoutSeconds: 540,
   }, processScheduledEntities);
+  functionsConfig["reduceInstructions"] = onSchedule({
+    schedule: "every 5 seconds",
+    region: projectConfig.region,
+    timeoutSeconds: 60,
+  }, reduceInstructions);
   functionsConfig["onDeleteFunctions"] = onDocumentCreated(
     "@server/delete/functions/{deleteFuncId}", onDeleteFunction);
   functionsConfig["onUserRegister"] =
