@@ -10,6 +10,8 @@ export enum Entity {
     Server = "server",
     Channel = "channel",
     Member = "member",
+    Post = "post",
+    Comment = "comment",
 }
 
 // Map your custom entities to dbStructure below.
@@ -46,6 +48,13 @@ export const dbStructure = {
           [view(Entity.User, ["name", "email"])]: {},
           games: {
             game: {},
+          },
+        },
+      },
+      posts: {
+        [Entity.Post]: {
+          comments: {
+            [Entity.Comment]: {},
           },
         },
       },

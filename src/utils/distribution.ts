@@ -1,5 +1,12 @@
 import {InstructionsMessage, LogicResultDoc} from "../types";
-import {admin, db, FOR_DISTRIBUTION_TOPIC_NAME, INSTRUCTIONS_TOPIC_NAME, pubsub} from "../index";
+import {
+  admin,
+  db,
+  FOR_DISTRIBUTION_TOPIC,
+  FOR_DISTRIBUTION_TOPIC_NAME,
+  INSTRUCTIONS_TOPIC,
+  INSTRUCTIONS_TOPIC_NAME,
+} from "../index";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
 import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
 import {distributeDoc} from "../index-utils";
@@ -9,11 +16,9 @@ import {pubsubUtils} from "./pubsub";
 import {reviveDateAndTimestamp} from "./misc";
 
 export const queueForDistributionLater = async (...logicResultDocs: LogicResultDoc[]) => {
-  const topic = pubsub.topic(FOR_DISTRIBUTION_TOPIC_NAME);
-
   try {
     for (const logicResultDoc of logicResultDocs) {
-      const messageId = await topic.publishMessage({json: logicResultDoc});
+      const messageId = await FOR_DISTRIBUTION_TOPIC.publishMessage({json: logicResultDoc});
       console.log(`Message ${messageId} published.`);
     }
   } catch (error: unknown) {
@@ -56,10 +61,8 @@ export async function onMessageForDistributionQueue(event: CloudEvent<MessagePub
 }
 
 export async function queueInstructions(dstPath: string, instructions: { [p: string]: string }) {
-  const topic = pubsub.topic(INSTRUCTIONS_TOPIC_NAME);
-
   try {
-    const messageId = await topic.publishMessage({json: {dstPath, instructions}});
+    const messageId = await INSTRUCTIONS_TOPIC.publishMessage({json: {dstPath, instructions}});
     console.log(`Message ${messageId} published.`);
   } catch (error: unknown) {
     if (error instanceof Error) {
