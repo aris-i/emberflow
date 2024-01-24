@@ -208,6 +208,8 @@ describe("filterSubDocPathsByEntity", () => {
     expect(result).toEqual([
       "users/{userId}",
       "users/{userId}/feeds/{feedId}",
+      "users/{userId}/posts/{postId}",
+      "users/{userId}/posts/{postId}/comments/{commentId}",
     ]);
   });
 
