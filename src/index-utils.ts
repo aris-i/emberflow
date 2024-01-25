@@ -602,17 +602,6 @@ async function deleteFunction(projectId: string, functionName: string): Promise<
   }
 }
 
-export async function createPubSubTopics(pubSubTopics: string[]) {
-  for (const topicName of pubSubTopics) {
-    const pubSubTopicRef = db.doc(`@topics/${topicName}`);
-    const pubSubTopic = await pubSubTopicRef.get();
-    if (pubSubTopic.exists) {
-      continue;
-    }
-    await pubSubTopicRef.set({timestamp: new Date()});
-  }
-}
-
 async function updateLogicMetrics(logicResults: LogicResult[]) {
   const metricsRef = db.collection("@metrics");
   for (const logicResult of logicResults) {

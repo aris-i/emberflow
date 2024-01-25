@@ -16,6 +16,16 @@ import spyOn = jest.spyOn;
 import * as misc from "../../utils/misc";
 import {firestore} from "firebase-admin";
 
+jest.mock("../../utils/pubsub", () => {
+  return {
+    pubsubUtils: {
+      isProcessed: isProcessedMock,
+      trackProcessedIds: trackProcessedIdsMock,
+    },
+    createPubSubTopics: jest.fn().mockResolvedValue({}),
+  };
+});
+
 const projectConfig: ProjectConfig = {
   projectId: "your-project-id",
   region: "asia-southeast1",
@@ -32,14 +42,6 @@ admin.initializeApp({
   databaseURL: "https://test-project.firebaseio.com",
 });
 initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, []);
-jest.mock("../../utils/pubsub", () => {
-  return {
-    pubsubUtils: {
-      isProcessed: isProcessedMock,
-      trackProcessedIds: trackProcessedIdsMock,
-    },
-  };
-});
 
 describe("queueSubmitForm", () => {
   let publishMessageSpy: jest.SpyInstance;
