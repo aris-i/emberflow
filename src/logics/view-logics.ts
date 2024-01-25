@@ -5,7 +5,7 @@ import {
   ViewDefinition,
   ViewLogicFn,
 } from "../types";
-import {docPaths, pubsub, PEER_SYNC_TOPIC_NAME, VIEW_LOGICS_TOPIC_NAME} from "../index";
+import {docPaths, PEER_SYNC_TOPIC, PEER_SYNC_TOPIC_NAME, VIEW_LOGICS_TOPIC, VIEW_LOGICS_TOPIC_NAME} from "../index";
 import * as admin from "firebase-admin";
 import {hydrateDocPath} from "../utils/paths";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
@@ -146,15 +146,13 @@ export const syncPeerViews = async (logicResultDoc: LogicResultDoc) => {
 };
 
 export async function queueRunViewLogics(userLogicResultDocs: LogicResultDoc[]) {
-  const topic = pubsub.topic(VIEW_LOGICS_TOPIC_NAME);
-
   try {
     for (const userLogicResultDoc of userLogicResultDocs) {
       if (userLogicResultDoc.action === "create") {
         // Since this is newly created, this means there's no existing view to sync
         continue;
       }
-      const messageId = await topic.publishMessage({json: userLogicResultDoc});
+      const messageId = await VIEW_LOGICS_TOPIC.publishMessage({json: userLogicResultDoc});
       console.log(`Message ${messageId} published.`);
     }
   } catch (error: unknown) {
@@ -199,11 +197,9 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
 }
 
 export const queueForPeerSync = async (...userLogicResultDocs: LogicResultDoc[]) => {
-  const topic = pubsub.topic(PEER_SYNC_TOPIC_NAME);
-
   try {
     for (const userLogicResultDoc of userLogicResultDocs) {
-      const messageId = await topic.publishMessage({json: userLogicResultDoc});
+      const messageId = await PEER_SYNC_TOPIC.publishMessage({json: userLogicResultDoc});
       console.log(`Message ${messageId} published.`);
     }
   } catch (error: unknown) {

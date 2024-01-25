@@ -2,10 +2,10 @@ import {Instructions, InstructionsMessage, LogicResultDoc} from "../types";
 import {
   admin,
   db,
+  FOR_DISTRIBUTION_TOPIC,
   FOR_DISTRIBUTION_TOPIC_NAME,
-  INSTRUCTIONS_REDUCER_TOPIC_NAME,
+  INSTRUCTIONS_TOPIC,
   INSTRUCTIONS_TOPIC_NAME,
-  pubsub,
 } from "../index";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
 import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
@@ -16,9 +16,6 @@ import {pubsubUtils} from "./pubsub";
 import {reviveDateAndTimestamp} from "./misc";
 
 export const queueForDistributionLater = async (...logicResultDocs: LogicResultDoc[]) => {
-  const forDistributionTopic = pubsub.topic(FOR_DISTRIBUTION_TOPIC_NAME);
-  const instructionsReducerTopic = pubsub.topic(INSTRUCTIONS_REDUCER_TOPIC_NAME);
-
   try {
     for (const logicResultDoc of logicResultDocs) {
       const {
@@ -26,7 +23,7 @@ export const queueForDistributionLater = async (...logicResultDocs: LogicResultD
         dstPath,
         ...rest
       } = logicResultDoc;
-      const forDistributionMessageId = await forDistributionTopic.publishMessage({json: {...rest, dstPath}});
+      const forDistributionMessageId = await FOR_DISTRIBUTION_TOPIC.publishMessage({json: {...rest, dstPath}});
       console.log(`Message ${forDistributionMessageId} published.`);
       if (instructions) {
         const instructionsReducerMessageId = await instructionsReducerTopic.publishMessage({json: {dstPath, instructions}});
@@ -73,10 +70,8 @@ export async function onMessageForDistributionQueue(event: CloudEvent<MessagePub
 }
 
 export async function queueInstructions(dstPath: string, instructions: { [p: string]: string }) {
-  const topic = pubsub.topic(INSTRUCTIONS_TOPIC_NAME);
-
   try {
-    const messageId = await topic.publishMessage({json: {dstPath, instructions}});
+    const messageId = await INSTRUCTIONS_TOPIC.publishMessage({json: {dstPath, instructions}});
     console.log(`Message ${messageId} published.`);
   } catch (error: unknown) {
     if (error instanceof Error) {

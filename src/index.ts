@@ -12,6 +12,7 @@ import {
   ViewLogicConfig,
 } from "./types";
 import {
+  cleanLogicMetricsExecutions,
   delayFormSubmissionAndCheckIfCancelled,
   distribute,
   distributeLater,
@@ -39,12 +40,12 @@ import {database} from "firebase-admin";
 import {initClient} from "@primeanalytiq/emberflow-admin-client/lib";
 import {internalDbStructure, InternalEntity} from "./db-structure";
 import {cleanActionsAndForms, onMessageSubmitFormQueue} from "./utils/forms";
-import {PubSub} from "@google-cloud/pubsub";
+import {PubSub, Topic} from "@google-cloud/pubsub";
 import {onMessagePublished} from "firebase-functions/v2/pubsub";
 import {reviveDateAndTimestamp, deleteForms} from "./utils/misc";
 import Database = database.Database;
 import {onMessageForDistributionQueue, onMessageInstructionsQueue, reduceInstructions} from "./utils/distribution";
-import {cleanPubSubProcessedIds} from "./utils/pubsub";
+import {cleanPubSubProcessedIds, createPubSubTopics} from "./utils/pubsub";
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import {onDocumentCreated} from "firebase-functions/v2/firestore";
 import {onRequest} from "firebase-functions/v2/https";
@@ -71,13 +72,18 @@ export const PEER_SYNC_TOPIC_NAME = "peer-sync-queue";
 export const FOR_DISTRIBUTION_TOPIC_NAME = "for-distribution-queue";
 export const INSTRUCTIONS_TOPIC_NAME = "instructions-queue";
 export const INSTRUCTIONS_REDUCER_TOPIC_NAME = "instructions-reducer-queue";
+export let SUBMIT_FORM_TOPIC: Topic;
+export let VIEW_LOGICS_TOPIC: Topic;
+export let PEER_SYNC_TOPIC: Topic;
+export let FOR_DISTRIBUTION_TOPIC: Topic;
+export let INSTRUCTIONS_TOPIC: Topic;
 
 export const _mockable = {
   createNowTimestamp: () => admin.firestore.Timestamp.now(),
   initActionRef,
 };
 
-export function initializeEmberFlow(
+export async function initializeEmberFlow(
   customProjectConfig: ProjectConfig,
   adminInstance: FirebaseAdmin,
   customDbStructure: Record<string, object>,
@@ -85,12 +91,12 @@ export function initializeEmberFlow(
   customSecurityConfig: SecurityConfig,
   customValidatorConfig: ValidatorConfig,
   customLogicConfigs: LogicConfig[],
-) : {
-  docPaths: Record<string, string>;
-  colPaths: Record<string, string>;
-  docPathsRegex: Record<string, RegExp>;
-  functionsConfig: Record<string, any>,
-} {
+) : Promise<{
+    docPaths: Record<string, string>;
+    colPaths: Record<string, string>;
+    docPathsRegex: Record<string, RegExp>;
+    functionsConfig: Record<string, any>,
+  }> {
   projectConfig = customProjectConfig;
   admin = adminInstance;
   db = admin.firestore();
@@ -102,6 +108,19 @@ export function initializeEmberFlow(
   validatorConfig = customValidatorConfig;
   logicConfigs = [...customLogicConfigs];
   initClient(admin.app(), "service");
+  SUBMIT_FORM_TOPIC = pubsub.topic(SUBMIT_FORM_TOPIC_NAME);
+  VIEW_LOGICS_TOPIC = pubsub.topic(VIEW_LOGICS_TOPIC_NAME);
+  PEER_SYNC_TOPIC = pubsub.topic(PEER_SYNC_TOPIC_NAME);
+  FOR_DISTRIBUTION_TOPIC = pubsub.topic(FOR_DISTRIBUTION_TOPIC_NAME);
+  INSTRUCTIONS_TOPIC = pubsub.topic(INSTRUCTIONS_TOPIC_NAME);
+  const pubSubTopics = [
+    SUBMIT_FORM_TOPIC_NAME,
+    VIEW_LOGICS_TOPIC_NAME,
+    PEER_SYNC_TOPIC_NAME,
+    FOR_DISTRIBUTION_TOPIC_NAME,
+    INSTRUCTIONS_TOPIC_NAME,
+  ];
+  await createPubSubTopics(pubSubTopics);
 
   const {
     docPaths: dp,
@@ -180,6 +199,11 @@ export function initializeEmberFlow(
     region: projectConfig.region,
     timeoutSeconds: 540,
   }, cleanPubSubProcessedIds);
+  functionsConfig["cleanLogicMetricsExecutions"] = onSchedule({
+    schedule: "every 1 hours",
+    region: projectConfig.region,
+    timeoutSeconds: 540,
+  }, cleanLogicMetricsExecutions);
   functionsConfig["cleanActionsAndForms"] = onSchedule({
     schedule: "every 1 hours",
     region: projectConfig.region,

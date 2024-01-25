@@ -18,7 +18,7 @@ import {
   viewLogicConfigs,
 } from "./index";
 import {expandAndGroupDocPathsByEntity, findMatchingDocPathRegex} from "./utils/paths";
-import {deepEqual} from "./utils/misc";
+import {deepEqual, deleteCollection} from "./utils/misc";
 import {CloudFunctionsServiceClient} from "@google-cloud/functions";
 import {FormData} from "@primeanalytiq/emberflow-admin-client/lib/types";
 import {BatchUtil} from "./utils/batch";
@@ -35,6 +35,7 @@ export const _mockable = {
   getViewLogicsConfig: () => viewLogicConfigs,
   createNowTimestamp: () => admin.firestore.Timestamp.now(),
   simulateSubmitForm,
+  updateLogicMetrics,
 };
 
 export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: BatchUtil) {
@@ -286,7 +287,7 @@ export const runBusinessLogics = async (
         const end = performance.now();
         const execTime = end - start;
         const {status, nextPage} = result;
-        if (status === "finished") {
+        if (status === "finished" || status === "error") {
           matchingLogics.splice(i, 1);
           nextPageMarkers.splice(i, 1);
         } else if (status === "partial-result") {
@@ -312,7 +313,17 @@ export const runBusinessLogics = async (
         });
       }
     }
+    const start = performance.now();
     await distributeFn(actionRef, logicResults, page++);
+    const end = performance.now();
+    const execTime = end - start;
+    const distributeFnLogicResult: LogicResult = {
+      name: "distributeFn",
+      status: "finished",
+      documents: [],
+      execTime: execTime,
+    };
+    await _mockable.updateLogicMetrics([...logicResults, distributeFnLogicResult]);
     if (page >= maxLogicResultPages) {
       console.warn(`Maximum number of logic result pages (${maxLogicResultPages}) reached`);
       break;
@@ -589,4 +600,45 @@ async function deleteFunction(projectId: string, functionName: string): Promise<
   } else {
     console.log(`Function '${functionName}' not found or location not available.`);
   }
+}
+
+async function updateLogicMetrics(logicResults: LogicResult[]) {
+  const metricsRef = db.collection("@metrics");
+  for (const logicResult of logicResults) {
+    const {name, execTime} = logicResult;
+    if (!execTime) {
+      console.warn(`No execTime found for logic ${name}`);
+      continue;
+    }
+    if (execTime > 100) {
+      console.warn(`${name} took ${execTime}ms to execute`);
+    }
+
+    const logicRef = metricsRef.doc(name);
+    await queueInstructions(logicRef.path, {
+      totalExecTime: `+${execTime}`,
+      totalExecCount: "++",
+    });
+
+    const execRef = logicRef.collection("executions").doc();
+    await execRef.set({
+      execDate: admin.firestore.Timestamp.now(),
+      execTime,
+    });
+  }
+}
+
+export async function cleanLogicMetricsExecutions(event: ScheduledEvent) {
+  console.info("Running cleanLogicMetricsExecutions");
+  const metricsSnapshot = await db.collection("@metrics").get();
+  let i = 0;
+  for (const metricsDoc of metricsSnapshot.docs) {
+    const query = metricsDoc.ref.collection("executions")
+      .where("execDate", "<", new Date(Date.now() - 1000 * 60 * 60 * 24 * 7));
+
+    await deleteCollection(query, (snapshot) => {
+      i += snapshot.size;
+    });
+  }
+  console.info(`Cleaned ${i} logic metrics executions`);
 }

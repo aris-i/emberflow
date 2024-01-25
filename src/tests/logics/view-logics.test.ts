@@ -1,5 +1,11 @@
-import {LogicResult, LogicResultDocAction, LogicResultDoc, LogicResultDocPriority, ViewDefinition} from "../../types";
-import {PubSub, Topic} from "@google-cloud/pubsub";
+import {
+  LogicResult,
+  LogicResultDocAction,
+  LogicResultDoc,
+  LogicResultDocPriority,
+  ViewDefinition,
+  ProjectConfig,
+} from "../../types";
 const isProcessedMock = jest.fn();
 const trackProcessedIdsMock = jest.fn();
 import * as pathsutils from "../../utils/paths";
@@ -8,24 +14,17 @@ import {CloudEvent} from "firebase-functions/lib/v2/core";
 import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
 import * as indexUtils from "../../index-utils";
 import {firestore} from "firebase-admin";
-import {PEER_SYNC_TOPIC_NAME, VIEW_LOGICS_TOPIC_NAME} from "../../index";
-
-jest.mock("../../index", () => {
-  const originalModule = jest.requireActual("../../index");
-  return {
-    ...originalModule,
-    docPaths: {
-      user: "users/{userId}",
-      topics: "topics/{topicId}",
-      friend: "users/{userId}/friends/{friendId}",
-      post: "users/{userId}/posts/{postId}",
-      comment: "users/{userId}/posts/{postId}/comments/{commentId}",
-    },
-    pubsub: new PubSub(),
-    VIEW_LOGICS_TOPIC_NAME: "view-logics-queue",
-    PEER_SYNC_TOPIC_NAME: "peer-sync-queue",
-  };
-});
+import {
+  initializeEmberFlow,
+  PEER_SYNC_TOPIC,
+  PEER_SYNC_TOPIC_NAME,
+  VIEW_LOGICS_TOPIC,
+  VIEW_LOGICS_TOPIC_NAME,
+} from "../../index";
+import * as admin from "firebase-admin";
+import {securityConfig} from "../../sample-custom/security";
+import {validatorConfig} from "../../sample-custom/validators";
+import {dbStructure, Entity} from "../../sample-custom/db-structure";
 
 jest.mock("../../utils/pubsub", () => {
   return {
@@ -33,8 +32,26 @@ jest.mock("../../utils/pubsub", () => {
       isProcessed: isProcessedMock,
       trackProcessedIds: trackProcessedIdsMock,
     },
+    createPubSubTopics: jest.fn().mockResolvedValue({}),
   };
 });
+
+const projectConfig: ProjectConfig = {
+  projectId: "your-project-id",
+  region: "asia-southeast1",
+  rtdbName: "your-rtdb-name",
+  budgetAlertTopicName: "budget-alerts",
+  maxCostLimitPerFunction: 100,
+  specialCostLimitPerFunction: {
+    function1: 50,
+    function2: 75,
+    function3: 120,
+  },
+};
+admin.initializeApp({
+  databaseURL: "https://test-project.firebaseio.com",
+});
+initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, []);
 
 const vd1: ViewDefinition = {
   srcEntity: "user",
@@ -52,7 +69,7 @@ const vd2: ViewDefinition = {
 const vd3: ViewDefinition = {
   srcEntity: "users",
   srcProps: ["username", "avatarUrl"],
-  destEntity: "topics",
+  destEntity: "server",
   destProp: "createdBy",
 };
 
@@ -115,8 +132,8 @@ describe("createViewLogicFn", () => {
         "users/789/friends/1234",
       ]))
       .mockReturnValueOnce(Promise.resolve([
-        "topics/123",
-        "topics/456",
+        "servers/123",
+        "servers/456",
       ]));
 
     // Create the logic function using the viewDefinition
@@ -213,17 +230,17 @@ describe("createViewLogicFn", () => {
 
     document = result3.documents[0];
     expect(document).toHaveProperty("action", "merge");
-    expect(document).toHaveProperty("dstPath", "topics/123");
+    expect(document).toHaveProperty("dstPath", "servers/123");
     expect(document.doc).toEqual({"createdBy.username": "new_username"});
 
     document = result3.documents[1];
     expect(document).toHaveProperty("action", "merge");
-    expect(document).toHaveProperty("dstPath", "topics/456");
+    expect(document).toHaveProperty("dstPath", "servers/456");
     expect(document.doc).toEqual({"createdBy.username": "new_username"});
 
-    expect(hydrateDocPathSpy.mock.calls[3][0]).toEqual("topics/{topicId}");
+    expect(hydrateDocPathSpy.mock.calls[3][0]).toEqual("servers/{serverId}");
     expect(hydrateDocPathSpy.mock.calls[3][1]).toEqual({
-      topics: {
+      server: {
         fieldName: "createdBy.@id",
         operator: "==",
         value: "123",
@@ -244,8 +261,7 @@ describe("syncPeerViews", () => {
       ]));
     const findMatchingDocPathRegexSpy = jest.spyOn(pathsutils, "findMatchingDocPathRegex");
     findMatchingDocPathRegexSpy
-      .mockReturnValueOnce({entity: "comment", regex: /^users\/([^/]+)\/posts\/([^/]+)\/comments\/([^/]+)$/})
-      .mockReturnValueOnce({entity: "topics", regex: /^topics\/([^/]+)$/});
+      .mockReturnValueOnce({entity: "comment", regex: /^users\/([^/]+)\/posts\/([^/]+)\/comments\/([^/]+)$/});
 
     // Call the syncPeerViews function with the test logic result doc
     // users/1234/posts/5678/comments/9876
@@ -286,16 +302,13 @@ describe("syncPeerViews", () => {
 });
 
 describe("queueRunViewLogics", () => {
-  let publishMessageMock: jest.Mock;
-  let topicSpy: jest.SpyInstance;
+  let publishMessageSpy: jest.SpyInstance;
   beforeEach(() => {
     jest.restoreAllMocks();
-    publishMessageMock = jest.fn().mockResolvedValue("message-id");
-    topicSpy = jest.spyOn(PubSub.prototype, "topic").mockImplementation(() => {
-      return {
-        publishMessage: publishMessageMock,
-      } as unknown as Topic;
-    });
+    publishMessageSpy = jest.spyOn(VIEW_LOGICS_TOPIC, "publishMessage")
+      .mockImplementation(() => {
+        return "message-id";
+      });
   });
 
   it("should queue docs to run view logics", async () => {
@@ -308,8 +321,7 @@ describe("queueRunViewLogics", () => {
     const logicResultDocs: LogicResultDoc[] = [doc1];
     await viewLogics.queueRunViewLogics(logicResultDocs);
 
-    expect(topicSpy).toHaveBeenCalledWith(VIEW_LOGICS_TOPIC_NAME);
-    expect(publishMessageMock).toHaveBeenCalledWith({json: doc1});
+    expect(publishMessageSpy).toHaveBeenCalledWith({json: doc1});
   });
 
   it("should not queue view logics when action is create", async () => {
@@ -322,8 +334,7 @@ describe("queueRunViewLogics", () => {
     const logicResultDocs: LogicResultDoc[] = [doc1];
     await viewLogics.queueRunViewLogics(logicResultDocs);
 
-    expect(topicSpy).toHaveBeenCalledWith(VIEW_LOGICS_TOPIC_NAME);
-    expect(publishMessageMock).not.toHaveBeenCalled();
+    expect(publishMessageSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -426,16 +437,13 @@ describe("onMessageViewLogicsQueue", () => {
 });
 
 describe("queueForPeerSync", () => {
-  let publishMessageMock: jest.Mock;
-  let topicSpy: jest.SpyInstance;
+  let publishMessageSpy: jest.SpyInstance;
   beforeEach(() => {
     jest.restoreAllMocks();
-    publishMessageMock = jest.fn().mockResolvedValue("message-id");
-    topicSpy = jest.spyOn(PubSub.prototype, "topic").mockImplementation(() => {
-      return {
-        publishMessage: publishMessageMock,
-      } as unknown as Topic;
-    });
+    publishMessageSpy = jest.spyOn(PEER_SYNC_TOPIC, "publishMessage")
+      .mockImplementation(() => {
+        return "message-id";
+      });
   });
 
   it("should queue docs for peer syncing", async () => {
@@ -447,8 +455,7 @@ describe("queueForPeerSync", () => {
     };
     await viewLogics.queueForPeerSync(doc1);
 
-    expect(topicSpy).toHaveBeenCalledWith(PEER_SYNC_TOPIC_NAME);
-    expect(publishMessageMock).toHaveBeenCalledWith({json: doc1});
+    expect(publishMessageSpy).toHaveBeenCalledWith({json: doc1});
   });
 });
 

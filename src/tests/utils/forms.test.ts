@@ -3,10 +3,9 @@ import {CloudEvent} from "firebase-functions/lib/v2/core";
 const isProcessedMock = jest.fn();
 const trackProcessedIdsMock = jest.fn();
 import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
-import {PubSub, Topic} from "@google-cloud/pubsub";
 import * as adminClient from "@primeanalytiq/emberflow-admin-client/lib";
 import * as forms from "../../utils/forms";
-import {initializeEmberFlow, SUBMIT_FORM_TOPIC_NAME} from "../../index";
+import {initializeEmberFlow, SUBMIT_FORM_TOPIC, SUBMIT_FORM_TOPIC_NAME} from "../../index";
 import {ProjectConfig} from "../../types";
 import * as admin from "firebase-admin";
 import {dbStructure, Entity} from "../../sample-custom/db-structure";
@@ -16,6 +15,16 @@ import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
 import spyOn = jest.spyOn;
 import * as misc from "../../utils/misc";
 import {firestore} from "firebase-admin";
+
+jest.mock("../../utils/pubsub", () => {
+  return {
+    pubsubUtils: {
+      isProcessed: isProcessedMock,
+      trackProcessedIds: trackProcessedIdsMock,
+    },
+    createPubSubTopics: jest.fn().mockResolvedValue({}),
+  };
+});
 
 const projectConfig: ProjectConfig = {
   projectId: "your-project-id",
@@ -33,26 +42,15 @@ admin.initializeApp({
   databaseURL: "https://test-project.firebaseio.com",
 });
 initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, []);
-jest.mock("../../utils/pubsub", () => {
-  return {
-    pubsubUtils: {
-      isProcessed: isProcessedMock,
-      trackProcessedIds: trackProcessedIdsMock,
-    },
-  };
-});
 
 describe("queueSubmitForm", () => {
-  let publishMessageMock: jest.Mock;
-  let topicSpy: jest.SpyInstance;
+  let publishMessageSpy: jest.SpyInstance;
   beforeEach(() => {
     jest.restoreAllMocks();
-    publishMessageMock = jest.fn().mockResolvedValue("message-id");
-    topicSpy = jest.spyOn(PubSub.prototype, "topic").mockImplementation(() => {
-      return {
-        publishMessage: publishMessageMock,
-      } as unknown as Topic;
-    });
+    publishMessageSpy = jest.spyOn(SUBMIT_FORM_TOPIC, "publishMessage")
+      .mockImplementation(() => {
+        return "message-id";
+      });
   });
 
   it("should queue docs for distribution later", async () => {
@@ -62,8 +60,7 @@ describe("queueSubmitForm", () => {
     };
     const result = await forms.queueSubmitForm(formData);
 
-    expect(topicSpy).toHaveBeenCalledWith(SUBMIT_FORM_TOPIC_NAME);
-    expect(publishMessageMock).toHaveBeenCalledWith({json: formData});
+    expect(publishMessageSpy).toHaveBeenCalledWith({json: formData});
     expect(result).toEqual("message-id");
   });
 });
