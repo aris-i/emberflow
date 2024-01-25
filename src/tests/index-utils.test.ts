@@ -10,7 +10,6 @@ import {
   LogicResultDoc,
   ProjectConfig,
   ViewLogicConfig,
-  DistributeFn,
   EventContext,
 } from "../types";
 import {Entity, dbStructure} from "../sample-custom/db-structure";
@@ -27,6 +26,9 @@ import * as indexutils from "../index-utils";
 import SpyInstance = jest.SpyInstance;
 import CollectionReference = firestore.CollectionReference;
 import * as pubsub from "../utils/pubsub";
+import * as misc from "../utils/misc";
+import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
+import {cleanLogicMetricsExecutions} from "../index-utils";
 
 jest.spyOn(console, "log").mockImplementation();
 jest.spyOn(console, "info").mockImplementation();
@@ -438,6 +440,7 @@ describe("runBusinessLogics", () => {
 
   let dbSpy: jest.SpyInstance;
   let simulateSubmitFormSpy: jest.SpyInstance;
+  let updateLogicMetricsSpy: jest.SpyInstance;
   let actionRef: DocumentReference;
 
   beforeEach(() => {
@@ -446,11 +449,8 @@ describe("runBusinessLogics", () => {
     logicFn2 = jest.fn().mockResolvedValue({status: "finished"});
     logicFn3 = jest.fn().mockResolvedValue({status: "error", message: "Error message"});
 
-    simulateSubmitFormSpy = jest.spyOn(indexUtils._mockable, "simulateSubmitForm").mockImplementation((
-      logicResults: LogicResult[], action: Action, distributeFn: DistributeFn
-    ) => {
-      return Promise.resolve();
-    });
+    simulateSubmitFormSpy = jest.spyOn(indexUtils._mockable, "simulateSubmitForm").mockResolvedValue();
+    updateLogicMetricsSpy = jest.spyOn(indexUtils._mockable, "updateLogicMetrics").mockResolvedValue();
 
     const dbDoc = ({
       get: jest.fn().mockResolvedValue({
@@ -485,6 +485,7 @@ describe("runBusinessLogics", () => {
     distributeFn.mockRestore();
     dbSpy.mockRestore();
     simulateSubmitFormSpy.mockRestore();
+    updateLogicMetricsSpy.mockRestore();
   });
 
   it("should call all matching logics and pass their results to distributeFn", async () => {
@@ -530,6 +531,7 @@ describe("runBusinessLogics", () => {
         timeFinished: expect.any(Timestamp),
       })], 0);
     expect(runStatus).toEqual("done");
+    expect(updateLogicMetricsSpy).toHaveBeenCalledTimes(1);
     expect(simulateSubmitFormSpy).toHaveBeenCalledTimes(1);
   });
 
@@ -1478,5 +1480,147 @@ describe("runViewLogics", () => {
     expect(viewLogicFn2).toHaveBeenCalledTimes(1);
     expect(viewLogicFn2).toHaveBeenCalledWith(logicResult2);
     expect(results).toHaveLength(3);
+  });
+});
+
+describe("updateLogicMetrics", () => {
+  let colSpy: jest.SpyInstance;
+  let docMock: jest.Mock;
+  let queueInstructionsSpy: jest.SpyInstance;
+  let warnSpy: jest.SpyInstance;
+  let setMock: jest.Mock;
+
+  beforeEach(() => {
+    setMock = jest.fn().mockResolvedValue({});
+    warnSpy = jest.spyOn(console, "warn").mockImplementation();
+    docMock = jest.fn().mockImplementation((doc: string) => {
+      return {
+        path: `@metrics/${doc}`,
+        collection: jest.fn().mockReturnValue({
+          doc: jest.fn().mockReturnValue({
+            set: setMock,
+          }),
+        }),
+      } as unknown as DocumentReference;
+    });
+    colSpy = jest.spyOn(admin.firestore(), "collection").mockReturnValue({
+      doc: docMock,
+    } as unknown as CollectionReference);
+    queueInstructionsSpy = jest.spyOn(distribution, "queueInstructions").mockResolvedValue();
+  });
+
+  afterEach(() => {
+    colSpy.mockRestore();
+    docMock.mockRestore();
+    queueInstructionsSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
+  it("should skip logic result when execTime is undefined", async () => {
+    const logicResults: LogicResult[] = [];
+    const logicResult = {
+      name: "sampleLogicResult",
+    } as LogicResult;
+    logicResults.push(logicResult);
+
+    await indexUtils._mockable.updateLogicMetrics(logicResults);
+    expect(colSpy).toHaveBeenCalledTimes(1);
+    expect(colSpy).toHaveBeenCalledWith("@metrics");
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith("No execTime found for logic sampleLogicResult");
+    expect(docMock).not.toHaveBeenCalled();
+    expect(setMock).not.toHaveBeenCalled();
+    expect(queueInstructionsSpy).not.toHaveBeenCalled();
+  });
+
+  it("should queue logic result metrics", async () => {
+    const logicResults: LogicResult[] = [];
+    const logicResult1 = {
+      name: "sampleLogicResult",
+      execTime: 100,
+    } as LogicResult;
+    const logicResult2 = {
+      name: "anotherLogicResult",
+      execTime: 200,
+    } as LogicResult;
+    logicResults.push(logicResult1);
+    logicResults.push(logicResult2);
+
+    await indexUtils._mockable.updateLogicMetrics(logicResults);
+    expect(colSpy).toHaveBeenCalledTimes(1);
+    expect(colSpy).toHaveBeenCalledWith("@metrics");
+    expect(warnSpy).toHaveBeenCalledWith("anotherLogicResult took 200ms to execute");
+    expect(docMock).toHaveBeenCalledTimes(2);
+    expect(docMock).toHaveBeenNthCalledWith(1, "sampleLogicResult");
+    expect(docMock).toHaveBeenNthCalledWith(2, "anotherLogicResult");
+    expect(queueInstructionsSpy).toHaveBeenCalledTimes(2);
+    expect(queueInstructionsSpy).toHaveBeenNthCalledWith(1,
+      `@metrics/${logicResult1.name}`,
+      {
+        totalExecTime: `+${logicResult1.execTime}`,
+        totalExecCount: "++",
+      },
+    );
+    expect(queueInstructionsSpy).toHaveBeenNthCalledWith(2,
+      `@metrics/${logicResult2.name}`,
+      {
+        totalExecTime: `+${logicResult2.execTime}`,
+        totalExecCount: "++",
+      },
+    );
+    expect(setMock).toHaveBeenCalledTimes(2);
+    expect(setMock).toHaveBeenNthCalledWith(1, {
+      execDate: expect.any(Timestamp),
+      execTime: logicResult1.execTime,
+    });
+    expect(setMock).toHaveBeenNthCalledWith(2, {
+      execDate: expect.any(Timestamp),
+      execTime: logicResult2.execTime,
+    });
+  });
+});
+
+describe("cleanLogicMetricsExecutions", () => {
+  let colGetMock: jest.Mock;
+  let deleteCollectionSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    colGetMock = jest.fn().mockResolvedValue({
+      docs: [
+        {
+          ref: {
+            collection: jest.fn().mockReturnValue({
+              where: jest.fn().mockReturnValue({}),
+            }),
+          },
+        },
+      ],
+    });
+    jest.spyOn(admin.firestore(), "collection").mockReturnValue({
+      get: colGetMock,
+    } as any);
+    deleteCollectionSpy = jest.spyOn(misc, "deleteCollection")
+      .mockImplementation(async (query, callback) => {
+        if (callback) {
+          await callback({size: 1} as unknown as firestore.QuerySnapshot);
+        }
+        return Promise.resolve();
+      });
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("should clean logic metrics executions", async () => {
+    jest.spyOn(console, "info").mockImplementation();
+    await cleanLogicMetricsExecutions({} as ScheduledEvent);
+
+    expect(console.info).toHaveBeenCalledWith("Running cleanLogicMetricsExecutions");
+    expect(admin.firestore().collection).toHaveBeenCalledTimes(1);
+    expect(admin.firestore().collection).toHaveBeenCalledWith("@metrics");
+    expect(colGetMock).toHaveBeenCalledTimes(1);
+    expect(deleteCollectionSpy).toHaveBeenCalled();
+    expect(console.info).toHaveBeenCalledWith("Cleaned 1 logic metrics executions");
   });
 });

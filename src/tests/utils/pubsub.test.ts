@@ -62,23 +62,10 @@ describe("createPubSubTopics", () => {
 });
 
 describe("pubsubUtils", () => {
-  let colGetMock: jest.Mock;
-  let deleteCollectionSpy: jest.SpyInstance;
   let docSetMock: jest.Mock;
   let docGetMock: jest.Mock;
 
   beforeEach(() => {
-    colGetMock = jest.fn().mockResolvedValue({
-      docs: [
-        {
-          ref: {
-            collection: jest.fn().mockReturnValue({
-              where: jest.fn().mockReturnValue({}),
-            }),
-          },
-        },
-      ],
-    });
     docSetMock = jest.fn().mockResolvedValue({});
     docGetMock = jest.fn().mockResolvedValue({
       exists: true,
@@ -89,16 +76,6 @@ describe("pubsubUtils", () => {
       id: "test-doc-id",
     } as unknown) as admin.firestore.DocumentReference<admin.firestore.DocumentData>;
     jest.spyOn(admin.firestore(), "doc").mockReturnValue(dbDoc);
-    jest.spyOn(admin.firestore(), "collection").mockReturnValue({
-      get: colGetMock,
-    } as any);
-    deleteCollectionSpy = jest.spyOn(misc, "deleteCollection")
-      .mockImplementation(async (query, callback) => {
-        if (callback) {
-          await callback({size: 1} as unknown as firestore.QuerySnapshot);
-        }
-        return Promise.resolve();
-      });
   });
 
   afterEach(() => {
@@ -121,6 +98,39 @@ describe("pubsubUtils", () => {
     expect(admin.firestore().doc).toHaveBeenCalledWith("@topics/test-topic/processedIds/test-id");
     expect(docGetMock).toHaveBeenCalledTimes(1);
     expect(result).toBe(true);
+  });
+});
+
+describe("cleanPubSubProcessedIds", () => {
+  let colGetMock: jest.Mock;
+  let deleteCollectionSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    colGetMock = jest.fn().mockResolvedValue({
+      docs: [
+        {
+          ref: {
+            collection: jest.fn().mockReturnValue({
+              where: jest.fn().mockReturnValue({}),
+            }),
+          },
+        },
+      ],
+    });
+    jest.spyOn(admin.firestore(), "collection").mockReturnValue({
+      get: colGetMock,
+    } as any);
+    deleteCollectionSpy = jest.spyOn(misc, "deleteCollection")
+      .mockImplementation(async (query, callback) => {
+        if (callback) {
+          await callback({size: 1} as unknown as firestore.QuerySnapshot);
+        }
+        return Promise.resolve();
+      });
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   it("should clean processed ids", async () => {

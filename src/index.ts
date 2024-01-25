@@ -12,6 +12,7 @@ import {
   ViewLogicConfig,
 } from "./types";
 import {
+  cleanLogicMetricsExecutions,
   delayFormSubmissionAndCheckIfCancelled,
   distribute,
   distributeLater,
@@ -197,6 +198,11 @@ export async function initializeEmberFlow(
     region: projectConfig.region,
     timeoutSeconds: 540,
   }, cleanPubSubProcessedIds);
+  functionsConfig["cleanLogicMetricsExecutions"] = onSchedule({
+    schedule: "every 1 hours",
+    region: projectConfig.region,
+    timeoutSeconds: 540,
+  }, cleanLogicMetricsExecutions);
   functionsConfig["cleanActionsAndForms"] = onSchedule({
     schedule: "every 1 hours",
     region: projectConfig.region,
