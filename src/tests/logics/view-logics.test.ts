@@ -26,6 +26,16 @@ import {securityConfig} from "../../sample-custom/security";
 import {validatorConfig} from "../../sample-custom/validators";
 import {dbStructure, Entity} from "../../sample-custom/db-structure";
 
+jest.mock("../../utils/pubsub", () => {
+  return {
+    pubsubUtils: {
+      isProcessed: isProcessedMock,
+      trackProcessedIds: trackProcessedIdsMock,
+    },
+    createPubSubTopics: jest.fn().mockResolvedValue({}),
+  };
+});
+
 const projectConfig: ProjectConfig = {
   projectId: "your-project-id",
   region: "asia-southeast1",
@@ -41,17 +51,7 @@ const projectConfig: ProjectConfig = {
 admin.initializeApp({
   databaseURL: "https://test-project.firebaseio.com",
 });
-jest.spyOn(indexUtils, "createPubSubTopics").mockResolvedValue();
 initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, []);
-
-jest.mock("../../utils/pubsub", () => {
-  return {
-    pubsubUtils: {
-      isProcessed: isProcessedMock,
-      trackProcessedIds: trackProcessedIdsMock,
-    },
-  };
-});
 
 const vd1: ViewDefinition = {
   srcEntity: "user",

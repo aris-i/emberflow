@@ -12,7 +12,6 @@ import {
   ViewLogicConfig,
 } from "./types";
 import {
-  createPubSubTopics,
   delayFormSubmissionAndCheckIfCancelled,
   distribute,
   distributeLater,
@@ -45,7 +44,7 @@ import {onMessagePublished} from "firebase-functions/v2/pubsub";
 import {reviveDateAndTimestamp, deleteForms} from "./utils/misc";
 import Database = database.Database;
 import {onMessageForDistributionQueue, onMessageInstructionsQueue} from "./utils/distribution";
-import {cleanPubSubProcessedIds} from "./utils/pubsub";
+import {cleanPubSubProcessedIds, createPubSubTopics} from "./utils/pubsub";
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import {onDocumentCreated} from "firebase-functions/v2/firestore";
 import {onRequest} from "firebase-functions/v2/https";

@@ -18,6 +18,17 @@ export const pubsubUtils = {
   isProcessed,
 };
 
+export async function createPubSubTopics(pubSubTopics: string[]) {
+  for (const topicName of pubSubTopics) {
+    const pubSubTopicRef = db.doc(`@topics/${topicName}`);
+    const pubSubTopic = await pubSubTopicRef.get();
+    if (pubSubTopic.exists) {
+      continue;
+    }
+    await pubSubTopicRef.set({timestamp: new Date()});
+  }
+}
+
 export async function cleanPubSubProcessedIds(event: ScheduledEvent) {
   console.info("Running cleanPubSubProcessedIds");
   const topicsSnapshot = await db.collection("@topics").get();
