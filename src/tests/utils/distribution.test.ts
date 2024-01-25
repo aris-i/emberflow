@@ -1,16 +1,30 @@
 import {LogicResultDoc, ProjectConfig} from "../../types";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
 import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
-import {PubSub, Topic} from "@google-cloud/pubsub";
 const isProcessedMock = jest.fn();
 const trackProcessedIdsMock = jest.fn();
 import * as distribution from "../../utils/distribution";
 import * as indexUtils from "../../index-utils";
-import {FOR_DISTRIBUTION_TOPIC_NAME, initializeEmberFlow, INSTRUCTIONS_TOPIC_NAME} from "../../index";
+import {
+  FOR_DISTRIBUTION_TOPIC,
+  FOR_DISTRIBUTION_TOPIC_NAME,
+  initializeEmberFlow,
+  INSTRUCTIONS_TOPIC, INSTRUCTIONS_TOPIC_NAME,
+} from "../../index";
 import * as admin from "firebase-admin";
 import {dbStructure, Entity} from "../../sample-custom/db-structure";
 import {securityConfig} from "../../sample-custom/security";
 import {validatorConfig} from "../../sample-custom/validators";
+
+jest.mock("../../utils/pubsub", () => {
+  return {
+    pubsubUtils: {
+      isProcessed: isProcessedMock,
+      trackProcessedIds: trackProcessedIdsMock,
+    },
+    createPubSubTopics: jest.fn().mockResolvedValue({}),
+  };
+});
 
 const projectConfig: ProjectConfig = {
   projectId: "your-project-id",
@@ -29,26 +43,14 @@ admin.initializeApp({
 });
 initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, []);
 
-jest.mock("../../utils/pubsub", () => {
-  return {
-    pubsubUtils: {
-      isProcessed: isProcessedMock,
-      trackProcessedIds: trackProcessedIdsMock,
-    },
-  };
-});
-
 describe("queueForDistributionLater", () => {
-  let publishMessageMock: jest.Mock;
-  let topicSpy: jest.SpyInstance;
+  let publishMessageSpy: jest.SpyInstance;
   beforeEach(() => {
     jest.restoreAllMocks();
-    publishMessageMock = jest.fn().mockResolvedValue("message-id");
-    topicSpy = jest.spyOn(PubSub.prototype, "topic").mockImplementation(() => {
-      return {
-        publishMessage: publishMessageMock,
-      } as unknown as Topic;
-    });
+    publishMessageSpy = jest.spyOn(FOR_DISTRIBUTION_TOPIC, "publishMessage")
+      .mockImplementation(() => {
+        return "message-id";
+      });
   });
 
   it("should queue docs for distribution later", async () => {
@@ -60,8 +62,7 @@ describe("queueForDistributionLater", () => {
     };
     await distribution.queueForDistributionLater(doc1);
 
-    expect(topicSpy).toHaveBeenCalledWith(FOR_DISTRIBUTION_TOPIC_NAME);
-    expect(publishMessageMock).toHaveBeenCalledWith({json: doc1});
+    expect(publishMessageSpy).toHaveBeenCalledWith({json: doc1});
   });
 });
 
@@ -161,16 +162,13 @@ describe("onMessageForDistributionQueue", () => {
 });
 
 describe("queueInstructions", () => {
-  let publishMessageMock: jest.Mock;
-  let topicSpy: jest.SpyInstance;
+  let publishMessageSpy: jest.SpyInstance;
   beforeEach(() => {
     jest.restoreAllMocks();
-    publishMessageMock = jest.fn().mockResolvedValue("message-id");
-    topicSpy = jest.spyOn(PubSub.prototype, "topic").mockImplementation(() => {
-      return {
-        publishMessage: publishMessageMock,
-      } as unknown as Topic;
-    });
+    publishMessageSpy = jest.spyOn(INSTRUCTIONS_TOPIC, "publishMessage")
+      .mockImplementation(() => {
+        return "message-id";
+      });
   });
 
   it("should queue instructions", async () => {
@@ -183,8 +181,7 @@ describe("queueInstructions", () => {
     };
     await distribution.queueInstructions(dstPath, instructions);
 
-    expect(topicSpy).toHaveBeenCalledWith(INSTRUCTIONS_TOPIC_NAME);
-    expect(publishMessageMock).toHaveBeenCalledWith({json: {dstPath, instructions}});
+    expect(publishMessageSpy).toHaveBeenCalledWith({json: {dstPath, instructions}});
   });
 });
 

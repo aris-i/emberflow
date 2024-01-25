@@ -1,5 +1,5 @@
 import {FormData} from "@primeanalytiq/emberflow-admin-client/lib/types";
-import {db, pubsub, rtdb, SUBMIT_FORM_TOPIC_NAME} from "../index";
+import {db, rtdb, SUBMIT_FORM_TOPIC, SUBMIT_FORM_TOPIC_NAME} from "../index";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
 import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
 import {submitForm} from "@primeanalytiq/emberflow-admin-client/lib";
@@ -8,10 +8,8 @@ import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
 import {deleteCollection} from "./misc";
 
 export async function queueSubmitForm(formData: FormData) {
-  const topic = pubsub.topic(SUBMIT_FORM_TOPIC_NAME);
-
   try {
-    const messageId = await topic.publishMessage({json: formData});
+    const messageId = await SUBMIT_FORM_TOPIC.publishMessage({json: formData});
     console.log(`Message ${messageId} published.`);
     return messageId;
   } catch (error: unknown) {
@@ -50,7 +48,7 @@ export async function onMessageSubmitFormQueue(event: CloudEvent<MessagePublishe
 export async function cleanActionsAndForms(event: ScheduledEvent) {
   console.info("Running cleanActionsAndForms");
   const query = db.collection("@actions")
-    .where("timestamp", "<", new Date(Date.now() - 1000 * 60 * 60 * 24 * 7));
+    .where("timeCreated", "<", new Date(Date.now() - 1000 * 60 * 60 * 24 * 7));
 
   await deleteCollection(query, async (snapshot) => {
     const forms: {[key: string]: null} = {};

@@ -286,7 +286,7 @@ export const runBusinessLogics = async (
         const end = performance.now();
         const execTime = end - start;
         const {status, nextPage} = result;
-        if (status === "finished") {
+        if (status === "finished" || status === "error") {
           matchingLogics.splice(i, 1);
           nextPageMarkers.splice(i, 1);
         } else if (status === "partial-result") {

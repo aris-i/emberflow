@@ -26,6 +26,7 @@ import {DocumentData, DocumentReference} from "firebase-admin/lib/firestore";
 import * as indexutils from "../index-utils";
 import SpyInstance = jest.SpyInstance;
 import CollectionReference = firestore.CollectionReference;
+import * as pubsub from "../utils/pubsub";
 
 jest.spyOn(console, "log").mockImplementation();
 jest.spyOn(console, "info").mockImplementation();
@@ -217,6 +218,7 @@ describe("distribute", () => {
       doc: jest.fn(() => dbDoc),
     } as any);
     queueInstructionsSpy = jest.spyOn(distribution, "queueInstructions").mockResolvedValue();
+    jest.spyOn(pubsub, "createPubSubTopics").mockResolvedValue();
   });
 
   afterEach(() => {
