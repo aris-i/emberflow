@@ -77,6 +77,7 @@ export let VIEW_LOGICS_TOPIC: Topic;
 export let PEER_SYNC_TOPIC: Topic;
 export let FOR_DISTRIBUTION_TOPIC: Topic;
 export let INSTRUCTIONS_TOPIC: Topic;
+export let INSTRUCTIONS_REDUCER_TOPIC: Topic;
 
 export const _mockable = {
   createNowTimestamp: () => admin.firestore.Timestamp.now(),
@@ -113,12 +114,14 @@ export async function initializeEmberFlow(
   PEER_SYNC_TOPIC = pubsub.topic(PEER_SYNC_TOPIC_NAME);
   FOR_DISTRIBUTION_TOPIC = pubsub.topic(FOR_DISTRIBUTION_TOPIC_NAME);
   INSTRUCTIONS_TOPIC = pubsub.topic(INSTRUCTIONS_TOPIC_NAME);
+  INSTRUCTIONS_REDUCER_TOPIC = pubsub.topic(INSTRUCTIONS_REDUCER_TOPIC_NAME);
   const pubSubTopics = [
     SUBMIT_FORM_TOPIC_NAME,
     VIEW_LOGICS_TOPIC_NAME,
     PEER_SYNC_TOPIC_NAME,
     FOR_DISTRIBUTION_TOPIC_NAME,
     INSTRUCTIONS_TOPIC_NAME,
+    INSTRUCTIONS_REDUCER_TOPIC_NAME,
   ];
   await createPubSubTopics(pubSubTopics);
 

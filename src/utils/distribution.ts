@@ -6,6 +6,7 @@ import {
   FOR_DISTRIBUTION_TOPIC_NAME,
   INSTRUCTIONS_TOPIC,
   INSTRUCTIONS_TOPIC_NAME,
+  INSTRUCTIONS_REDUCER_TOPIC, INSTRUCTIONS_REDUCER_TOPIC_NAME, pubsub,
 } from "../index";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
 import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
@@ -26,7 +27,7 @@ export const queueForDistributionLater = async (...logicResultDocs: LogicResultD
       const forDistributionMessageId = await FOR_DISTRIBUTION_TOPIC.publishMessage({json: {...rest, dstPath}});
       console.log(`Message ${forDistributionMessageId} published.`);
       if (instructions) {
-        const instructionsReducerMessageId = await instructionsReducerTopic.publishMessage({json: {dstPath, instructions}});
+        const instructionsReducerMessageId = await INSTRUCTIONS_REDUCER_TOPIC.publishMessage({json: {dstPath, instructions}});
         console.log(`Instructions ${instructionsReducerMessageId} published for reduction.`);
       }
     }
@@ -149,6 +150,82 @@ export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublis
     throw new Error("No json in message");
   }
 }
+
+export function mergeInstructions(existingInstructions: Instructions, instructions: Instructions) {
+  function getValue(instruction: string) {
+    if (instruction === "++") {
+      return 1;
+    } else if (instruction === "--") {
+      return -1;
+    } else if (instruction.startsWith("+")) {
+      return parseInt(instruction.slice(1));
+    } else if (instruction.startsWith("-")) {
+      return -parseInt(instruction.slice(1));
+    } else {
+      return 0;
+    }
+  }
+
+  function getArrValues(existingInstruction: string) {
+    const existingParamsMap = new Map<string, number>();
+    const regex = /arr\((.*?)\)/;
+    const match = existingInstruction.match(regex);
+    const existingParamsStr = match ? match[1] : "";
+    const existingParams = existingParamsStr.split(",").map((value) => value.trim());
+    // Let's create a map of existingParams to their values without the sign
+    for (const param of existingParams) {
+      // Remove the "+" or "-" sign at the start of param.  If there is no sign, then it's a "+" sign
+      const sign = param.startsWith("-") ? -1 : 1;
+      const value = param.replace(/^[+-]/, "");
+      existingParamsMap.set(value, sign);
+    }
+    return existingParamsMap;
+  }
+
+  for (const property of Object.keys(instructions)) {
+    const existingInstruction = existingInstructions[property];
+    const instruction = instructions[property];
+    if (!existingInstruction) {
+      existingInstructions[property] = instruction;
+      continue;
+    }
+
+    // check if existingInstructions and instructions starts with '+' or '-'
+    if (/^[+-]/.test(existingInstruction) && /^[+-]/.test(instruction)) {
+      const newValue = getValue(existingInstruction) + getValue(instruction);
+      if (newValue === 0) {
+        delete existingInstructions[property];
+      }
+      existingInstructions[property] = newValue > 0 ? `+${newValue}` : `-${newValue}`;
+      continue;
+    }
+
+    if (existingInstruction.startsWith("arr") && instruction.startsWith("arr")) {
+      // Parse values inside parentheses on this pattern arr([+-]value1, [+-]value2, ...)
+      const existingParamsMap = getArrValues(existingInstruction);
+      const paramsMap = getArrValues(instruction);
+      // Loop through paramsMap and merge with existingParamsMap
+      for (const [param, sign] of paramsMap.entries()) {
+        const existingSign = existingParamsMap.get(param) || 0;
+        const newValue = existingSign + sign;
+        if (newValue === 0) {
+          existingParamsMap.delete(param);
+          continue;
+        }
+        existingParamsMap.set(param, newValue > 0 ? 1 : -1);
+      }
+      // Convert existingParamsMap to string
+      const existingParams = Array.from(existingParamsMap.entries())
+        .map(([param, sign]) => `${sign > 0 ? "+" : "-"}${param}`);
+      const existingParamsStr = existingParams.join(",");
+      existingInstructions[property] = `arr(${existingParamsStr})`;
+      continue;
+    }
+
+    console.warn(`Property ${property} has conflicting instructions ${existingInstruction} and ${instruction}.  Skipping..`);
+  }
+}
+
 export async function reduceInstructions() {
   const duration = 3000;
   const subscription = pubsub.subscription(INSTRUCTIONS_REDUCER_TOPIC_NAME);
@@ -171,7 +248,7 @@ export async function reduceInstructions() {
           message.ack();
           return;
         }
-        // TODO: Merge existing instructions with new instructions
+        mergeInstructions(existingInstructions, instructions);
         message.ack();
       });
 
