@@ -70,7 +70,7 @@ export async function onMessageForDistributionQueue(event: CloudEvent<MessagePub
   }
 }
 
-export async function queueInstructions(dstPath: string, instructions: { [p: string]: string }) {
+export const queueInstructions = async (dstPath: string, instructions: { [p: string]: string }) => {
   try {
     const messageId = await INSTRUCTIONS_TOPIC.publishMessage({json: {dstPath, instructions}});
     console.log(`Message ${messageId} published.`);
@@ -82,7 +82,7 @@ export async function queueInstructions(dstPath: string, instructions: { [p: str
     }
     throw error;
   }
-}
+};
 
 export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublishedData>) {
   if (await pubsubUtils.isProcessed(INSTRUCTIONS_TOPIC_NAME, event.id)) {
@@ -151,7 +151,7 @@ export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublis
   }
 }
 
-export function mergeInstructions(existingInstructions: Instructions, instructions: Instructions) {
+export const mergeInstructions = (existingInstructions: Instructions, instructions: Instructions) => {
   function getValue(instruction: string) {
     if (instruction === "++") {
       return 1;
@@ -195,8 +195,9 @@ export function mergeInstructions(existingInstructions: Instructions, instructio
       const newValue = getValue(existingInstruction) + getValue(instruction);
       if (newValue === 0) {
         delete existingInstructions[property];
+        continue;
       }
-      existingInstructions[property] = newValue > 0 ? `+${newValue}` : `-${newValue}`;
+      existingInstructions[property] = newValue > 0 ? `+${newValue}` : `${newValue}`;
       continue;
     }
 
@@ -222,9 +223,19 @@ export function mergeInstructions(existingInstructions: Instructions, instructio
       continue;
     }
 
-    console.warn(`Property ${property} has conflicting instructions ${existingInstruction} and ${instruction}.  Skipping..`);
+    if (existingInstruction === "del") {
+      console.warn(`Property ${property} is set to be deleted. Skipping..`);
+      continue;
+    }
+
+    if (instruction === "del") {
+      existingInstructions[property] = "del";
+      continue;
+    }
+
+    console.warn(`Property ${property} has conflicting instructions ${existingInstruction} and ${instruction}. Skipping..`);
   }
-}
+};
 
 export async function reduceInstructions() {
   const duration = 3000;
@@ -240,7 +251,7 @@ export async function reduceInstructions() {
       }, duration);
 
       subscription.on("message", (message) => {
-        console.log(`Received message ${message.id}:`);
+        console.log(`Received message ${message.id}.`);
         const {dstPath, instructions} = JSON.parse(message.data.toString());
         const existingInstructions = reducedInstructions.get(dstPath);
         if (!existingInstructions) {
