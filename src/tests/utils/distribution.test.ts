@@ -203,7 +203,7 @@ describe("onMessageInstructionsQueue", () => {
     dbSpy.mockRestore();
   });
 
-  it("should log invalid operation", async () => {
+  it("should log invalid instruction when parenthesis is not found", async () => {
     isProcessedMock.mockResolvedValueOnce(false);
     const event = {
       id: "test-event",
@@ -212,9 +212,8 @@ describe("onMessageInstructionsQueue", () => {
           json: {
             dstPath: "/users/test-user-id/documents/test-doc-id",
             instructions: {
-              "planets": "arr~(Earth)",
-              "continents": "arr-[Asia]",
-              "countries": "arr+[Philippines]",
+              "planets": "arr[Earth]",
+              "continents": "arr{Asia}",
             },
           },
         },
@@ -222,13 +221,12 @@ describe("onMessageInstructionsQueue", () => {
     } as CloudEvent<MessagePublishedData>;
     await distribution.onMessageInstructionsQueue(event);
 
-    expect(console.log).toHaveBeenCalledWith("Invalid instruction arr~(Earth) for property planets");
-    expect(console.log).toHaveBeenCalledWith("Invalid instruction arr-[Asia] for property continents");
-    expect(console.log).toHaveBeenCalledWith("Invalid instruction arr+[Philippines] for property countries");
+    expect(console.log).toHaveBeenCalledWith("Invalid instruction arr[Earth] for property planets");
+    expect(console.log).toHaveBeenCalledWith("Invalid instruction arr{Asia} for property continents");
     expect(docSetMock.mock.calls[0][0]).toStrictEqual({});
   });
 
-  it("should log no values found", async () => {
+  it("should log no values found when parenthesis is empty", async () => {
     isProcessedMock.mockResolvedValueOnce(false);
     const event = {
       id: "test-event",
@@ -237,8 +235,7 @@ describe("onMessageInstructionsQueue", () => {
           json: {
             dstPath: "/users/test-user-id/documents/test-doc-id",
             instructions: {
-              "continents": "arr-()",
-              "countries": "arr+()",
+              "planets": "arr()",
             },
           },
         },
@@ -246,8 +243,30 @@ describe("onMessageInstructionsQueue", () => {
     } as CloudEvent<MessagePublishedData>;
     await distribution.onMessageInstructionsQueue(event);
 
-    expect(console.log).toHaveBeenCalledWith("No values found in instruction arr-() for property continents");
-    expect(console.log).toHaveBeenCalledWith("No values found in instruction arr+() for property countries");
+    expect(console.log).toHaveBeenCalledWith("No values found in instruction arr() for property planets");
+    expect(docSetMock.mock.calls[0][0]).toStrictEqual({});
+  });
+
+  it("should log invalid operation when other symbols are used", async () => {
+    isProcessedMock.mockResolvedValueOnce(false);
+    const event = {
+      id: "test-event",
+      data: {
+        message: {
+          json: {
+            dstPath: "/users/test-user-id/documents/test-doc-id",
+            instructions: {
+              "planets": "arr(×Earth)",
+              "continents": "arr(÷Asia,÷Europe,÷Africa)",
+            },
+          },
+        },
+      },
+    } as CloudEvent<MessagePublishedData>;
+    await distribution.onMessageInstructionsQueue(event);
+
+    expect(console.log).toHaveBeenCalledWith("Invalid operation × in instruction arr(×Earth) for property planets");
+    expect(console.log).toHaveBeenCalledWith("Invalid operation ÷ in instruction arr(÷Asia,÷Europe,÷Africa) for property continents");
     expect(docSetMock.mock.calls[0][0]).toStrictEqual({});
   });
 
@@ -265,9 +284,9 @@ describe("onMessageInstructionsQueue", () => {
           json: {
             dstPath: "/users/test-user-id/documents/test-doc-id",
             instructions: {
-              "planets": "arr+(Earth)",
-              "continents": "arr+(Asia,Europe,Africa)",
-              "countries": "arr+(Japan, Philippines, Singapore)",
+              "planets": "arr(+Earth)",
+              "continents": "arr(+Asia,+Europe,+Africa)",
+              "countries": "arr(+Japan, +Philippines, +Singapore)",
             },
           },
         },
@@ -292,9 +311,36 @@ describe("onMessageInstructionsQueue", () => {
           json: {
             dstPath: "/users/test-user-id/documents/test-doc-id",
             instructions: {
-              "planets": "arr-(Earth)",
-              "continents": "arr-(Asia,Europe,Africa)",
-              "countries": "arr-(Japan, Philippines, Singapore)",
+              "planets": "arr(-Earth)",
+              "continents": "arr(-Asia,-Europe,-Africa)",
+              "countries": "arr(-Japan, -Philippines, -Singapore)",
+            },
+          },
+        },
+      },
+    } as CloudEvent<MessagePublishedData>;
+    await distribution.onMessageInstructionsQueue(event);
+
+    expect(docSetMock.mock.calls[0][0]).toStrictEqual({});
+    expect(docSetMock.mock.calls[1][0]).toStrictEqual(expectedData);
+  });
+
+  it("should convert array union and remove instructions correctly in a single field", async () => {
+    isProcessedMock.mockResolvedValueOnce(false);
+    const expectedData = {
+      "planets": admin.firestore.FieldValue.arrayUnion("Earth", "Mars", "Venus"),
+    };
+    const expectedRemoveData = {
+      "planets": admin.firestore.FieldValue.arrayRemove("Pluto"),
+    };
+    const event = {
+      id: "test-event",
+      data: {
+        message: {
+          json: {
+            dstPath: "/users/test-user-id/documents/test-doc-id",
+            instructions: {
+              "planets": "arr(+Earth,+Mars,+Venus,-Pluto)",
             },
           },
         },
@@ -303,6 +349,7 @@ describe("onMessageInstructionsQueue", () => {
     await distribution.onMessageInstructionsQueue(event);
 
     expect(docSetMock.mock.calls[0][0]).toStrictEqual(expectedData);
+    expect(docSetMock.mock.calls[1][0]).toStrictEqual(expectedRemoveData);
   });
 
   it("should skip duplicate message", async () => {
@@ -324,7 +371,10 @@ describe("onMessageInstructionsQueue", () => {
       "score": admin.firestore.FieldValue.increment(5),
       "minusCount": admin.firestore.FieldValue.increment(-1),
       "minusScore": admin.firestore.FieldValue.increment(-3),
+      "optionalField": admin.firestore.FieldValue.delete(),
       "arrayUnion": admin.firestore.FieldValue.arrayUnion("add-this"),
+    };
+    const expectedRemoveData = {
       "arrayRemove": admin.firestore.FieldValue.arrayRemove("remove-this"),
     };
     const event = {
@@ -338,8 +388,9 @@ describe("onMessageInstructionsQueue", () => {
               "score": "+5",
               "minusCount": "--",
               "minusScore": "-3",
-              "arrayUnion": "arr+(add-this)",
-              "arrayRemove": "arr-(remove-this)",
+              "optionalField": "del",
+              "arrayUnion": "arr(+add-this)",
+              "arrayRemove": "arr(-remove-this)",
             },
           },
         },
@@ -349,9 +400,11 @@ describe("onMessageInstructionsQueue", () => {
 
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
-    expect(docSetMock).toHaveBeenCalledTimes(1);
+    expect(docSetMock).toHaveBeenCalledTimes(2);
     expect(docSetMock).toHaveBeenCalledWith(expectedData, {merge: true});
+    expect(docSetMock).toHaveBeenCalledWith(expectedRemoveData, {merge: true});
     expect(docSetMock.mock.calls[0][0]).toStrictEqual(expectedData);
+    expect(docSetMock.mock.calls[1][0]).toStrictEqual(expectedRemoveData);
     expect(trackProcessedIdsMock).toHaveBeenCalledWith(INSTRUCTIONS_TOPIC_NAME, event.id);
     expect(result).toEqual("Processed instructions");
   });
