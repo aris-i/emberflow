@@ -20,12 +20,11 @@ import {expandAndGroupDocPathsByEntity} from "../utils/paths";
 import {BatchUtil} from "../utils/batch";
 import * as distribution from "../utils/distribution";
 import * as forms from "../utils/forms";
-import {FormData} from "@primeanalytiq/emberflow-admin-client/lib/types";
+import {FormData} from "emberflow-admin-client/lib/types";
 import {DocumentData, DocumentReference} from "firebase-admin/lib/firestore";
 import * as indexutils from "../index-utils";
 import SpyInstance = jest.SpyInstance;
 import CollectionReference = firestore.CollectionReference;
-import * as pubsub from "../utils/pubsub";
 import * as misc from "../utils/misc";
 import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
 import {cleanLogicMetricsExecutions} from "../index-utils";
@@ -220,7 +219,6 @@ describe("distribute", () => {
       doc: jest.fn(() => dbDoc),
     } as any);
     queueInstructionsSpy = jest.spyOn(distribution, "queueInstructions").mockResolvedValue();
-    jest.spyOn(pubsub, "createPubSubTopics").mockResolvedValue();
   });
 
   afterEach(() => {

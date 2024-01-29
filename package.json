@@ -1,6 +1,6 @@
 {
-  "name": "@primeanalytiq/emberflow",
-  "version": "1.3.48",
+  "name": "emberflow",
+  "version": "1.3.49",
   "description": "A Firebase Cloud Functions library for handling document changes in a structured way",
   "main": "lib/index.js",
   "types": "lib/index.d.js",
@@ -38,6 +38,6 @@
     "@google-cloud/billing": "^3.4.0",
     "@google-cloud/functions": "^2.5.0",
     "@google-cloud/pubsub": "^4.0.7",
-    "@primeanalytiq/emberflow-admin-client": "^1.2.0"
+    "emberflow-admin-client": "^1.2.3"
   }
 }
