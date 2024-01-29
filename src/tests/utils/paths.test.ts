@@ -4,7 +4,6 @@ import {ProjectConfig, QueryCondition} from "../../types";
 import {initializeEmberFlow} from "../../index";
 import * as admin from "firebase-admin";
 import {dbStructure, Entity} from "../../sample-custom/db-structure";
-import * as pubsub from "../../utils/pubsub";
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const projectConfig: ProjectConfig = {
@@ -23,7 +22,6 @@ const projectConfig: ProjectConfig = {
 admin.initializeApp({
   databaseURL: `https://${projectConfig.rtdbName}.${projectConfig.region}.firebasedatabase.app/`,
 });
-jest.spyOn(pubsub, "createPubSubTopics").mockResolvedValue();
 initializeEmberFlow(projectConfig, admin, dbStructure, Entity, {}, {}, []);
 
 // Mock fetchIds function

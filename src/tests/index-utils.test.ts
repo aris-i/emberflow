@@ -25,7 +25,6 @@ import {DocumentData, DocumentReference} from "firebase-admin/lib/firestore";
 import * as indexutils from "../index-utils";
 import SpyInstance = jest.SpyInstance;
 import CollectionReference = firestore.CollectionReference;
-import * as pubsub from "../utils/pubsub";
 import * as misc from "../utils/misc";
 import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
 import {cleanLogicMetricsExecutions} from "../index-utils";
@@ -220,7 +219,6 @@ describe("distribute", () => {
       doc: jest.fn(() => dbDoc),
     } as any);
     queueInstructionsSpy = jest.spyOn(distribution, "queueInstructions").mockResolvedValue();
-    jest.spyOn(pubsub, "createPubSubTopics").mockResolvedValue();
   });
 
   afterEach(() => {
