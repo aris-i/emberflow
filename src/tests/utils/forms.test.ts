@@ -1,9 +1,9 @@
-import {FormData} from "@primeanalytiq/emberflow-admin-client/lib/types";
+import {FormData} from "emberflow-admin-client/lib/types";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
 const isProcessedMock = jest.fn();
 const trackProcessedIdsMock = jest.fn();
 import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
-import * as adminClient from "@primeanalytiq/emberflow-admin-client/lib";
+import * as adminClient from "emberflow-admin-client/lib";
 import * as forms from "../../utils/forms";
 import {initializeEmberFlow, SUBMIT_FORM_TOPIC, SUBMIT_FORM_TOPIC_NAME} from "../../index";
 import {ProjectConfig} from "../../types";

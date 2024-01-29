@@ -1,4 +1,4 @@
-import {db} from "../index";
+import {db, pubSubTopics} from "../index";
 import {deleteCollection} from "./misc";
 import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
 
@@ -18,23 +18,12 @@ export const pubsubUtils = {
   isProcessed,
 };
 
-export async function createPubSubTopics(pubSubTopics: string[]) {
-  for (const topicName of pubSubTopics) {
-    const pubSubTopicRef = db.doc(`@topics/${topicName}`);
-    const pubSubTopic = await pubSubTopicRef.get();
-    if (pubSubTopic.exists) {
-      continue;
-    }
-    await pubSubTopicRef.set({timestamp: new Date()});
-  }
-}
-
 export async function cleanPubSubProcessedIds(event: ScheduledEvent) {
   console.info("Running cleanPubSubProcessedIds");
-  const topicsSnapshot = await db.collection("@topics").get();
   let i = 0;
-  for (const topicDoc of topicsSnapshot.docs) {
-    const query = topicDoc.ref.collection("processedIds")
+  for (const pubSubTopic of pubSubTopics) {
+    const query = db
+      .collection(`@topics/${pubSubTopic}/processedIds`)
       .where("timestamp", "<", new Date(Date.now() - 1000 * 60 * 60 * 24 * 7));
 
     await deleteCollection(query, (snapshot) => {

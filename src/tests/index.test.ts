@@ -18,7 +18,7 @@ import {dbStructure, Entity} from "../sample-custom/db-structure";
 import {Firestore} from "firebase-admin/firestore";
 import {DatabaseEvent, DataSnapshot} from "firebase-functions/lib/v2/providers/database";
 import * as paths from "../utils/paths";
-import * as adminClient from "@primeanalytiq/emberflow-admin-client/lib";
+import * as adminClient from "emberflow-admin-client/lib";
 import DocumentReference = firestore.DocumentReference;
 import CollectionReference = firestore.CollectionReference;
 import Timestamp = firestore.Timestamp;
