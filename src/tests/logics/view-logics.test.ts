@@ -32,7 +32,6 @@ jest.mock("../../utils/pubsub", () => {
       isProcessed: isProcessedMock,
       trackProcessedIds: trackProcessedIdsMock,
     },
-    createPubSubTopics: jest.fn().mockResolvedValue({}),
   };
 });
 
