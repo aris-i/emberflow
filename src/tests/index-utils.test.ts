@@ -20,7 +20,7 @@ import {expandAndGroupDocPathsByEntity} from "../utils/paths";
 import {BatchUtil} from "../utils/batch";
 import * as distribution from "../utils/distribution";
 import * as forms from "../utils/forms";
-import {FormData} from "@primeanalytiq/emberflow-admin-client/lib/types";
+import {FormData} from "emberflow-admin-client/lib/types";
 import {DocumentData, DocumentReference} from "firebase-admin/lib/firestore";
 import * as indexutils from "../index-utils";
 import SpyInstance = jest.SpyInstance;
