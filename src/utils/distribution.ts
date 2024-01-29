@@ -305,6 +305,10 @@ export async function reduceInstructions() {
     }
   };
 
-  await reduceAndQueue();
+  const startTime = Date.now();
+  const maxRuntimeSeconds = 55;
+  while (Date.now() - startTime < maxRuntimeSeconds * 1000) {
+    await reduceAndQueue();
+  }
 }
 
