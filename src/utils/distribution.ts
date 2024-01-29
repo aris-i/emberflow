@@ -127,16 +127,15 @@ export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublis
         const valuesToRemove = [];
         for (const param of params) {
           const operation = param[0];
-          if (operation !== "+" && operation !== "-") {
-            console.log(`Invalid operation ${operation} in instruction ${instruction} for property ${property}`);
+          let value = param;
+          if (operation === "-" || operation === "+") {
+            value = param.slice(1);
+          }
+          if (operation === "-") {
+            valuesToRemove.push(value);
             continue;
           }
-          const value = param.slice(1);
-          if (operation === "+") {
-            valuesToAdd.push(value);
-          } else {
-            valuesToRemove.push(value);
-          }
+          valuesToAdd.push(value);
         }
         if (valuesToAdd.length > 0) {
           updateData[property] = admin.firestore.FieldValue.arrayUnion(...valuesToAdd);

@@ -247,29 +247,6 @@ describe("onMessageInstructionsQueue", () => {
     expect(docSetMock.mock.calls[0][0]).toStrictEqual({});
   });
 
-  it("should log invalid operation when other symbols are used", async () => {
-    isProcessedMock.mockResolvedValueOnce(false);
-    const event = {
-      id: "test-event",
-      data: {
-        message: {
-          json: {
-            dstPath: "/users/test-user-id/documents/test-doc-id",
-            instructions: {
-              "planets": "arr(×Earth)",
-              "continents": "arr(÷Asia,÷Europe,÷Africa)",
-            },
-          },
-        },
-      },
-    } as CloudEvent<MessagePublishedData>;
-    await distribution.onMessageInstructionsQueue(event);
-
-    expect(console.log).toHaveBeenCalledWith("Invalid operation × in instruction arr(×Earth) for property planets");
-    expect(console.log).toHaveBeenCalledWith("Invalid operation ÷ in instruction arr(÷Asia,÷Europe,÷Africa) for property continents");
-    expect(docSetMock.mock.calls[0][0]).toStrictEqual({});
-  });
-
   it("should convert array union instructions correctly", async () => {
     isProcessedMock.mockResolvedValueOnce(false);
     const expectedData = {
@@ -285,8 +262,8 @@ describe("onMessageInstructionsQueue", () => {
             dstPath: "/users/test-user-id/documents/test-doc-id",
             instructions: {
               "planets": "arr(+Earth)",
-              "continents": "arr(+Asia,+Europe,+Africa)",
-              "countries": "arr(+Japan, +Philippines, +Singapore)",
+              "continents": "arr(Asia,Europe,Africa)",
+              "countries": "arr(+Japan, Philippines, +Singapore)",
             },
           },
         },
@@ -340,7 +317,7 @@ describe("onMessageInstructionsQueue", () => {
           json: {
             dstPath: "/users/test-user-id/documents/test-doc-id",
             instructions: {
-              "planets": "arr(+Earth,+Mars,+Venus,-Pluto)",
+              "planets": "arr(+Earth,Mars,+Venus,-Pluto)",
             },
           },
         },
