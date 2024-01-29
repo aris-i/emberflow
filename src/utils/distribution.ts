@@ -86,6 +86,7 @@ export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublis
     console.info("Running Instructions");
     const {dstPath, instructions} = instructionsMessage;
     const updateData: {[key: string]: FieldValue} = {};
+    const removeData: {[key: string]: FieldValue} = {};
 
     for (const [property, instruction] of Object.entries(instructions)) {
       if (instruction === "++") {
@@ -106,7 +107,7 @@ export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublis
         } else {
           updateData[property] = admin.firestore.FieldValue.increment(-decrementValue);
         }
-      } else if (instruction.startsWith("arr+") || instruction.startsWith("arr-")) {
+      } else if (instruction.startsWith("arr")) {
         const regex = /\((.*?)\)/;
         const match = instruction.match(regex);
 
@@ -122,17 +123,37 @@ export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublis
         }
 
         const params = paramsStr.split(",").map((value) => value.trim());
-        if (instruction.startsWith("arr+")) {
-          updateData[property] = admin.firestore.FieldValue.arrayUnion(...params);
-        } else {
-          updateData[property] = admin.firestore.FieldValue.arrayRemove(...params);
+        const valuesToAdd = [];
+        const valuesToRemove = [];
+        for (const param of params) {
+          const operation = param[0];
+          let value = param;
+          if (operation === "-" || operation === "+") {
+            value = param.slice(1);
+          }
+          if (operation === "-") {
+            valuesToRemove.push(value);
+            continue;
+          }
+          valuesToAdd.push(value);
         }
+        if (valuesToAdd.length > 0) {
+          updateData[property] = admin.firestore.FieldValue.arrayUnion(...valuesToAdd);
+        }
+        if (valuesToRemove.length > 0) {
+          removeData[property] = admin.firestore.FieldValue.arrayRemove(...valuesToRemove);
+        }
+      } else if (instruction === "del") {
+        updateData[property] = admin.firestore.FieldValue.delete();
       } else {
         console.log(`Invalid instruction ${instruction} for property ${property}`);
       }
     }
     const dstDocRef = db.doc(dstPath);
     await dstDocRef.set(updateData, {merge: true});
+    if (Object.keys(removeData).length > 0) {
+      await dstDocRef.set(removeData, {merge: true});
+    }
     await pubsubUtils.trackProcessedIds(INSTRUCTIONS_TOPIC_NAME, event.id);
     return "Processed instructions";
   } catch (e) {
