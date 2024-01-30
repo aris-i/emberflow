@@ -267,6 +267,7 @@ export async function reduceInstructions() {
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
         subscription.close();
+        subscription.removeAllListeners();
         console.log("Time is up, stopping message reception");
         resolve(reducedInstructions);
       }, duration);
@@ -286,8 +287,10 @@ export async function reduceInstructions() {
 
       subscription.on("error", (error) => {
         clearTimeout(timeoutId);
+        subscription.close();
+        subscription.removeAllListeners();
         console.error(`Received error: ${error}`);
-        reject(error);
+        resolve(reducedInstructions);
       });
     });
   };
@@ -310,5 +313,6 @@ export async function reduceInstructions() {
   while (Date.now() - startTime < maxRuntimeSeconds * 1000) {
     await reduceAndQueue();
   }
+  await new Promise((resolve) => setTimeout(resolve, 100));
 }
 
