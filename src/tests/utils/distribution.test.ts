@@ -8,14 +8,17 @@ import * as indexUtils from "../../index-utils";
 import {
   FOR_DISTRIBUTION_TOPIC,
   FOR_DISTRIBUTION_TOPIC_NAME,
-  initializeEmberFlow,
+  initializeEmberFlow, INSTRUCTIONS_REDUCER_TOPIC_NAME,
   INSTRUCTIONS_TOPIC, INSTRUCTIONS_TOPIC_NAME,
 } from "../../index";
 import * as admin from "firebase-admin";
 import {dbStructure, Entity} from "../../sample-custom/db-structure";
 import {securityConfig} from "../../sample-custom/security";
 import {validatorConfig} from "../../sample-custom/validators";
-import {PubSub, Subscription} from "@google-cloud/pubsub";
+import {PubSub, Subscription, Message} from "@google-cloud/pubsub";
+import {firestore} from "firebase-admin";
+import Timestamp = firestore.Timestamp;
+import {StatusError} from "@google-cloud/pubsub/build/src/message-stream";
 
 jest.mock("../../utils/pubsub", () => {
   return {
@@ -520,115 +523,180 @@ describe("mergeInstructions", () => {
 });
 
 describe("reduceInstructions", () => {
+  const duration = 3000;
+  const sleep = 100;
+  const timeoutId = 123;
   let queueInstructionsSpy: jest.SpyInstance;
-  let closeMock: jest.Mock;
-  let onMock: jest.Mock;
-  let rejectMock: jest.Mock;
+  let subscriptionSpy: jest.SpyInstance;
   let resolveMock: jest.Mock;
+  let reducedInstructions = new Map();
+  const subscriptionMock = {
+    close: jest.fn(),
+    on: jest.fn(),
+    removeAllListeners: jest.fn(),
+  };
 
   beforeEach(() => {
     jest.spyOn(console, "log").mockImplementation();
     jest.spyOn(console, "error").mockImplementation();
-    rejectMock = jest.fn();
-    resolveMock = jest.fn();
+    subscriptionSpy = jest.spyOn(PubSub.prototype, "subscription").mockImplementation(() => {
+      return subscriptionMock as unknown as Subscription;
+    });
     queueInstructionsSpy = jest.spyOn(distribution, "queueInstructions");
-    closeMock = jest.fn();
-    onMock = jest.fn();
-    jest.spyOn(PubSub.prototype, "subscription").mockImplementation(() => {
-      return {
-        close: closeMock,
-        on: onMock,
-      } as unknown as Subscription;
+    const now = Timestamp.now();
+    let startTime = false;
+    let dateNowCallInstance = 0;
+    jest.spyOn(Date, "now").mockImplementation(() => {
+      if (!startTime) {
+        startTime = true;
+        return now.toMillis();
+      }
+      const dateNow = now.toMillis() + ((duration + sleep) * dateNowCallInstance);
+      dateNowCallInstance++;
+      return dateNow;
+    });
+    jest.spyOn(global, "setTimeout").mockImplementation((callback) => {
+      callback();
+      return timeoutId as unknown as NodeJS.Timeout;
+    });
+    resolveMock = jest.fn().mockImplementation((map) => {
+      reducedInstructions = new Map(map as Map<string, Instructions>);
     });
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
-  });
-
-  it("should resolve when time is up", async () => {
-    jest.spyOn(global, "Promise").mockImplementation((callback) => {
-      callback(resolveMock, rejectMock);
-      return {} as unknown as Promise<Map<string, Instructions>>;
-    });
-    jest.spyOn(global, "setTimeout").mockImplementation((callback) => {
-      callback();
-      return 1 as unknown as NodeJS.Timeout;
-    });
-
-    await distribution.reduceInstructions();
-    expect(onMock).toHaveBeenCalledWith("message", expect.any(Function));
-    expect(closeMock).toHaveBeenCalledTimes(1);
-    expect(console.log).toHaveBeenCalledWith("Time is up, stopping message reception");
-    expect(resolveMock).toHaveBeenCalledTimes(1);
+    subscriptionMock.on.mockRestore();
+    subscriptionMock.close.mockRestore();
+    subscriptionMock.removeAllListeners.mockRestore();
   });
 
   it("should reject when received an error", async () => {
-    jest.spyOn(global, "Promise").mockImplementation((callback) => {
-      callback(resolveMock, rejectMock);
-      return {} as unknown as Promise<Map<string, Instructions>>;
-    });
-    const clearTimeoutSpy = jest.spyOn(global, "clearTimeout").mockImplementation();
-    const error = new Error("test error");
-    onMock.mockImplementation((event, callback) => {
+    const error = {
+      code: 1,
+      details: "Unknown error",
+    } as StatusError;
+    let errorCallback: (error: StatusError) => void;
+    subscriptionMock.on.mockImplementation((event, callback) => {
       if (event === "error") {
-        callback(error);
+        errorCallback = callback;
       }
     });
+    let promiseCallInstance = -1;
+    jest.spyOn(global, "Promise").mockImplementation((callback) => {
+      promiseCallInstance++;
+      if (promiseCallInstance % 2 === 0) {
+        if (promiseCallInstance === 2) {
+          errorCallback(error);
+        }
+        callback(resolveMock, jest.fn());
+        return reducedInstructions as unknown as Promise<Map<string, Instructions>>;
+      }
+      callback(jest.fn(), jest.fn());
+      return undefined as unknown as Promise<void>;
+    });
+    const clearTimeoutSpy = jest.spyOn(global, "clearTimeout");
+
     await distribution.reduceInstructions();
-    expect(onMock).toHaveBeenCalledWith("error", expect.any(Function));
+    expect(subscriptionMock.on).toHaveBeenCalledWith("error", expect.any(Function));
+    expect(resolveMock).toHaveBeenCalledTimes(17);
     expect(clearTimeoutSpy).toHaveBeenCalledTimes(1);
+    expect(clearTimeoutSpy).toHaveBeenCalledWith(timeoutId);
     expect(console.error).toHaveBeenCalledWith(`Received error: ${error}`);
-    expect(rejectMock).toHaveBeenCalledTimes(1);
   });
 
-  it("should queue instructions", async () => {
-    jest.spyOn(global, "Promise").mockImplementation((callback) => {
-      callback(resolveMock, rejectMock);
-      return resolveMock.mock.calls[0][0] as unknown as Promise<Map<string, Instructions>>;
-    });
-    jest.spyOn(global, "setTimeout").mockImplementation((callback) => {
-      callback();
-      return 1 as unknown as NodeJS.Timeout;
-    });
+  it("should execute the sequence of operations correctly", async () => {
     const ackMock = jest.fn();
-    const data1 = {
-      dstPath: "/users/test-user-id/documents/test-doc-id",
-      instructions: {
-        "count": "++",
-      },
-    };
     const message1 = {
       ack: ackMock,
-      data: Buffer.from(JSON.stringify(data1)),
+      data: JSON.stringify({
+        dstPath: "/users/test-user-id/documents/test-doc-id",
+        instructions: {
+          "count": "++",
+        },
+      }),
       id: "message1",
-    };
-    const data2 = {
-      dstPath: "/users/test-user-id/documents/test-doc-id",
-      instructions: {
-        "count": "+2",
-      },
-    };
+    } as unknown as Message;
     const message2 = {
       ack: ackMock,
-      data: Buffer.from(JSON.stringify(data2)),
+      data: JSON.stringify({
+        dstPath: "/users/test-user-id/documents/test-doc-id",
+        instructions: {
+          "count": "+2",
+        },
+      }),
       id: "message2",
-    };
-    onMock.mockImplementation((event, callback) => {
+    } as unknown as Message;
+    const message3 = {
+      ack: ackMock,
+      data: JSON.stringify({
+        dstPath: "/users/test-user-id/documents/test-doc-id",
+        instructions: {
+          "array": "arr(value)",
+        },
+      }),
+      id: "message3",
+    } as unknown as Message;
+    const message4 = {
+      ack: ackMock,
+      data: JSON.stringify({
+        dstPath: "/users/test-user-id/documents/another-test-doc-id",
+        instructions: {
+          "count": "++",
+        },
+      }),
+      id: "message4",
+    } as unknown as Message;
+    let messageCallback: (message: Message) => void;
+    subscriptionMock.on.mockImplementation((event, callback) => {
       if (event === "message") {
-        callback(message1);
-        callback(message2);
+        messageCallback = callback;
       }
+    });
+    let promiseCallInstance = -1;
+    jest.spyOn(global, "Promise").mockImplementation((callback) => {
+      promiseCallInstance++;
+      if (promiseCallInstance % 2 === 0) {
+        if (promiseCallInstance === 0) {
+          messageCallback(message1);
+          messageCallback(message2);
+        }
+        if (promiseCallInstance === 2) {
+          messageCallback(message3);
+          messageCallback(message4);
+        }
+        callback(resolveMock, jest.fn());
+        return reducedInstructions as unknown as Promise<Map<string, Instructions>>;
+      }
+      callback(jest.fn(), jest.fn());
+      return undefined as unknown as Promise<void>;
     });
 
     await distribution.reduceInstructions();
+    expect(subscriptionSpy).toHaveBeenCalledWith(INSTRUCTIONS_REDUCER_TOPIC_NAME);
+    expect(subscriptionMock.on).toHaveBeenCalledTimes(2);
+    expect(subscriptionMock.on).toHaveBeenCalledWith("message", expect.any(Function));
+    expect(subscriptionMock.on).toHaveBeenCalledWith("error", expect.any(Function));
+    expect(resolveMock).toHaveBeenCalledTimes(16);
+    expect(console.log).toHaveBeenCalledWith("Time is up, stopping message reception");
+    expect(ackMock).toHaveBeenCalledTimes(4);
     expect(console.log).toHaveBeenCalledWith("Received message message1.");
     expect(console.log).toHaveBeenCalledWith("Received message message2.");
-    expect(ackMock).toHaveBeenCalledTimes(2);
     expect(console.log).toHaveBeenCalledWith("Received 1 messages within 3 seconds.");
-    expect(queueInstructionsSpy).toHaveBeenCalledTimes(1);
+    expect(queueInstructionsSpy).toHaveBeenCalledTimes(3);
     expect(queueInstructionsSpy).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id", {
       "count": "+3",
     });
+    expect(console.log).toHaveBeenCalledWith("Received message message3.");
+    expect(console.log).toHaveBeenCalledWith("Received message message4.");
+    expect(console.log).toHaveBeenCalledWith("Received 2 messages within 3 seconds.");
+    expect(queueInstructionsSpy).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id", {
+      "array": "arr(value)",
+    });
+    expect(queueInstructionsSpy).toHaveBeenCalledWith("/users/test-user-id/documents/another-test-doc-id", {
+      "count": "++",
+    });
+    expect(subscriptionMock.close).toHaveBeenCalledTimes(1);
+    expect(subscriptionMock.removeAllListeners).toHaveBeenCalledTimes(1);
   });
 });

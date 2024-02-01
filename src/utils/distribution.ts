@@ -260,35 +260,37 @@ export const mergeInstructions = (existingInstructions: Instructions, instructio
 
 export async function reduceInstructions() {
   const duration = 3000;
+  let timeoutId: NodeJS.Timeout | undefined;
+  let reducedInstructions: Map<string, Instructions> = new Map();
+
   const subscription = pubsub.subscription(INSTRUCTIONS_REDUCER_TOPIC_NAME);
+  subscription.on("message", (message) => {
+    console.log(`Received message ${message.id}.`);
+    const {dstPath, instructions} = JSON.parse(message.data.toString());
+    const existingInstructions = reducedInstructions.get(dstPath);
+    if (!existingInstructions) {
+      reducedInstructions.set(dstPath, instructions);
+      message.ack();
+      return;
+    }
+    mergeInstructions(existingInstructions, instructions);
+    message.ack();
+  });
+
+  subscription.on("error", (error) => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+    console.error(`Received error: ${error}`);
+  });
 
   const runReduceInstructions = (): Promise<Map<string, Instructions>> => {
-    const reducedInstructions: Map<string, Instructions> = new Map();
-    return new Promise((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
-        subscription.close();
+    return new Promise((resolve) => {
+      timeoutId = setTimeout(() => {
         console.log("Time is up, stopping message reception");
-        resolve(reducedInstructions);
+        resolve(new Map(reducedInstructions));
+        reducedInstructions = new Map<string, Instructions>();
       }, duration);
-
-      subscription.on("message", (message) => {
-        console.log(`Received message ${message.id}.`);
-        const {dstPath, instructions} = JSON.parse(message.data.toString());
-        const existingInstructions = reducedInstructions.get(dstPath);
-        if (!existingInstructions) {
-          reducedInstructions.set(dstPath, instructions);
-          message.ack();
-          return;
-        }
-        mergeInstructions(existingInstructions, instructions);
-        message.ack();
-      });
-
-      subscription.on("error", (error) => {
-        clearTimeout(timeoutId);
-        console.error(`Received error: ${error}`);
-        reject(error);
-      });
     });
   };
 
@@ -306,9 +308,12 @@ export async function reduceInstructions() {
   };
 
   const startTime = Date.now();
-  const maxRuntimeSeconds = 55;
+  const maxRuntimeSeconds = 50;
   while (Date.now() - startTime < maxRuntimeSeconds * 1000) {
     await reduceAndQueue();
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
+  await subscription.close();
+  subscription.removeAllListeners();
 }
 
