@@ -513,8 +513,8 @@ describe("runBusinessLogics", () => {
     initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
     const runStatus = await indexUtils.runBusinessLogics(actionRef, action, distributeFn);
 
-    expect(logicFn1).toHaveBeenCalledWith(action, undefined);
-    expect(logicFn2).toHaveBeenCalledWith(action, undefined);
+    expect(logicFn1).toHaveBeenCalledWith(action, new Map(), undefined);
+    expect(logicFn2).toHaveBeenCalledWith(action, new Map(), undefined);
     expect(logicFn3).not.toHaveBeenCalled();
     expect(distributeFn).toHaveBeenCalledTimes(1);
     expect(distributeFn).toHaveBeenCalledWith(actionRef,
@@ -554,8 +554,8 @@ describe("runBusinessLogics", () => {
     initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
     const runStatus = await indexUtils.runBusinessLogics(actionRef, action, distributeFn);
 
-    expect(logicFn1).toHaveBeenCalledWith(action, undefined);
-    expect(logicFn2).toHaveBeenCalledWith(action, undefined);
+    expect(logicFn1).toHaveBeenCalledWith(action, new Map(), undefined);
+    expect(logicFn2).toHaveBeenCalledWith(action, new Map(), undefined);
     expect(distributeFn).toHaveBeenCalledTimes(2);
     expect(distributeFn.mock.calls[0]).toEqual([actionRef,
       [expect.objectContaining({
@@ -570,7 +570,7 @@ describe("runBusinessLogics", () => {
         timeFinished: expect.any(Timestamp),
       })], 0]);
 
-    expect(logicFn2).toHaveBeenCalledWith(action, {});
+    expect(logicFn2).toHaveBeenCalledWith(action, new Map(), {});
     expect(distributeFn.mock.calls[1]).toEqual([actionRef,
       [expect.objectContaining({
         status: "finished",
@@ -638,8 +638,8 @@ describe("runBusinessLogics", () => {
       initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
       const runStatus = await indexUtils.runBusinessLogics(actionRef, action, distributeFn);
 
-      expect(logicFn1).toHaveBeenCalledWith(action, undefined);
-      expect(logicFn2).toHaveBeenCalledWith(action, undefined);
+      expect(logicFn1).toHaveBeenCalledWith(action, new Map(), undefined);
+      expect(logicFn2).toHaveBeenCalledWith(action, new Map(), undefined);
       expect(logicFn1).toHaveBeenCalledTimes(1);
       expect(logicFn2).toHaveBeenCalledTimes(10);
       expect(distributeFn).toHaveBeenCalledTimes(10);
@@ -676,13 +676,64 @@ describe("runBusinessLogics", () => {
     const runStatus = await indexUtils.runBusinessLogics(actionRef, action, distributeFn);
 
     expect(logicFn1).not.toHaveBeenCalled();
-    expect(logicFn2).toHaveBeenCalledWith(action, undefined);
-    expect(logicFn3).toHaveBeenCalledWith(action, undefined);
+    expect(logicFn2).toHaveBeenCalledWith(action, new Map(), undefined);
+    expect(logicFn3).toHaveBeenCalledWith(action, new Map(), undefined);
     expect(logicFn2).toHaveBeenCalledTimes(1);
     expect(logicFn3).toHaveBeenCalledTimes(1);
     expect(distributeFn).not.toHaveBeenCalled();
     expect(runStatus).toEqual("cancel-then-retry");
   });
+
+  it("should pass data from previous logic to the next logic via shared map",
+    async () => {
+      const expectedSharedMap = new Map<string, any>();
+      expectedSharedMap.set("another-document-id", {
+        "@id": "another-document-id",
+        "title": "Another Document Title",
+      });
+      expectedSharedMap.set("test-document-id", {
+        "@id": "test-document-id",
+        "title": "Test Document Title",
+      });
+      logicFn2.mockImplementation((action, sharedMap) => {
+        sharedMap.set("another-document-id", expectedSharedMap.get("another-document-id"));
+        return {status: "finished"};
+      });
+      logicFn3.mockImplementation((action, sharedMap) => {
+        sharedMap.set("test-document-id", expectedSharedMap.get("test-document-id"));
+        return {status: "finished"};
+      });
+      const logics: LogicConfig[] = [
+        {
+          name: "Logic 1",
+          actionTypes: ["create"],
+          modifiedFields: ["field1"],
+          entities: ["user"],
+          logicFn: logicFn1,
+        },
+        {
+          name: "Logic 2",
+          actionTypes: "all",
+          modifiedFields: ["field2"],
+          entities: ["user"],
+          logicFn: logicFn2,
+        },
+        {
+          name: "Logic 3",
+          actionTypes: ["create"],
+          modifiedFields: ["field2"],
+          entities: ["user"],
+          logicFn: logicFn3,
+        },
+      ];
+      initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
+      const runStatus = await indexUtils.runBusinessLogics(actionRef, action, distributeFn);
+
+      expect(logicFn1).toHaveBeenCalledWith(action, expectedSharedMap, undefined);
+      expect(logicFn2).toHaveBeenCalledWith(action, expectedSharedMap, undefined);
+      expect(logicFn3).toHaveBeenCalledWith(action, expectedSharedMap, undefined);
+      expect(runStatus).toEqual("done");
+    });
 });
 
 describe("simulateSubmitForm", () => {
