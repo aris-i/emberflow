@@ -274,6 +274,7 @@ export const runBusinessLogics = async (
   let page = 0;
   const nextPageMarkers: (object|undefined)[] = Array(matchingLogics.length).fill(undefined);
   const sharedMap = new Map<string, any>();
+  matchingLogics.reverse();
   while (matchingLogics.length > 0) {
     if (page > 0) {
       console.debug(`Page ${page} Remaining logics:`, matchingLogics.map((logic) => logic.name));

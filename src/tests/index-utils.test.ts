@@ -559,13 +559,13 @@ describe("runBusinessLogics", () => {
     expect(distributeFn).toHaveBeenCalledTimes(2);
     expect(distributeFn.mock.calls[0]).toEqual([actionRef,
       [expect.objectContaining({
-        status: "partial-result",
-        nextPage: {},
+        status: "finished",
         execTime: expect.any(Number),
         timeFinished: expect.any(Timestamp),
       }),
       expect.objectContaining({
-        status: "finished",
+        status: "partial-result",
+        nextPage: {},
         execTime: expect.any(Number),
         timeFinished: expect.any(Timestamp),
       })], 0]);
@@ -675,11 +675,11 @@ describe("runBusinessLogics", () => {
     initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
     const runStatus = await indexUtils.runBusinessLogics(actionRef, action, distributeFn);
 
-    expect(logicFn1).not.toHaveBeenCalled();
-    expect(logicFn2).toHaveBeenCalledWith(action, new Map(), undefined);
-    expect(logicFn3).toHaveBeenCalledWith(action, new Map(), undefined);
+    expect(logicFn1).toHaveBeenCalledTimes(1);
+    expect(logicFn1).toHaveBeenCalledWith(action, new Map(), undefined);
     expect(logicFn2).toHaveBeenCalledTimes(1);
-    expect(logicFn3).toHaveBeenCalledTimes(1);
+    expect(logicFn2).toHaveBeenCalledWith(action, new Map(), undefined);
+    expect(logicFn3).not.toHaveBeenCalled();
     expect(distributeFn).not.toHaveBeenCalled();
     expect(runStatus).toEqual("cancel-then-retry");
   });
