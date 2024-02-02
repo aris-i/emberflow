@@ -44,7 +44,7 @@ import {PubSub, Topic} from "@google-cloud/pubsub";
 import {onMessagePublished} from "firebase-functions/v2/pubsub";
 import {reviveDateAndTimestamp, deleteForms} from "./utils/misc";
 import Database = database.Database;
-import {onMessageForDistributionQueue, onMessageInstructionsQueue} from "./utils/distribution";
+import {onMessageForDistributionQueue, onMessageInstructionsQueue, reduceInstructions} from "./utils/distribution";
 import {cleanPubSubProcessedIds} from "./utils/pubsub";
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import {onDocumentCreated} from "firebase-functions/v2/firestore";
@@ -71,18 +71,21 @@ export const VIEW_LOGICS_TOPIC_NAME = "view-logics-queue";
 export const PEER_SYNC_TOPIC_NAME = "peer-sync-queue";
 export const FOR_DISTRIBUTION_TOPIC_NAME = "for-distribution-queue";
 export const INSTRUCTIONS_TOPIC_NAME = "instructions-queue";
+export const INSTRUCTIONS_REDUCER_TOPIC_NAME = "instructions-reducer-queue";
 export const pubSubTopics = [
   SUBMIT_FORM_TOPIC_NAME,
   VIEW_LOGICS_TOPIC_NAME,
   PEER_SYNC_TOPIC_NAME,
   FOR_DISTRIBUTION_TOPIC_NAME,
   INSTRUCTIONS_TOPIC_NAME,
+  INSTRUCTIONS_REDUCER_TOPIC_NAME,
 ];
 export let SUBMIT_FORM_TOPIC: Topic;
 export let VIEW_LOGICS_TOPIC: Topic;
 export let PEER_SYNC_TOPIC: Topic;
 export let FOR_DISTRIBUTION_TOPIC: Topic;
 export let INSTRUCTIONS_TOPIC: Topic;
+export let INSTRUCTIONS_REDUCER_TOPIC: Topic;
 
 export const _mockable = {
   createNowTimestamp: () => admin.firestore.Timestamp.now(),
@@ -119,6 +122,7 @@ export function initializeEmberFlow(
   PEER_SYNC_TOPIC = pubsub.topic(PEER_SYNC_TOPIC_NAME);
   FOR_DISTRIBUTION_TOPIC = pubsub.topic(FOR_DISTRIBUTION_TOPIC_NAME);
   INSTRUCTIONS_TOPIC = pubsub.topic(INSTRUCTIONS_TOPIC_NAME);
+  INSTRUCTIONS_REDUCER_TOPIC = pubsub.topic(INSTRUCTIONS_REDUCER_TOPIC_NAME);
 
   const {
     docPaths: dp,
@@ -212,6 +216,11 @@ export function initializeEmberFlow(
     region: projectConfig.region,
     timeoutSeconds: 540,
   }, processScheduledEntities);
+  functionsConfig["reduceInstructions"] = onSchedule({
+    schedule: "every 1 minutes",
+    region: projectConfig.region,
+    timeoutSeconds: 60,
+  }, reduceInstructions);
   functionsConfig["onDeleteFunctions"] = onDocumentCreated(
     "@server/delete/functions/{deleteFuncId}", onDeleteFunction);
   functionsConfig["onUserRegister"] =

@@ -1,4 +1,4 @@
-import {InstructionsMessage, LogicResultDoc} from "../types";
+import {Instructions, InstructionsMessage, LogicResultDoc} from "../types";
 import {
   admin,
   db,
@@ -6,6 +6,7 @@ import {
   FOR_DISTRIBUTION_TOPIC_NAME,
   INSTRUCTIONS_TOPIC,
   INSTRUCTIONS_TOPIC_NAME,
+  INSTRUCTIONS_REDUCER_TOPIC, INSTRUCTIONS_REDUCER_TOPIC_NAME, pubsub,
 } from "../index";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
 import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
@@ -18,8 +19,17 @@ import {reviveDateAndTimestamp} from "./misc";
 export const queueForDistributionLater = async (...logicResultDocs: LogicResultDoc[]) => {
   try {
     for (const logicResultDoc of logicResultDocs) {
-      const messageId = await FOR_DISTRIBUTION_TOPIC.publishMessage({json: logicResultDoc});
-      console.log(`Message ${messageId} published.`);
+      const {
+        instructions,
+        dstPath,
+        ...rest
+      } = logicResultDoc;
+      const forDistributionMessageId = await FOR_DISTRIBUTION_TOPIC.publishMessage({json: {...rest, dstPath}});
+      console.log(`Message ${forDistributionMessageId} published.`);
+      if (instructions) {
+        const instructionsReducerMessageId = await INSTRUCTIONS_REDUCER_TOPIC.publishMessage({json: {dstPath, instructions}});
+        console.log(`Instructions ${instructionsReducerMessageId} published for reduction.`);
+      }
     }
   } catch (error: unknown) {
     if (error instanceof Error) {
@@ -60,7 +70,7 @@ export async function onMessageForDistributionQueue(event: CloudEvent<MessagePub
   }
 }
 
-export async function queueInstructions(dstPath: string, instructions: { [p: string]: string }) {
+export const queueInstructions = async (dstPath: string, instructions: { [p: string]: string }) => {
   try {
     const messageId = await INSTRUCTIONS_TOPIC.publishMessage({json: {dstPath, instructions}});
     console.log(`Message ${messageId} published.`);
@@ -72,7 +82,7 @@ export async function queueInstructions(dstPath: string, instructions: { [p: str
     }
     throw error;
   }
-}
+};
 
 export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublishedData>) {
   if (await pubsubUtils.isProcessed(INSTRUCTIONS_TOPIC_NAME, event.id)) {
@@ -161,3 +171,149 @@ export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublis
     throw new Error("No json in message");
   }
 }
+
+export const mergeInstructions = (existingInstructions: Instructions, instructions: Instructions) => {
+  function getValue(instruction: string) {
+    if (instruction === "++") {
+      return 1;
+    } else if (instruction === "--") {
+      return -1;
+    } else if (instruction.startsWith("+")) {
+      return parseInt(instruction.slice(1));
+    } else if (instruction.startsWith("-")) {
+      return -parseInt(instruction.slice(1));
+    } else {
+      return 0;
+    }
+  }
+
+  function getArrValues(existingInstruction: string) {
+    const existingParamsMap = new Map<string, number>();
+    const regex = /arr\((.*?)\)/;
+    const match = existingInstruction.match(regex);
+    const existingParamsStr = match ? match[1] : "";
+    const existingParams = existingParamsStr.split(",").map((value) => value.trim());
+    // Let's create a map of existingParams to their values without the sign
+    for (const param of existingParams) {
+      // Remove the "+" or "-" sign at the start of param.  If there is no sign, then it's a "+" sign
+      const sign = param.startsWith("-") ? -1 : 1;
+      const value = param.replace(/^[+-]/, "");
+      existingParamsMap.set(value, sign);
+    }
+    return existingParamsMap;
+  }
+
+  for (const property of Object.keys(instructions)) {
+    const existingInstruction = existingInstructions[property];
+    const instruction = instructions[property];
+    if (!existingInstruction) {
+      existingInstructions[property] = instruction;
+      continue;
+    }
+
+    // check if existingInstructions and instructions starts with '+' or '-'
+    if (/^[+-]/.test(existingInstruction) && /^[+-]/.test(instruction)) {
+      const newValue = getValue(existingInstruction) + getValue(instruction);
+      if (newValue === 0) {
+        delete existingInstructions[property];
+        continue;
+      }
+      existingInstructions[property] = newValue > 0 ? `+${newValue}` : `${newValue}`;
+      continue;
+    }
+
+    if (existingInstruction.startsWith("arr") && instruction.startsWith("arr")) {
+      // Parse values inside parentheses on this pattern arr([+-]value1, [+-]value2, ...)
+      const existingParamsMap = getArrValues(existingInstruction);
+      const paramsMap = getArrValues(instruction);
+      // Loop through paramsMap and merge with existingParamsMap
+      for (const [param, sign] of paramsMap.entries()) {
+        const existingSign = existingParamsMap.get(param) || 0;
+        const newValue = existingSign + sign;
+        if (newValue === 0) {
+          existingParamsMap.delete(param);
+          continue;
+        }
+        existingParamsMap.set(param, newValue > 0 ? 1 : -1);
+      }
+      // Convert existingParamsMap to string
+      const existingParams = Array.from(existingParamsMap.entries())
+        .map(([param, sign]) => `${sign > 0 ? "+" : "-"}${param}`);
+      const existingParamsStr = existingParams.join(",");
+      existingInstructions[property] = `arr(${existingParamsStr})`;
+      continue;
+    }
+
+    if (existingInstruction === "del") {
+      console.warn(`Property ${property} is set to be deleted. Skipping..`);
+      continue;
+    }
+
+    if (instruction === "del") {
+      existingInstructions[property] = "del";
+      continue;
+    }
+
+    console.warn(`Property ${property} has conflicting instructions ${existingInstruction} and ${instruction}. Skipping..`);
+  }
+};
+
+export async function reduceInstructions() {
+  const duration = 3000;
+  let timeoutId: NodeJS.Timeout | undefined;
+  let reducedInstructions: Map<string, Instructions> = new Map();
+
+  const subscription = pubsub.subscription(INSTRUCTIONS_REDUCER_TOPIC_NAME);
+  subscription.on("message", (message) => {
+    console.log(`Received message ${message.id}.`);
+    const {dstPath, instructions} = JSON.parse(message.data.toString());
+    const existingInstructions = reducedInstructions.get(dstPath);
+    if (!existingInstructions) {
+      reducedInstructions.set(dstPath, instructions);
+      message.ack();
+      return;
+    }
+    mergeInstructions(existingInstructions, instructions);
+    message.ack();
+  });
+
+  subscription.on("error", (error) => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+    console.error(`Received error: ${error}`);
+  });
+
+  const runReduceInstructions = (): Promise<Map<string, Instructions>> => {
+    return new Promise((resolve) => {
+      timeoutId = setTimeout(() => {
+        console.log("Time is up, stopping message reception");
+        resolve(new Map(reducedInstructions));
+        reducedInstructions = new Map<string, Instructions>();
+      }, duration);
+    });
+  };
+
+  const reduceAndQueue = async () => {
+    try {
+      const reducedInstructions = await runReduceInstructions();
+      console.log(`Received ${reducedInstructions.size} messages within ${duration / 1000} seconds.`);
+      // Process the reduced instructions here
+      for (const [dstPath, instructions] of reducedInstructions.entries()) {
+        await queueInstructions(dstPath, instructions);
+      }
+    } catch (error) {
+      console.error(`Error while receiving messages: ${error}`);
+    }
+  };
+
+  const startTime = Date.now();
+  const maxRuntimeSeconds = 50;
+  while (Date.now() - startTime < maxRuntimeSeconds * 1000) {
+    await reduceAndQueue();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  await subscription.close();
+  subscription.removeAllListeners();
+}
+
