@@ -273,6 +273,8 @@ export const runBusinessLogics = async (
   const maxLogicResultPages = config?.maxLogicResultPages || 20;
   let page = 0;
   const nextPageMarkers: (object|undefined)[] = Array(matchingLogics.length).fill(undefined);
+  const sharedMap = new Map<string, any>();
+  matchingLogics.reverse();
   while (matchingLogics.length > 0) {
     if (page > 0) {
       console.debug(`Page ${page} Remaining logics:`, matchingLogics.map((logic) => logic.name));
@@ -283,7 +285,7 @@ export const runBusinessLogics = async (
       const logic = matchingLogics[i];
       console.debug("Running logic:", logic.name, "nextPageMarker:", nextPageMarkers[i]);
       try {
-        const result = await logic.logicFn(action, nextPageMarkers[i]);
+        const result = await logic.logicFn(action, sharedMap, nextPageMarkers[i]);
         const end = performance.now();
         const execTime = end - start;
         const {status, nextPage} = result;
