@@ -5,7 +5,7 @@ import {
   ViewDefinition,
   ViewLogicFn,
 } from "../types";
-import {docPaths, PEER_SYNC_TOPIC, PEER_SYNC_TOPIC_NAME, VIEW_LOGICS_TOPIC, VIEW_LOGICS_TOPIC_NAME} from "../index";
+import {docPaths, VIEW_LOGICS_TOPIC, VIEW_LOGICS_TOPIC_NAME} from "../index";
 import * as admin from "firebase-admin";
 import {hydrateDocPath} from "../utils/paths";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
@@ -106,45 +106,6 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn {
   };
 }
 
-export const syncPeerViews = async (logicResultDoc: LogicResultDoc) => {
-  const {
-    dstPath,
-    doc,
-    instructions,
-  } = logicResultDoc;
-  const splits = dstPath.split("/");
-  const userId = splits[1];
-  splits[1] = "{userId}";
-  const dehydratedPath = splits.join("/");
-
-  const forSyncPaths = await hydrateDocPath(dehydratedPath, {
-    user: {
-      fieldName: "@id",
-      operator: "!=",
-      value: userId,
-    },
-  });
-
-  // Loop through all the paths and create a document for each
-  const documents = forSyncPaths.map((forSyncPath) => {
-    return {
-      action: "merge" as LogicResultDocAction,
-      dstPath: forSyncPath,
-      doc: doc,
-      instructions: instructions,
-      priority: "low" as LogicResultDocPriority,
-    };
-  });
-
-  // Return the result with the hydrated documents
-  return {
-    name: "SyncPeerViews",
-    status: "finished",
-    timeFinished: admin.firestore.Timestamp.now(),
-    documents,
-  };
-};
-
 export async function queueRunViewLogics(userLogicResultDocs: LogicResultDoc[]) {
   try {
     for (const userLogicResultDoc of userLogicResultDocs) {
@@ -186,51 +147,8 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
     await distribute(userDocsByDstPath);
     await distributeLater(otherUsersDocsByDstPath);
 
-    console.info("Queue for Peer Sync");
-    await queueForPeerSync(userLogicResultDoc);
     await pubsubUtils.trackProcessedIds(VIEW_LOGICS_TOPIC_NAME, event.id);
     return "Processed view logics";
-  } catch (e) {
-    console.error("PubSub message was not JSON", e);
-    throw new Error("No json in message");
-  }
-}
-
-export const queueForPeerSync = async (...userLogicResultDocs: LogicResultDoc[]) => {
-  try {
-    for (const userLogicResultDoc of userLogicResultDocs) {
-      const messageId = await PEER_SYNC_TOPIC.publishMessage({json: userLogicResultDoc});
-      console.log(`Message ${messageId} published.`);
-    }
-  } catch (error: unknown) {
-    if (error instanceof Error) {
-      console.error(`Received error while publishing: ${error.message}`);
-    } else {
-      console.error("An unknown error occurred during publishing");
-    }
-    throw error;
-  }
-};
-
-export async function onMessagePeerSyncQueue(event: CloudEvent<MessagePublishedData>) {
-  if (await pubsubUtils.isProcessed(PEER_SYNC_TOPIC_NAME, event.id)) {
-    console.log("Skipping duplicate message");
-    return;
-  }
-
-  try {
-    const userLogicResultDoc = reviveDateAndTimestamp(event.data.message.json) as LogicResultDoc;
-    console.log("Received user logic result doc:", userLogicResultDoc);
-
-    console.info("Running Peer Sync");
-    const logicResult = await syncPeerViews(userLogicResultDoc);
-    const logicResultDocs = logicResult.documents;
-    const dstPathViewLogicDocsMap: Map<string, LogicResultDoc[]> = await expandConsolidateAndGroupByDstPath(logicResultDocs);
-
-    console.info("Distributing Peer Sync Docs");
-    await distributeLater(dstPathViewLogicDocsMap);
-    await pubsubUtils.trackProcessedIds(PEER_SYNC_TOPIC_NAME, event.id);
-    return "Processed peer sync";
   } catch (e) {
     console.error("PubSub message was not JSON", e);
     throw new Error("No json in message");

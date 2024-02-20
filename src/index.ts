@@ -28,7 +28,6 @@ import {
 import {initDbStructure} from "./init-db-structure";
 import {
   createViewLogicFn,
-  onMessagePeerSyncQueue,
   onMessageViewLogicsQueue,
   queueRunViewLogics,
 } from "./logics/view-logics";
@@ -68,14 +67,12 @@ export let projectConfig: ProjectConfig;
 export const functionsConfig: Record<string, any> = {};
 export const SUBMIT_FORM_TOPIC_NAME = "submit-form-queue";
 export const VIEW_LOGICS_TOPIC_NAME = "view-logics-queue";
-export const PEER_SYNC_TOPIC_NAME = "peer-sync-queue";
 export const FOR_DISTRIBUTION_TOPIC_NAME = "for-distribution-queue";
 export const INSTRUCTIONS_TOPIC_NAME = "instructions-queue";
 export const INSTRUCTIONS_REDUCER_TOPIC_NAME = "instructions-reducer-queue";
 export const pubSubTopics = [
   SUBMIT_FORM_TOPIC_NAME,
   VIEW_LOGICS_TOPIC_NAME,
-  PEER_SYNC_TOPIC_NAME,
   FOR_DISTRIBUTION_TOPIC_NAME,
   INSTRUCTIONS_TOPIC_NAME,
   INSTRUCTIONS_REDUCER_TOPIC_NAME,
@@ -119,7 +116,6 @@ export function initializeEmberFlow(
   initClient(admin.app(), "service");
   SUBMIT_FORM_TOPIC = pubsub.topic(SUBMIT_FORM_TOPIC_NAME);
   VIEW_LOGICS_TOPIC = pubsub.topic(VIEW_LOGICS_TOPIC_NAME);
-  PEER_SYNC_TOPIC = pubsub.topic(PEER_SYNC_TOPIC_NAME);
   FOR_DISTRIBUTION_TOPIC = pubsub.topic(FOR_DISTRIBUTION_TOPIC_NAME);
   INSTRUCTIONS_TOPIC = pubsub.topic(INSTRUCTIONS_TOPIC_NAME);
   INSTRUCTIONS_REDUCER_TOPIC = pubsub.topic(INSTRUCTIONS_REDUCER_TOPIC_NAME);
@@ -172,12 +168,6 @@ export function initializeEmberFlow(
     maxInstances: 5,
     timeoutSeconds: 540,
   }, onMessageViewLogicsQueue);
-  functionsConfig["onMessagePeerSyncQueue"] = onMessagePublished({
-    topic: PEER_SYNC_TOPIC_NAME,
-    region: projectConfig.region,
-    maxInstances: 5,
-    timeoutSeconds: 540,
-  }, onMessagePeerSyncQueue);
   functionsConfig["onMessageForDistributionQueue"] = onMessagePublished({
     topic: FOR_DISTRIBUTION_TOPIC_NAME,
     region: projectConfig.region,
@@ -423,15 +413,15 @@ export async function onFormSubmit(
         await distributeLater(lowPriorityUserDocsByDstPath);
         await distributeLater(lowPriorityOtherUsersDocsByDstPath);
 
-        const userDocsMap = [
+        const distributedDocsMap = [
           highPriorityUserDocsByDstPath,
+          highPriorityOtherUsersDocsByDstPath,
           normalPriorityUserDocsByDstPath,
-          lowPriorityUserDocsByDstPath,
         ];
-        const userDocs = userDocsMap
+        const distributedDocs = distributedDocsMap
           .flatMap((map) => Array.from(map.values()))
           .flat();
-        await queueRunViewLogics(userDocs);
+        await queueRunViewLogics(distributedDocs);
       }
     );
 

@@ -96,6 +96,6 @@ describe("cleanPubSubProcessedIds", () => {
       expect(admin.firestore().collection).toHaveBeenCalledWith(`@topics/${pubSubTopic}/processedIds`);
     }
     expect(deleteCollectionSpy).toHaveBeenCalled();
-    expect(console.info).toHaveBeenCalledWith("Cleaned 6 topics of processedIds");
+    expect(console.info).toHaveBeenCalledWith(`Cleaned ${pubSubTopics.length} topics of processedIds`);
   });
 });

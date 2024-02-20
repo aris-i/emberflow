@@ -724,8 +724,8 @@ describe("onFormSubmit", () => {
 
     const userDocsMap = [
       highPriorityUserDocsByDstPath,
+      highPriorityOtherUsersDocsByDstPath,
       normalPriorityUserDocsByDstPath,
-      lowPriorityUserDocsByDstPath,
     ];
     const userDocs = userDocsMap
       .flatMap((map) => Array.from(map.values()))
