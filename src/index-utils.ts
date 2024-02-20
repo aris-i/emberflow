@@ -1,5 +1,5 @@
 import {
-  Action, DistributeFn, LogicActionType,
+  Action, DistributeFn, LogicActionType, LogicConfig,
   LogicResult,
   LogicResultDoc,
   ScheduledEntity,
@@ -250,18 +250,79 @@ async function simulateSubmitForm(logicResults: LogicResult[], action: Action,
   }
 }
 
+function getMatchingLogics(actionType: "create" | "update" | "delete", modifiedFields: FirebaseFirestore.DocumentData,
+  entity: string) {
+  return logicConfigs.filter((logic) => {
+    return (
+      (logic.actionTypes === "all" || logic.actionTypes.includes(actionType as LogicActionType)) &&
+        (logic.modifiedFields === "all" ||
+            logic.modifiedFields.some((field) => field in modifiedFields)) &&
+        (logic.entities === "all" || logic.entities.includes(entity))
+    );
+  });
+}
+
+async function runLogic(action: Action, matchingLogics: LogicConfig[], nextPageMarkers: (object | undefined)[],
+  sharedMap: Map<string, any>, logicResults: LogicResult[]) {
+  for (let i = matchingLogics.length - 1; i >= 0; i--) {
+    const start = performance.now();
+    const logic = matchingLogics[i];
+    console.debug("Running logic:", logic.name, "nextPageMarker:", nextPageMarkers[i]);
+    try {
+      const result = await logic.logicFn(action, sharedMap, nextPageMarkers[i]);
+      const end = performance.now();
+      const execTime = end - start;
+      const {status, nextPage} = result;
+      if (status === "finished" || status === "error") {
+        matchingLogics.splice(i, 1);
+        nextPageMarkers.splice(i, 1);
+      } else if (status === "partial-result") {
+        nextPageMarkers[i] = nextPage;
+      }
+
+      logicResults.push({...result, execTime, timeFinished: admin.firestore.Timestamp.now()});
+      if (status === "cancel-then-retry") {
+        return "cancel-then-retry";
+      }
+    } catch (e) {
+      const end = performance.now();
+      const execTime = end - start;
+      matchingLogics.splice(i, 1);
+      nextPageMarkers.splice(i, 1);
+      logicResults.push({
+        name: logic.name,
+        status: "error",
+        documents: [],
+        execTime,
+        message: (e as Error).message,
+        timeFinished: admin.firestore.Timestamp.now(),
+      });
+    }
+  }
+  return "done";
+}
+
+async function distributeLogicResults(actionRef: FirebaseFirestore.DocumentReference<FirebaseFirestore.DocumentData>, distributeFn: (actionRef: FirebaseFirestore.DocumentReference, logicResults: LogicResult[], page: number) => Promise<void>, logicResults: LogicResult[], page: number) {
+  const start = performance.now();
+  await distributeFn(actionRef, logicResults, page);
+  const end = performance.now();
+  const execTime = end - start;
+  const distributeFnLogicResult: LogicResult = {
+    name: "distributeFn",
+    status: "finished",
+    documents: [],
+    execTime: execTime,
+  };
+  await _mockable.updateLogicMetrics([...logicResults, distributeFnLogicResult]);
+}
+
 export const runBusinessLogics = async (
   actionRef: DocumentReference,
   action: Action,
   distributeFn: DistributeFn): Promise<"done" | "cancel-then-retry" | "no-matching-logics"> => {
   const {actionType, modifiedFields, eventContext: {entity}} = action;
-  const matchingLogics = logicConfigs.filter((logic) => {
-    return (
-      (logic.actionTypes === "all" || logic.actionTypes.includes(actionType as LogicActionType)) &&
-            (logic.modifiedFields === "all" || logic.modifiedFields.some((field) => field in modifiedFields)) &&
-            (logic.entities === "all" || logic.entities.includes(entity))
-    );
-  });
+
+  const matchingLogics = getMatchingLogics(actionType, modifiedFields, entity);
   console.debug("Matching logics:", matchingLogics.map((logic) => logic.name));
   if (matchingLogics.length === 0) {
     console.log("No matching logics found");
@@ -271,6 +332,7 @@ export const runBusinessLogics = async (
 
   const config = (await db.doc("@server/config").get()).data();
   const maxLogicResultPages = config?.maxLogicResultPages || 20;
+
   let page = 0;
   const nextPageMarkers: (object|undefined)[] = Array(matchingLogics.length).fill(undefined);
   const sharedMap = new Map<string, any>();
@@ -280,52 +342,12 @@ export const runBusinessLogics = async (
       console.debug(`Page ${page} Remaining logics:`, matchingLogics.map((logic) => logic.name));
     }
     const logicResults: LogicResult[] = [];
-    for (let i = matchingLogics.length-1; i >= 0; i--) {
-      const start = performance.now();
-      const logic = matchingLogics[i];
-      console.debug("Running logic:", logic.name, "nextPageMarker:", nextPageMarkers[i]);
-      try {
-        const result = await logic.logicFn(action, sharedMap, nextPageMarkers[i]);
-        const end = performance.now();
-        const execTime = end - start;
-        const {status, nextPage} = result;
-        if (status === "finished" || status === "error") {
-          matchingLogics.splice(i, 1);
-          nextPageMarkers.splice(i, 1);
-        } else if (status === "partial-result") {
-          nextPageMarkers[i] = nextPage;
-        }
-
-        logicResults.push({...result, execTime, timeFinished: admin.firestore.Timestamp.now()});
-        if (status === "cancel-then-retry") {
-          return "cancel-then-retry";
-        }
-      } catch (e) {
-        const end = performance.now();
-        const execTime = end - start;
-        matchingLogics.splice(i, 1);
-        nextPageMarkers.splice(i, 1);
-        logicResults.push({
-          name: logic.name,
-          status: "error",
-          documents: [],
-          execTime,
-          message: (e as Error).message,
-          timeFinished: admin.firestore.Timestamp.now(),
-        });
-      }
+    const status = await runLogic(action, matchingLogics, nextPageMarkers, sharedMap, logicResults);
+    if (status === "cancel-then-retry") {
+      return "cancel-then-retry";
     }
-    const start = performance.now();
-    await distributeFn(actionRef, logicResults, page++);
-    const end = performance.now();
-    const execTime = end - start;
-    const distributeFnLogicResult: LogicResult = {
-      name: "distributeFn",
-      status: "finished",
-      documents: [],
-      execTime: execTime,
-    };
-    await _mockable.updateLogicMetrics([...logicResults, distributeFnLogicResult]);
+
+    await distributeLogicResults(actionRef, distributeFn, logicResults, page++);
     if (page >= maxLogicResultPages) {
       console.warn(`Maximum number of logic result pages (${maxLogicResultPages}) reached`);
       break;
@@ -524,7 +546,7 @@ export async function runViewLogics(userLogicResultDoc: LogicResultDoc): Promise
     return (
       (
         action === "merge" &&
-                logic.modifiedFields.some((field) => modifiedFields.includes(field)) &&
+              logic.modifiedFields.some((field) => modifiedFields.includes(field)) &&
                 logic.entity === entity
       ) ||
             (
