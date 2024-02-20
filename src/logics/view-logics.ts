@@ -12,9 +12,7 @@ import {CloudEvent} from "firebase-functions/lib/v2/core";
 import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
 import {
   distribute,
-  distributeLater,
   expandConsolidateAndGroupByDstPath,
-  groupDocsByUserAndDstPath,
   runViewLogics,
 } from "../index-utils";
 import {pubsubUtils} from "../utils/pubsub";
@@ -106,14 +104,14 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn {
   };
 }
 
-export async function queueRunViewLogics(userLogicResultDocs: LogicResultDoc[]) {
+export async function queueRunViewLogics(logicResultDocs: LogicResultDoc[]) {
   try {
-    for (const userLogicResultDoc of userLogicResultDocs) {
-      if (userLogicResultDoc.action === "create") {
+    for (const logicResultDoc of logicResultDocs) {
+      if (logicResultDoc.action === "create") {
         // Since this is newly created, this means there's no existing view to sync
         continue;
       }
-      const messageId = await VIEW_LOGICS_TOPIC.publishMessage({json: userLogicResultDoc});
+      const messageId = await VIEW_LOGICS_TOPIC.publishMessage({json: logicResultDoc});
       console.log(`Message ${messageId} published.`);
     }
   } catch (error: unknown) {
@@ -133,19 +131,16 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
   }
 
   try {
-    const userLogicResultDoc = reviveDateAndTimestamp(event.data.message.json) as LogicResultDoc;
-    const userId = userLogicResultDoc.dstPath.split("/")[1];
-    console.log("Received user logic result doc:", userLogicResultDoc);
+    const logicResultDoc = reviveDateAndTimestamp(event.data.message.json) as LogicResultDoc;
+    console.log("Received logic result doc:", logicResultDoc);
 
     console.info("Running View Logics");
-    const viewLogicResults = await runViewLogics(userLogicResultDoc);
+    const viewLogicResults = await runViewLogics(logicResultDoc);
     const viewLogicResultDocs = viewLogicResults.map((result) => result.documents).flat();
     const dstPathViewLogicDocsMap: Map<string, LogicResultDoc[]> = await expandConsolidateAndGroupByDstPath(viewLogicResultDocs);
-    const {userDocsByDstPath, otherUsersDocsByDstPath} = groupDocsByUserAndDstPath(dstPathViewLogicDocsMap, userId);
 
     console.info("Distributing View Logic Results");
-    await distribute(userDocsByDstPath);
-    await distributeLater(otherUsersDocsByDstPath);
+    await distribute(dstPathViewLogicDocsMap);
 
     await pubsubUtils.trackProcessedIds(VIEW_LOGICS_TOPIC_NAME, event.id);
     return "Processed view logics";
