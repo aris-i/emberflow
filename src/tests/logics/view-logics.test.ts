@@ -272,9 +272,7 @@ describe("queueRunViewLogics", () => {
 describe("onMessageViewLogicsQueue", () => {
   let runViewLogicsSpy: jest.SpyInstance;
   let expandConsolidateAndGroupByDstPathSpy: jest.SpyInstance;
-  let groupDocsByUserAndDstPathSpy: jest.SpyInstance;
   let distributeSpy: jest.SpyInstance;
-  let distributeLaterSpy: jest.SpyInstance;
 
   const viewLogicsResult: LogicResult[] = [
     {
@@ -306,17 +304,6 @@ describe("onMessageViewLogicsQueue", () => {
     ["users/doc7", [{action: "delete", priority: "normal", dstPath: "users/doc7"}]],
     ["users/doc6", [{action: "merge", priority: "normal", dstPath: "users/doc6", doc: {}}]],
   ]);
-  const groupDocsByUserResult = {
-    userDocsByDstPath: new Map<string, LogicResultDoc[]>([
-      ["users/doc1", [{action: "merge", priority: "normal", dstPath: "users/doc1", doc: {field1: "value1a", field3: "value3"}, instructions: {field2: "--", field4: "--"}}]],
-    ]),
-    otherUsersDocsByDstPath: new Map<string, LogicResultDoc[]>([
-      ["users/doc2", [{action: "delete", priority: "normal", dstPath: "users/doc2"}]],
-      ["users/doc4", [{action: "merge", priority: "normal", dstPath: "users/doc4", doc: {}, instructions: {}}]],
-      ["users/doc7", [{action: "delete", priority: "normal", dstPath: "users/doc7"}]],
-      ["users/doc6", [{action: "merge", priority: "normal", dstPath: "users/doc6", doc: {}}]],
-    ]),
-  };
 
   const userId = "doc1";
   const doc1: LogicResultDoc = {
@@ -336,9 +323,7 @@ describe("onMessageViewLogicsQueue", () => {
   beforeEach(() => {
     runViewLogicsSpy = jest.spyOn(indexUtils, "runViewLogics").mockResolvedValue(viewLogicsResult);
     expandConsolidateAndGroupByDstPathSpy = jest.spyOn(indexUtils, "expandConsolidateAndGroupByDstPath").mockResolvedValue(expandConsolidateResult);
-    groupDocsByUserAndDstPathSpy = jest.spyOn(indexUtils, "groupDocsByUserAndDstPath").mockReturnValue(groupDocsByUserResult);
     distributeSpy = jest.spyOn(indexUtils, "distribute").mockResolvedValue();
-    distributeLaterSpy = jest.spyOn(indexUtils, "distributeLater").mockResolvedValue();
   });
 
   it("should skip duplicate message", async () => {
@@ -356,9 +341,7 @@ describe("onMessageViewLogicsQueue", () => {
 
     expect(runViewLogicsSpy).toHaveBeenCalledWith(doc1);
     expect(expandConsolidateAndGroupByDstPathSpy).toHaveBeenCalledWith(viewLogicsResultDocs);
-    expect(groupDocsByUserAndDstPathSpy).toHaveBeenCalledWith(expandConsolidateResult, userId);
-    expect(distributeSpy).toHaveBeenCalledWith(groupDocsByUserResult.userDocsByDstPath);
-    expect(distributeLaterSpy).toHaveBeenCalledWith(groupDocsByUserResult.otherUsersDocsByDstPath);
+    expect(distributeSpy).toHaveBeenCalledWith(expandConsolidateResult);
     expect(trackProcessedIdsMock).toHaveBeenCalledWith(VIEW_LOGICS_TOPIC_NAME, event.id);
     expect(result).toEqual("Processed view logics");
   });
