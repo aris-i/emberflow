@@ -20,6 +20,8 @@ import {reviveDateAndTimestamp} from "../utils/misc";
 
 export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn {
   return async (logicResultDoc: LogicResultDoc) => {
+    console.debug("viewDefinition:", viewDefinition);
+    console.debug("logicResultDoc:", logicResultDoc);
     const {
       srcProps,
       destEntity,
@@ -35,6 +37,10 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn {
     let destPaths: string[];
     const destDocPath = docPaths[destEntity];
     const docId = actualSrcPath.split("/").slice(-1)[0];
+    console.debug("docId:", docId);
+    console.debug("destDocPath:", destDocPath);
+    console.debug("destEntity:", destEntity);
+    console.debug("destProp:", destProp);
     if (destProp) {
       destPaths = await hydrateDocPath(destDocPath, {
         [destEntity]: {
@@ -47,6 +53,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn {
       const dehydratedPath = `${destDocPath.split("/").slice(0, -1).join("/")}/${docId}`;
       destPaths = await hydrateDocPath(dehydratedPath, {});
     }
+    console.debug("destPaths:", destPaths);
 
     if (action === "delete") {
       const documents = destPaths.map((destPath) => {

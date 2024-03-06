@@ -523,13 +523,13 @@ export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultD
   return consolidated;
 }
 
-export async function runViewLogics(userLogicResultDoc: LogicResultDoc): Promise<LogicResult[]> {
+export async function runViewLogics(logicResultDoc: LogicResultDoc): Promise<LogicResult[]> {
   const {
     action,
     doc,
     instructions,
     dstPath,
-  } = userLogicResultDoc;
+  } = logicResultDoc;
   const modifiedFields: string[] = [];
   if (doc) {
     modifiedFields.push(...Object.keys(doc));
@@ -542,22 +542,23 @@ export async function runViewLogics(userLogicResultDoc: LogicResultDoc): Promise
     console.error("Entity should not be blank");
     return [];
   }
-  const matchingLogics = _mockable.getViewLogicsConfig().filter((logic) => {
+  const matchingLogics = _mockable.getViewLogicsConfig().filter((logicConfig) => {
     return (
       (
         action === "merge" &&
-              logic.modifiedFields.some((field) => modifiedFields.includes(field)) &&
-                logic.entity === entity
+              logicConfig.modifiedFields.some((field) => modifiedFields.includes(field)) &&
+                logicConfig.entity === entity
       ) ||
             (
               action === "delete" &&
-                logic.entity === entity
+                logicConfig.entity === entity
             )
     );
   });
+  console.debug("matchingLogics:", matchingLogics);
   // TODO: Handle errors
   // TODO: Add logic for execTime
-  return await Promise.all(matchingLogics.map((logic) => logic.viewLogicFn(userLogicResultDoc)));
+  return await Promise.all(matchingLogics.map((logic) => logic.viewLogicFn(logicResultDoc)));
 }
 
 export async function processScheduledEntities(event: ScheduledEvent) {
