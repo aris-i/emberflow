@@ -147,10 +147,14 @@ describe("cleanActionsAndForms", () => {
   let deleteCollectionSpy: jest.SpyInstance;
   let formRefSpy: jest.SpyInstance;
   let formUpdateMock: jest.Mock;
+  const snapshot = jest.fn();
 
-  const snapshot = {
+  const actionSnapshot = {
     docs: [
       {
+        ref: {
+          path: "@actions/test-form-id-1",
+        },
         data: () => ({
           eventContext: {
             formId: "test-form-id-1",
@@ -159,14 +163,9 @@ describe("cleanActionsAndForms", () => {
         }),
       },
       {
-        data: () => ({
-          eventContext: {
-            formId: "test-form-id-1",
-            uid: "test-uid-2",
-          },
-        }),
-      },
-      {
+        ref: {
+          path: "@actions/test-form-id-2",
+        },
         data: () => ({
           eventContext: {
             formId: "test-form-id-2",
@@ -174,14 +173,37 @@ describe("cleanActionsAndForms", () => {
           },
         }),
       },
+      {
+        ref: {
+          path: "@actions/test-form-id-3",
+        },
+        data: () => ({
+          eventContext: {
+            formId: "test-form-id-3",
+            uid: "test-uid-2",
+          },
+        }),
+      },
     ],
   };
+
+  const logicResultsSnapshot = {
+    docs: [
+      {
+        ref: {
+          path: "@actions/test-form-id-1/logicResults/test-form-id-1-0-0",
+        },
+      },
+    ],
+  };
+
+  snapshot.mockReturnValue(logicResultsSnapshot).mockReturnValueOnce(actionSnapshot);
 
   beforeEach(() => {
     deleteCollectionSpy = jest.spyOn(misc, "deleteCollection")
       .mockImplementation(async (query, callback) => {
         if (callback) {
-          await callback(snapshot as unknown as firestore.QuerySnapshot);
+          await callback(snapshot() as unknown as firestore.QuerySnapshot);
         }
         return Promise.resolve();
       });
@@ -199,13 +221,13 @@ describe("cleanActionsAndForms", () => {
 
     expect(console.info).toHaveBeenCalledWith("Running cleanActionsAndForms");
     expect(deleteCollectionSpy).toHaveBeenCalled();
-    expect(deleteCollectionSpy).toHaveBeenCalledTimes(1);
+    expect(deleteCollectionSpy).toHaveBeenCalledTimes(7);
     expect(formRefSpy).toHaveBeenCalled();
     expect(formRefSpy).toHaveBeenCalledTimes(1);
     expect(formUpdateMock).toHaveBeenCalledWith({
       "forms/test-uid-1/test-form-id-1": null,
       "forms/test-uid-1/test-form-id-2": null,
-      "forms/test-uid-2/test-form-id-1": null,
+      "forms/test-uid-2/test-form-id-3": null,
     });
     expect(formUpdateMock).toHaveBeenCalledTimes(1);
     expect(console.info).toHaveBeenCalledWith("Cleaned actions and forms");
