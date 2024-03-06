@@ -226,6 +226,12 @@ export const reviveDateAndTimestamp = (json: { [key: string]: any }) => {
     for (const key in obj) {
       if (obj && Object.prototype.hasOwnProperty.call(obj, key)) {
         const value = obj[key];
+
+        if (isArray(value)) {
+          stack.push(value);
+          continue;
+        }
+
         if (isStringDate(value)) {
           obj[key] = new Date(value);
           continue;

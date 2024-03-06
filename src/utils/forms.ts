@@ -52,10 +52,20 @@ export async function cleanActionsAndForms(event: ScheduledEvent) {
 
   await deleteCollection(query, async (snapshot) => {
     const forms: {[key: string]: null} = {};
-    snapshot.docs.forEach( (doc) => {
+    for (const doc of snapshot.docs) {
+      const query = db.collection(`${doc.ref.path}/logicResults`);
+
+      await deleteCollection(query, async (snapshot) => {
+        for (const doc of snapshot.docs) {
+          const query = db.collection(`${doc.ref.path}/documents`);
+
+          await deleteCollection(query);
+        }
+      });
+
       const {eventContext: {formId, uid}} = doc.data();
       forms[`forms/${uid}/${formId}`] = null;
-    });
+    }
 
     await rtdb.ref().update(forms);
   });

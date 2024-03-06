@@ -249,4 +249,31 @@ describe("reviveDateAndTimestamp", () => {
     const result = reviveDateAndTimestamp(json);
     expect(result).toStrictEqual(data);
   });
+
+  it("should revive date and timestamp in array", () => {
+    const data = {
+      "createdDate": new Date(),
+      "createdTimestamp": admin.firestore.Timestamp.now(),
+      "createdBy": {
+        "@id": "user1",
+        "name": "User 1",
+        "registeredDate": new Date(),
+        "registeredTimestamp": admin.firestore.Timestamp.now(),
+        "more": {
+          "updatedDate": new Date(),
+          "updatedTimestamp": admin.firestore.Timestamp.now(),
+        },
+      },
+    };
+    const object = {
+      "anotherDate": new Date(),
+      "array": [data],
+      "dates": [new Date(), new Date()],
+    };
+    const stringify = JSON.stringify(object);
+    const json = JSON.parse(stringify);
+
+    const result = reviveDateAndTimestamp(json);
+    expect(result).toStrictEqual(object);
+  });
 });
