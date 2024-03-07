@@ -28,6 +28,7 @@ import CollectionReference = firestore.CollectionReference;
 import * as misc from "../utils/misc";
 import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
 import {cleanLogicMetricsExecutions} from "../index-utils";
+import * as viewLogics from "../logics/view-logics";
 
 jest.spyOn(console, "log").mockImplementation();
 jest.spyOn(console, "info").mockImplementation();
@@ -60,6 +61,7 @@ jest.mock("../utils/paths", () => {
 
 describe("distributeDoc", () => {
   let dbSpy: jest.SpyInstance;
+  let queueRunViewLogicsSpy: jest.SpyInstance;
   let queueInstructionsSpy: jest.SpyInstance;
   let docSetMock: jest.Mock;
   let docDeleteMock: jest.Mock;
@@ -75,12 +77,14 @@ describe("distributeDoc", () => {
       id: "test-doc-id",
     } as unknown) as admin.firestore.DocumentReference<admin.firestore.DocumentData>;
     dbSpy = jest.spyOn(admin.firestore(), "doc").mockReturnValue(dbDoc);
+    queueRunViewLogicsSpy = jest.spyOn(viewLogics, "queueRunViewLogics").mockResolvedValue();
     queueInstructionsSpy = jest.spyOn(distribution, "queueInstructions").mockResolvedValue();
   });
 
   afterEach(() => {
     dbSpy.mockRestore();
     queueInstructionsSpy.mockRestore();
+    queueRunViewLogicsSpy.mockRestore();
   });
 
   it("should delete a document from dstPath", async () => {
@@ -95,6 +99,8 @@ describe("distributeDoc", () => {
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
     expect(docDeleteMock).toHaveBeenCalledTimes(1);
     expect(docDeleteMock).toHaveBeenCalled();
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
   });
 
   it("should delete documents in batch", async () => {
@@ -109,6 +115,8 @@ describe("distributeDoc", () => {
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
     expect(batchDeleteSpy).toHaveBeenCalledTimes(1);
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
 
     batchDeleteSpy.mockRestore();
   });
@@ -130,6 +138,8 @@ describe("distributeDoc", () => {
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
     expect(docSetMock).toHaveBeenCalledTimes(1);
     expect(docSetMock).toHaveBeenCalledWith(expectedData, {merge: true});
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
   });
 
   it("should merge a document to dstPath and queue instructions", async () => {
@@ -157,6 +167,8 @@ describe("distributeDoc", () => {
     expect(queueInstructionsSpy).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id", logicResultDoc.instructions);
     expect(docSetMock).toHaveBeenCalledTimes(1);
     expect(docSetMock).toHaveBeenCalledWith(expectedData, {merge: true});
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
   });
 
   it("should merge documents in batch", async () => {
@@ -171,6 +183,8 @@ describe("distributeDoc", () => {
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
     expect(batchSetSpy).toHaveBeenCalledTimes(1);
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
 
     batchSetSpy.mockRestore();
   });
@@ -195,6 +209,7 @@ describe("distributeDoc", () => {
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
     expect(queueSubmitFormSpy).toHaveBeenCalledTimes(1);
     expect(queueSubmitFormSpy).toHaveBeenCalledWith(formData);
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(0);
 
     queueSubmitFormSpy.mockRestore();
   });
@@ -204,6 +219,7 @@ describe("distribute", () => {
   let dbSpy: jest.SpyInstance;
   let colSpy: jest.SpyInstance;
   let queueInstructionsSpy: jest.SpyInstance;
+  let queueRunViewLogicsSpy: jest.SpyInstance;
   const batch = BatchUtil.getInstance();
   jest.spyOn(BatchUtil, "getInstance").mockImplementation(() => batch);
 
@@ -219,12 +235,14 @@ describe("distribute", () => {
       doc: jest.fn(() => dbDoc),
     } as any);
     queueInstructionsSpy = jest.spyOn(distribution, "queueInstructions").mockResolvedValue();
+    queueRunViewLogicsSpy = jest.spyOn(viewLogics, "queueRunViewLogics").mockResolvedValue();
   });
 
   afterEach(() => {
     dbSpy.mockRestore();
     colSpy.mockRestore();
     queueInstructionsSpy.mockRestore();
+    queueRunViewLogicsSpy.mockRestore();
   });
 
   it("should merge a document to dstPath and queue instructions", async () => {
@@ -262,6 +280,7 @@ describe("distribute", () => {
       "name": "test-doc-name-updated",
     });
     expect(batchSetSpy).toHaveBeenCalledTimes(1);
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
     batchSetSpy.mockRestore();
   });
 
@@ -280,6 +299,7 @@ describe("distribute", () => {
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
     expect(batchDeleteSpy).toHaveBeenCalledTimes(1);
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
 
     batchDeleteSpy.mockRestore();
   });
