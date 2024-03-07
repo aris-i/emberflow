@@ -104,16 +104,10 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn {
   };
 }
 
-export async function queueRunViewLogics(logicResultDocs: LogicResultDoc[]) {
+export async function queueRunViewLogics(logicResultDoc: LogicResultDoc) {
   try {
-    for (const logicResultDoc of logicResultDocs) {
-      if (logicResultDoc.action === "create") {
-        // Since this is newly created, this means there's no existing view to sync
-        continue;
-      }
-      const messageId = await VIEW_LOGICS_TOPIC.publishMessage({json: logicResultDoc});
-      console.log(`Message ${messageId} published.`);
-    }
+    const messageId = await VIEW_LOGICS_TOPIC.publishMessage({json: logicResultDoc});
+    console.log(`Message ${messageId} published.`);
   } catch (error: unknown) {
     if (error instanceof Error) {
       console.error(`Received error while publishing: ${error.message}`);

@@ -249,23 +249,9 @@ describe("queueRunViewLogics", () => {
       doc: {name: "test-doc-name-merge"},
       dstPath: "users/test-user-id/documents/doc1",
     };
-    const logicResultDocs: LogicResultDoc[] = [doc1];
-    await viewLogics.queueRunViewLogics(logicResultDocs);
+    await viewLogics.queueRunViewLogics(doc1);
 
     expect(publishMessageSpy).toHaveBeenCalledWith({json: doc1});
-  });
-
-  it("should not queue view logics when action is create", async () => {
-    const doc1: LogicResultDoc = {
-      action: "create",
-      priority: "normal",
-      doc: {name: "test-doc-name-created"},
-      dstPath: "users/test-user-id/documents/doc1",
-    };
-    const logicResultDocs: LogicResultDoc[] = [doc1];
-    await viewLogics.queueRunViewLogics(logicResultDocs);
-
-    expect(publishMessageSpy).not.toHaveBeenCalled();
   });
 });
 

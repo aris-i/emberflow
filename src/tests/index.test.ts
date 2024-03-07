@@ -722,14 +722,6 @@ describe("onFormSubmit", () => {
       otherUsersDocsByDstPath: lowPriorityOtherUsersDocsByDstPath,
     } = groupDocsByUserAndDstPath(lowPriorityDstPathLogicDocsMap, userId);
 
-    const userDocsMap = [
-      highPriorityUserDocsByDstPath,
-      highPriorityOtherUsersDocsByDstPath,
-      normalPriorityUserDocsByDstPath,
-    ];
-    const userDocs = userDocsMap
-      .flatMap((map) => Array.from(map.values()))
-      .flat();
     const viewLogicResults: LogicResult[] = [{
       name: "User ViewLogic",
       status: "finished",
@@ -783,8 +775,6 @@ describe("onFormSubmit", () => {
     expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(3, lowPriorityDstPathLogicDocsMap, "user-1");
     expect(indexutils.distributeLater).toHaveBeenNthCalledWith(2, lowPriorityUserDocsByDstPath);
     expect(indexutils.distributeLater).toHaveBeenNthCalledWith(3, lowPriorityOtherUsersDocsByDstPath);
-
-    expect(viewLogics.queueRunViewLogics).toHaveBeenCalledWith(userDocs);
 
     expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenCalledTimes(3);
     expect(updateMock).toHaveBeenCalledTimes(1);

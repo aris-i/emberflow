@@ -19,7 +19,6 @@ import {PubSub, Subscription, Message} from "@google-cloud/pubsub";
 import {firestore} from "firebase-admin";
 import Timestamp = firestore.Timestamp;
 import {StatusError} from "@google-cloud/pubsub/build/src/message-stream";
-import * as viewLogics from "../../logics/view-logics";
 
 jest.mock("../../utils/pubsub", () => {
   return {
@@ -72,12 +71,10 @@ describe("queueForDistributionLater", () => {
 
 describe("onMessageForDistributionQueue", () => {
   let distributeDocSpy: jest.SpyInstance;
-  let queueRunViewLogicsSpy: jest.SpyInstance;
   let queueForDistributionLaterSpy: jest.SpyInstance;
 
   beforeEach(() => {
     distributeDocSpy = jest.spyOn(indexUtils, "distributeDoc").mockResolvedValue();
-    queueRunViewLogicsSpy = jest.spyOn(viewLogics, "queueRunViewLogics").mockResolvedValue();
     queueForDistributionLaterSpy = jest.spyOn(distribution, "queueForDistributionLater").mockResolvedValue();
   });
 
@@ -120,7 +117,6 @@ describe("onMessageForDistributionQueue", () => {
     const result = await distribution.onMessageForDistributionQueue(event);
 
     expect(distributeDocSpy).toHaveBeenCalledWith(doc1);
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith([doc1]);
     expect(trackProcessedIdsMock).toHaveBeenCalledWith(FOR_DISTRIBUTION_TOPIC_NAME, event.id);
     expect(result).toEqual("Processed for distribution later");
   });
