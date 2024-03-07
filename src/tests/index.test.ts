@@ -23,7 +23,7 @@ import DocumentReference = firestore.DocumentReference;
 import CollectionReference = firestore.CollectionReference;
 import Timestamp = firestore.Timestamp;
 import Database = database.Database;
-import {expandConsolidateAndGroupByDstPath, groupDocsByUserAndDstPath} from "../index-utils";
+import {expandConsolidateAndGroupByDstPath, groupDocsByTargetDocPath} from "../index-utils";
 
 const projectConfig: ProjectConfig = {
   projectId: "your-project-id",
@@ -392,7 +392,8 @@ describe("onFormSubmit", () => {
         "field1": "value1",
         "field2": "value2",
       });
-    const delayFormSubmissionAndCheckIfCancelledMock = jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(false);
+    const delayFormSubmissionAndCheckIfCancelledMock =
+      jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(false);
 
     const setActionMock = jest.fn().mockResolvedValue({
       update: jest.fn(),
@@ -688,39 +689,39 @@ describe("onFormSubmit", () => {
         },
       );
 
+    const docPath = "users/user-1";
     const form = {
       "formData": JSON.stringify({
         "@actionType": "create",
         "name": "test",
-        "@docPath": "users/user-1",
+        "@docPath": docPath,
       }),
       "@status": "submit",
     };
 
     const event = createEvent(form);
 
-    const userId = "user-1";
     const highPriorityDstPathLogicDocsMap =
       await expandConsolidateAndGroupByDstPath(highPriorityDocs);
     const {
-      userDocsByDstPath: highPriorityUserDocsByDstPath,
-      otherUsersDocsByDstPath: highPriorityOtherUsersDocsByDstPath,
-    } = groupDocsByUserAndDstPath(highPriorityDstPathLogicDocsMap, userId);
+      docsByDocPath: highPriorityDocsByDocPath,
+      otherDocsByDocPath: highPriorityOtherDocsByDocPath,
+    } = groupDocsByTargetDocPath(highPriorityDstPathLogicDocsMap, docPath);
 
 
     const normalPriorityDstPathLogicDocsMap =
       await expandConsolidateAndGroupByDstPath([...normalPriorityDocs, ...anotherNormalPriorityDocs]);
     const {
-      userDocsByDstPath: normalPriorityUserDocsByDstPath,
-      otherUsersDocsByDstPath: normalPriorityOtherUsersDocsByDstPath,
-    } = groupDocsByUserAndDstPath(normalPriorityDstPathLogicDocsMap, userId);
+      docsByDocPath: normalPriorityDocsByDocPath,
+      otherDocsByDocPath: normalPriorityOtherDocsByDocPath,
+    } = groupDocsByTargetDocPath(normalPriorityDstPathLogicDocsMap, docPath);
 
     const lowPriorityDstPathLogicDocsMap =
       await expandConsolidateAndGroupByDstPath(lowPriorityDocs);
     const {
-      userDocsByDstPath: lowPriorityUserDocsByDstPath,
-      otherUsersDocsByDstPath: lowPriorityOtherUsersDocsByDstPath,
-    } = groupDocsByUserAndDstPath(lowPriorityDstPathLogicDocsMap, userId);
+      docsByDocPath: lowPriorityDocsByDocPath,
+      otherDocsByDocPath: lowPriorityOtherDocsByDocPath,
+    } = groupDocsByTargetDocPath(lowPriorityDstPathLogicDocsMap, docPath);
 
     const viewLogicResults: LogicResult[] = [{
       name: "User ViewLogic",
@@ -733,18 +734,18 @@ describe("onFormSubmit", () => {
       .mockResolvedValueOnce(highPriorityDstPathLogicDocsMap)
       .mockResolvedValueOnce(normalPriorityDstPathLogicDocsMap)
       .mockResolvedValueOnce(lowPriorityDstPathLogicDocsMap);
-    jest.spyOn(indexutils, "groupDocsByUserAndDstPath")
+    jest.spyOn(indexutils, "groupDocsByTargetDocPath")
       .mockReturnValueOnce({
-        userDocsByDstPath: highPriorityUserDocsByDstPath,
-        otherUsersDocsByDstPath: highPriorityOtherUsersDocsByDstPath,
+        docsByDocPath: highPriorityDocsByDocPath,
+        otherDocsByDocPath: highPriorityOtherDocsByDocPath,
       })
       .mockReturnValueOnce({
-        userDocsByDstPath: normalPriorityUserDocsByDstPath,
-        otherUsersDocsByDstPath: normalPriorityOtherUsersDocsByDstPath,
+        docsByDocPath: normalPriorityDocsByDocPath,
+        otherDocsByDocPath: normalPriorityOtherDocsByDocPath,
       })
       .mockReturnValueOnce({
-        userDocsByDstPath: lowPriorityUserDocsByDstPath,
-        otherUsersDocsByDstPath: lowPriorityOtherUsersDocsByDstPath,
+        docsByDocPath: lowPriorityDocsByDocPath,
+        otherDocsByDocPath: lowPriorityOtherDocsByDocPath,
       });
     jest.spyOn(indexutils, "runViewLogics").mockResolvedValue(viewLogicResults);
     jest.spyOn(indexutils, "distribute");
@@ -762,19 +763,19 @@ describe("onFormSubmit", () => {
 
     // Test that the functions are called in the correct sequence
     expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(1, highPriorityDocs);
-    expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(1, highPriorityDstPathLogicDocsMap, "user-1");
-    expect(indexutils.distribute).toHaveBeenNthCalledWith(1, highPriorityUserDocsByDstPath);
-    expect(indexutils.distribute).toHaveBeenNthCalledWith(2, highPriorityOtherUsersDocsByDstPath);
+    expect(indexutils.groupDocsByTargetDocPath).toHaveBeenNthCalledWith(1, highPriorityDstPathLogicDocsMap, docPath);
+    expect(indexutils.distribute).toHaveBeenNthCalledWith(1, highPriorityDocsByDocPath);
+    expect(indexutils.distribute).toHaveBeenNthCalledWith(2, highPriorityOtherDocsByDocPath);
 
     expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(2, [...normalPriorityDocs, ...anotherNormalPriorityDocs]);
-    expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(2, normalPriorityDstPathLogicDocsMap, "user-1");
-    expect(indexutils.distribute).toHaveBeenNthCalledWith(3, normalPriorityUserDocsByDstPath);
-    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(1, normalPriorityOtherUsersDocsByDstPath);
+    expect(indexutils.groupDocsByTargetDocPath).toHaveBeenNthCalledWith(2, normalPriorityDstPathLogicDocsMap, docPath);
+    expect(indexutils.distribute).toHaveBeenNthCalledWith(3, normalPriorityDocsByDocPath);
+    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(1, normalPriorityOtherDocsByDocPath);
 
     expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(3, lowPriorityDocs);
-    expect(indexutils.groupDocsByUserAndDstPath).toHaveBeenNthCalledWith(3, lowPriorityDstPathLogicDocsMap, "user-1");
-    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(2, lowPriorityUserDocsByDstPath);
-    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(3, lowPriorityOtherUsersDocsByDstPath);
+    expect(indexutils.groupDocsByTargetDocPath).toHaveBeenNthCalledWith(3, lowPriorityDstPathLogicDocsMap, docPath);
+    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(2, lowPriorityDocsByDocPath);
+    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(3, lowPriorityOtherDocsByDocPath);
 
     expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenCalledTimes(3);
     expect(updateMock).toHaveBeenCalledTimes(1);

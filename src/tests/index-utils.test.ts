@@ -1138,32 +1138,33 @@ describe("simulateSubmitForm", () => {
   });
 });
 
-describe("groupDocsByUserAndDstPath", () => {
+describe("groupDocsByTargetDocPath", () => {
   initializeEmberFlow(projectConfig, admin, dbStructure, Entity, {}, {}, []);
   const docsByDstPath = new Map<string, LogicResultDoc[]>([
     ["users/user123/document1", [{action: "merge", priority: "normal", dstPath: "users/user123/document1", doc: {field1: "value1", field2: "value2"}}]],
-    ["users/user123/document2", [{action: "merge", priority: "normal", dstPath: "users/user123/document2", doc: {field3: "value3", field6: "value6"}}]],
-    ["users/user456/document3", [{action: "merge", priority: "normal", dstPath: "users/user456/document3", doc: {field4: "value4"}}]],
-    ["users/user789/document4", [{action: "delete", priority: "normal", dstPath: "users/user789/document4"}]],
-    ["othercollection/document5", [{action: "merge", priority: "normal", dstPath: "othercollection/document5", doc: {field5: "value5"}}]],
+    ["users/user123/document1/threads/thread1", [{action: "merge", priority: "normal", dstPath: "users/user123/document1/threads/thread1", doc: {field3: "value3", field6: "value6"}}]],
+    ["users/user123/document1/messages/message1", [{action: "merge", priority: "normal", dstPath: "users/user123/document1/messages/message1", doc: {field4: "value4"}}]],
+    ["users/user123/document1/images/image1", [{action: "merge", priority: "low", dstPath: "users/user123/document1/images/image1", doc: {field7: "value7"}}]],
+    ["othercollection/document2", [{action: "merge", priority: "normal", dstPath: "othercollection/document2", doc: {field5: "value5"}}]],
+    ["othercollection/document3", [{action: "delete", priority: "normal", dstPath: "othercollection/document3"}]],
   ]);
 
-  it("should group documents by destination path and user", () => {
-    const userId = "user123";
+  it("should group documents by docPath", () => {
+    const docPath = "users/user123/document1";
     const expectedResults = {
-      userDocsByDstPath: new Map<string, LogicResultDoc[]>([
+      docsByDocPath: new Map<string, LogicResultDoc[]>([
         ["users/user123/document1", [{action: "merge", priority: "normal", dstPath: "users/user123/document1", doc: {field1: "value1", field2: "value2"}}]],
-        ["users/user123/document2", [{action: "merge", priority: "normal", dstPath: "users/user123/document2", doc: {field3: "value3", field6: "value6"}}]],
+        ["users/user123/document1/threads/thread1", [{action: "merge", priority: "normal", dstPath: "users/user123/document1/threads/thread1", doc: {field3: "value3", field6: "value6"}}]],
+        ["users/user123/document1/messages/message1", [{action: "merge", priority: "normal", dstPath: "users/user123/document1/messages/message1", doc: {field4: "value4"}}]],
+        ["users/user123/document1/images/image1", [{action: "merge", priority: "low", dstPath: "users/user123/document1/images/image1", doc: {field7: "value7"}}]],
       ]),
-      otherUsersDocsByDstPath: new Map<string, LogicResultDoc[]>([
-        ["users/user456/document3", [{action: "merge", priority: "normal", dstPath: "users/user456/document3", doc: {field4: "value4"}}]],
-        ["users/user789/document4", [{action: "delete", priority: "normal", dstPath: "users/user789/document4"}]],
-        ["othercollection/document5", [{action: "merge", priority: "normal", dstPath: "othercollection/document5", doc: {field5: "value5"}}]],
+      otherDocsByDocPath: new Map<string, LogicResultDoc[]>([
+        ["othercollection/document2", [{action: "merge", priority: "normal", dstPath: "othercollection/document2", doc: {field5: "value5"}}]],
+        ["othercollection/document3", [{action: "delete", priority: "normal", dstPath: "othercollection/document3"}]],
       ]),
     };
 
-    const results = indexUtils.groupDocsByUserAndDstPath(docsByDstPath, userId);
-
+    const results = indexUtils.groupDocsByTargetDocPath(docsByDstPath, docPath);
     expect(results).toEqual(expectedResults);
   });
 });

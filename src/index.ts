@@ -407,7 +407,7 @@ export async function onFormSubmit(
         const {
           docsByDocPath: lowPriorityDocsByDocPath,
           otherDocsByDocPath: lowPriorityOtherDocsByDocPath,
-        } = groupDocsByTargetDocPath(lowPriorityDstPathLogicDocsMap, userId);
+        } = groupDocsByTargetDocPath(lowPriorityDstPathLogicDocsMap, docPath);
         await distributeLater(lowPriorityDocsByDocPath);
         await distributeLater(lowPriorityOtherDocsByDocPath);
       }
