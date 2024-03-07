@@ -29,7 +29,6 @@ import {initDbStructure} from "./init-db-structure";
 import {
   createViewLogicFn,
   onMessageViewLogicsQueue,
-  queueRunViewLogics,
 } from "./logics/view-logics";
 import {resetUsageStats, stopBillingIfBudgetExceeded, useBillProtect} from "./utils/bill-protect";
 import {Firestore} from "firebase-admin/firestore";
@@ -412,16 +411,6 @@ export async function onFormSubmit(
         } = groupDocsByUserAndDstPath(lowPriorityDstPathLogicDocsMap, userId);
         await distributeLater(lowPriorityUserDocsByDstPath);
         await distributeLater(lowPriorityOtherUsersDocsByDstPath);
-
-        const distributedDocsMap = [
-          highPriorityUserDocsByDstPath,
-          highPriorityOtherUsersDocsByDstPath,
-          normalPriorityUserDocsByDstPath,
-        ];
-        const distributedDocs = distributedDocsMap
-          .flatMap((map) => Array.from(map.values()))
-          .flat();
-        await queueRunViewLogics(distributedDocs);
       }
     );
 

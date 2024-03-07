@@ -30,6 +30,7 @@ import DocumentData = FirebaseFirestore.DocumentData;
 import Reference = database.Reference;
 import {FirestoreEvent} from "firebase-functions/lib/v2/providers/firestore";
 import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
+import {queueRunViewLogics} from "./logics/view-logics";
 
 export const _mockable = {
   getViewLogicsConfig: () => viewLogicConfigs,
@@ -77,6 +78,10 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
     await queueSubmitForm(formData);
   } else if (action === "simulate-submit-form") {
     console.debug("Not distributing doc for action simulate-submit-form");
+  }
+
+  if (["merge", "delete"].includes(action)) {
+    await queueRunViewLogics(logicResultDoc);
   }
 }
 
