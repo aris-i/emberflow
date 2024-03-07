@@ -18,8 +18,7 @@ import {
   distributeLater,
   expandConsolidateAndGroupByDstPath,
   getFormModifiedFields,
-  getSecurityFn,
-  groupDocsByUserAndDstPath,
+  getSecurityFn, groupDocsByTargetDocPath,
   onDeleteFunction,
   processScheduledEntities,
   runBusinessLogics,
@@ -382,11 +381,11 @@ export async function onFormSubmit(
         const highPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
           await expandConsolidateAndGroupByDstPath(highPriorityDocs);
         const {
-          userDocsByDstPath: highPriorityUserDocsByDstPath,
-          otherUsersDocsByDstPath: highPriorityOtherUsersDocsByDstPath,
-        } = groupDocsByUserAndDstPath(highPriorityDstPathLogicDocsMap, userId);
-        await distribute(highPriorityUserDocsByDstPath);
-        await distribute(highPriorityOtherUsersDocsByDstPath);
+          docsByDocPath: highPriorityDocsByDocPath,
+          otherDocsByDocPath: highPriorityOtherDocsByDocPath,
+        } = groupDocsByTargetDocPath(highPriorityDstPathLogicDocsMap, docPath);
+        await distribute(highPriorityDocsByDocPath);
+        await distribute(highPriorityOtherDocsByDocPath);
 
         if (page === 0) {
           await formRef.update({"@status": "finished"});
@@ -396,21 +395,21 @@ export async function onFormSubmit(
         const normalPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
           await expandConsolidateAndGroupByDstPath(normalPriorityDocs);
         const {
-          userDocsByDstPath: normalPriorityUserDocsByDstPath,
-          otherUsersDocsByDstPath: normalPriorityOtherUsersDocsByDstPath,
-        } = groupDocsByUserAndDstPath(normalPriorityDstPathLogicDocsMap, userId);
-        await distribute(normalPriorityUserDocsByDstPath);
-        await distributeLater(normalPriorityOtherUsersDocsByDstPath);
+          docsByDocPath: normalPriorityDocsByDocPath,
+          otherDocsByDocPath: normalPriorityOtherDocsByDocPath,
+        } = groupDocsByTargetDocPath(normalPriorityDstPathLogicDocsMap, docPath);
+        await distribute(normalPriorityDocsByDocPath);
+        await distributeLater(normalPriorityOtherDocsByDocPath);
 
         console.info("Consolidating and Distributing Low Priority Logic Results");
         const lowPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
           await expandConsolidateAndGroupByDstPath(lowPriorityDocs);
         const {
-          userDocsByDstPath: lowPriorityUserDocsByDstPath,
-          otherUsersDocsByDstPath: lowPriorityOtherUsersDocsByDstPath,
-        } = groupDocsByUserAndDstPath(lowPriorityDstPathLogicDocsMap, userId);
-        await distributeLater(lowPriorityUserDocsByDstPath);
-        await distributeLater(lowPriorityOtherUsersDocsByDstPath);
+          docsByDocPath: lowPriorityDocsByDocPath,
+          otherDocsByDocPath: lowPriorityOtherDocsByDocPath,
+        } = groupDocsByTargetDocPath(lowPriorityDstPathLogicDocsMap, userId);
+        await distributeLater(lowPriorityDocsByDocPath);
+        await distributeLater(lowPriorityOtherDocsByDocPath);
       }
     );
 
