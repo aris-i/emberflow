@@ -10,7 +10,6 @@ import {database, firestore} from "firebase-admin";
 import {
   admin,
   db,
-  docPaths,
   logicConfigs,
   projectConfig,
   securityConfig,
@@ -364,21 +363,19 @@ export const runBusinessLogics = async (
   return "done";
 };
 
-export function groupDocsByUserAndDstPath(docsByDstPath: Map<string, LogicResultDoc[]>, userId: string) {
-  const userDocPath = docPaths["user"].replace("{userId}", userId);
-
-  const userDocsByDstPath = new Map<string, LogicResultDoc[]>();
-  const otherUsersDocsByDstPath = new Map<string, LogicResultDoc[]>();
+export function groupDocsByTargetDocPath(docsByDstPath: Map<string, LogicResultDoc[]>, docPath: string) {
+  const docsByDocPath = new Map<string, LogicResultDoc[]>();
+  const otherDocsByDocPath = new Map<string, LogicResultDoc[]>();
 
   for (const [key, values] of docsByDstPath.entries()) {
-    if (key.startsWith(userDocPath)) {
-      userDocsByDstPath.set(key, values);
+    if (key.startsWith(docPath)) {
+      docsByDocPath.set(key, values);
     } else {
-      otherUsersDocsByDstPath.set(key, values);
+      otherDocsByDocPath.set(key, values);
     }
   }
 
-  return {userDocsByDstPath, otherUsersDocsByDstPath};
+  return {docsByDocPath, otherDocsByDocPath};
 }
 
 export function getSecurityFn(entity: string): SecurityFn {
