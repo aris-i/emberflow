@@ -9,7 +9,7 @@ import {
   FOR_DISTRIBUTION_TOPIC,
   FOR_DISTRIBUTION_TOPIC_NAME,
   initializeEmberFlow, INSTRUCTIONS_REDUCER_TOPIC_NAME,
-  INSTRUCTIONS_TOPIC, INSTRUCTIONS_TOPIC_NAME,
+  INSTRUCTIONS_TOPIC, INSTRUCTIONS_TOPIC_NAME, VIEW_LOGICS_TOPIC,
 } from "../../index";
 import * as admin from "firebase-admin";
 import {dbStructure, Entity} from "../../sample-custom/db-structure";
@@ -527,6 +527,7 @@ describe("reduceInstructions", () => {
   const sleep = 100;
   const timeoutId = 123;
   let queueInstructionsSpy: jest.SpyInstance;
+  let publishMessageSpy: jest.SpyInstance;
   let subscriptionSpy: jest.SpyInstance;
   let resolveMock: jest.Mock;
   let reducedInstructions = new Map();
@@ -543,6 +544,10 @@ describe("reduceInstructions", () => {
       return subscriptionMock as unknown as Subscription;
     });
     queueInstructionsSpy = jest.spyOn(distribution, "queueInstructions");
+    publishMessageSpy = jest.spyOn(VIEW_LOGICS_TOPIC, "publishMessage")
+      .mockImplementation(() => {
+        return "message-id";
+      });
     const now = Timestamp.now();
     let startTime = false;
     let dateNowCallInstance = 0;
@@ -684,8 +689,16 @@ describe("reduceInstructions", () => {
     expect(console.log).toHaveBeenCalledWith("Received message message2.");
     expect(console.log).toHaveBeenCalledWith("Received 1 messages within 3 seconds.");
     expect(queueInstructionsSpy).toHaveBeenCalledTimes(3);
+    expect(publishMessageSpy).toHaveBeenCalledTimes(3);
     expect(queueInstructionsSpy).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id", {
       "count": "+3",
+    });
+    expect(publishMessageSpy).toHaveBeenCalledWith({
+      json: {
+        action: "merge",
+        dstPath: "/users/test-user-id/documents/test-doc-id",
+        instructions: {"count": "+3"},
+      },
     });
     expect(console.log).toHaveBeenCalledWith("Received message message3.");
     expect(console.log).toHaveBeenCalledWith("Received message message4.");
@@ -693,8 +706,22 @@ describe("reduceInstructions", () => {
     expect(queueInstructionsSpy).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id", {
       "array": "arr(value)",
     });
+    expect(publishMessageSpy).toHaveBeenCalledWith({
+      json: {
+        action: "merge",
+        dstPath: "/users/test-user-id/documents/test-doc-id",
+        instructions: {"array": "arr(value)"},
+      },
+    });
     expect(queueInstructionsSpy).toHaveBeenCalledWith("/users/test-user-id/documents/another-test-doc-id", {
       "count": "++",
+    });
+    expect(publishMessageSpy).toHaveBeenCalledWith({
+      json: {
+        action: "merge",
+        dstPath: "/users/test-user-id/documents/another-test-doc-id",
+        instructions: {"count": "++"},
+      },
     });
     expect(subscriptionMock.close).toHaveBeenCalledTimes(1);
     expect(subscriptionMock.removeAllListeners).toHaveBeenCalledTimes(1);
