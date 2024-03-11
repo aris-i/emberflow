@@ -1,4 +1,8 @@
-import {Instructions, InstructionsMessage, LogicResultDoc} from "../types";
+import {
+  Instructions,
+  InstructionsMessage,
+  LogicResultDoc,
+} from "../types";
 import {
   admin,
   db,
@@ -15,6 +19,7 @@ import {firestore} from "firebase-admin";
 import FieldValue = firestore.FieldValue;
 import {pubsubUtils} from "./pubsub";
 import {reviveDateAndTimestamp} from "./misc";
+import {queueRunViewLogics} from "../logics/view-logics";
 
 export const queueForDistributionLater = async (...logicResultDocs: LogicResultDoc[]) => {
   try {
@@ -301,6 +306,11 @@ export async function reduceInstructions() {
       // Process the reduced instructions here
       for (const [dstPath, instructions] of reducedInstructions.entries()) {
         await queueInstructions(dstPath, instructions);
+        await queueRunViewLogics({
+          action: "merge",
+          dstPath,
+          instructions,
+        });
       }
     } catch (error) {
       console.error(`Error while receiving messages: ${error}`);
