@@ -12,7 +12,9 @@ import {
   ViewLogicConfig,
 } from "./types";
 import {
-  cleanLogicMetricsExecutions,
+  cleanMetricComputations,
+  cleanMetricExecutions,
+  createMetricComputation,
   delayFormSubmissionAndCheckIfCancelled,
   distribute,
   distributeLater,
@@ -20,7 +22,6 @@ import {
   getFormModifiedFields,
   getSecurityFn, groupDocsByTargetDocPath,
   onDeleteFunction,
-  processScheduledEntities,
   runBusinessLogics,
   validateForm,
 } from "./index-utils";
@@ -189,21 +190,26 @@ export function initializeEmberFlow(
     region: projectConfig.region,
     timeoutSeconds: 540,
   }, cleanPubSubProcessedIds);
-  functionsConfig["cleanLogicMetricsExecutions"] = onSchedule({
+  functionsConfig["cleanMetricComputations"] = onSchedule({
     schedule: "every 1 hours",
     region: projectConfig.region,
     timeoutSeconds: 540,
-  }, cleanLogicMetricsExecutions);
+  }, cleanMetricComputations);
+  functionsConfig["cleanMetricExecutions"] = onSchedule({
+    schedule: "every 1 hours",
+    region: projectConfig.region,
+    timeoutSeconds: 540,
+  }, cleanMetricExecutions);
   functionsConfig["cleanActionsAndForms"] = onSchedule({
     schedule: "every 1 hours",
     region: projectConfig.region,
     timeoutSeconds: 540,
   }, cleanActionsAndForms);
-  functionsConfig["minuteFunctions"] = onSchedule({
-    schedule: "every 1 minutes",
+  functionsConfig["createMetricComputation"] = onSchedule({
+    schedule: "every 1 hours",
     region: projectConfig.region,
     timeoutSeconds: 540,
-  }, processScheduledEntities);
+  }, createMetricComputation);
   functionsConfig["reduceInstructions"] = onSchedule({
     schedule: "every 1 minutes",
     region: projectConfig.region,

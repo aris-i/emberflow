@@ -105,12 +105,6 @@ export interface QueryCondition {
 
 export type AnyObject = { [key: string]: any };
 
-export interface ScheduledEntity {
-    colPath: string;
-    data: { [key: string]: any };
-    runAt: Timestamp;
-}
-
 export interface EventContext {
     id: string;
     uid: string;

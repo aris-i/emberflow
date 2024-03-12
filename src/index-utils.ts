@@ -2,7 +2,6 @@ import {
   Action, DistributeFn, LogicActionType, LogicConfig,
   LogicResult,
   LogicResultDoc,
-  ScheduledEntity,
   SecurityFn,
   ValidateFormResult,
 } from "./types";
@@ -35,7 +34,7 @@ export const _mockable = {
   getViewLogicsConfig: () => viewLogicConfigs,
   createNowTimestamp: () => admin.firestore.Timestamp.now(),
   simulateSubmitForm,
-  updateLogicMetrics,
+  createMetricExecution,
 };
 
 export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: BatchUtil) {
@@ -317,7 +316,7 @@ async function distributeLogicResults(actionRef: FirebaseFirestore.DocumentRefer
     documents: [],
     execTime: execTime,
   };
-  await _mockable.updateLogicMetrics([...logicResults, distributeFnLogicResult]);
+  await _mockable.createMetricExecution([...logicResults, distributeFnLogicResult]);
 }
 
 export const runBusinessLogics = async (
@@ -562,28 +561,6 @@ export async function runViewLogics(userLogicResultDoc: LogicResultDoc): Promise
   return await Promise.all(matchingLogics.map((logic) => logic.viewLogicFn(userLogicResultDoc)));
 }
 
-export async function processScheduledEntities(event: ScheduledEvent) {
-  // Query all documents inside @scheduled collection where runAt is less than now
-  const now = _mockable.createNowTimestamp();
-  const scheduledDocs = await db.collection("@scheduled")
-    .where("runAt", "<=", now).get();
-    // For each document, get path, data and docId.  Then copy data to the path
-  const batch = BatchUtil.getInstance();
-  try {
-    scheduledDocs.forEach((doc) => {
-      const {
-        colPath,
-        data,
-      } = doc.data() as ScheduledEntity;
-      const docRef = db.collection(colPath).doc(doc.id);
-      batch.set(docRef, data);
-      batch.deleteDoc(doc.ref);
-    });
-  } finally {
-    await batch.commit();
-  }
-}
-
 export async function onDeleteFunction(event: FirestoreEvent<QueryDocumentSnapshot | undefined, {deleteFuncId: string}>) {
   const data = event.data;
   if (!data) {
@@ -628,7 +605,7 @@ async function deleteFunction(projectId: string, functionName: string): Promise<
   }
 }
 
-async function updateLogicMetrics(logicResults: LogicResult[]) {
+async function createMetricExecution(logicResults: LogicResult[]) {
   const metricsRef = db.collection("@metrics");
   for (const logicResult of logicResults) {
     const {name, execTime} = logicResult;
@@ -654,17 +631,66 @@ async function updateLogicMetrics(logicResults: LogicResult[]) {
   }
 }
 
-export async function cleanLogicMetricsExecutions(event: ScheduledEvent) {
-  console.info("Running cleanLogicMetricsExecutions");
+export async function cleanMetricExecutions(event: ScheduledEvent) {
+  console.info("Running cleanMetricExecutions");
   const metricsSnapshot = await db.collection("@metrics").get();
   let i = 0;
-  for (const metricsDoc of metricsSnapshot.docs) {
-    const query = metricsDoc.ref.collection("executions")
+  for (const metricDoc of metricsSnapshot.docs) {
+    const query = metricDoc.ref.collection("executions")
       .where("execDate", "<", new Date(Date.now() - 1000 * 60 * 60 * 24 * 7));
 
     await deleteCollection(query, (snapshot) => {
       i += snapshot.size;
     });
   }
-  console.info(`Cleaned ${i} logic metrics executions`);
+  console.info(`Cleaned ${i} logic metric executions`);
+}
+
+export async function createMetricComputation(event: ScheduledEvent) {
+  console.info("Creating metric computation");
+  const metricsSnapshot = await db.collection("@metrics").get();
+  for (const metricDoc of metricsSnapshot.docs) {
+    const query = metricDoc.ref.collection("executions")
+      .where("execDate", ">=", new Date(Date.now() - 1000 * 60 * 60));
+
+    const snapshots = await query.get();
+    if (snapshots.empty) {
+      console.info(`No executions found for ${metricDoc.id}`);
+      continue;
+    }
+
+    const execTimes = snapshots.docs.map((doc) => doc.data().execTime);
+    const maxExecTime = Math.max(...execTimes);
+    const minExecTime = Math.min(...execTimes);
+    const totalExecTime = execTimes.reduce((a, b) => a + b, 0);
+    const execCount = execTimes.length;
+    const avgExecTime = totalExecTime / execCount;
+    const jitterTime = maxExecTime - minExecTime;
+
+    const execRef = metricDoc.ref.collection("executions").doc();
+    await execRef.set({
+      createdAt: admin.firestore.Timestamp.now(),
+      maxExecTime,
+      minExecTime,
+      totalExecTime,
+      execCount,
+      avgExecTime,
+      jitterTime,
+    });
+  }
+}
+
+export async function cleanMetricComputations(event: ScheduledEvent) {
+  console.info("Running cleanMetricComputations");
+  const metricsSnapshot = await db.collection("@metrics").get();
+  let i = 0;
+  for (const metricDoc of metricsSnapshot.docs) {
+    const query = metricDoc.ref.collection("computations")
+      .where("createdAt", "<", new Date(Date.now() - 1000 * 60 * 60 * 24 * 30));
+
+    await deleteCollection(query, (snapshot) => {
+      i += snapshot.size;
+    });
+  }
+  console.info(`Cleaned ${i} logic metric computations`);
 }
