@@ -675,7 +675,7 @@ export async function createMetricComputation(event: ScheduledEvent) {
     const avgExecTime = totalExecTime / execCount;
     const jitterTime = maxExecTime - minExecTime;
 
-    const execRef = metricDoc.ref.collection("executions").doc();
+    const execRef = metricDoc.ref.collection("computations").doc();
     await execRef.set({
       createdAt: admin.firestore.Timestamp.now(),
       maxExecTime,
