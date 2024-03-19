@@ -191,17 +191,17 @@ export function initializeEmberFlow(
     timeoutSeconds: 540,
   }, cleanPubSubProcessedIds);
   functionsConfig["cleanMetricComputations"] = onSchedule({
-    schedule: "every 1 hours",
+    schedule: "every 24 hours",
     region: projectConfig.region,
     timeoutSeconds: 540,
   }, cleanMetricComputations);
   functionsConfig["cleanMetricExecutions"] = onSchedule({
-    schedule: "every 1 hours",
+    schedule: "every 24 hours",
     region: projectConfig.region,
     timeoutSeconds: 540,
   }, cleanMetricExecutions);
   functionsConfig["cleanActionsAndForms"] = onSchedule({
-    schedule: "every 1 hours",
+    schedule: "every 24 hours",
     region: projectConfig.region,
     timeoutSeconds: 540,
   }, cleanActionsAndForms);
