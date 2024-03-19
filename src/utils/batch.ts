@@ -43,6 +43,18 @@ export class BatchUtil {
     }
   }
 
+  async update<T extends DocumentData>(
+    docRef: DocumentReference<T>,
+    document: DocumentData,
+  ): Promise<void> {
+    (await this.getBatch()).update(docRef, document);
+    this.writeCount++;
+
+    if (this.writeCount >= this.BATCH_SIZE) {
+      await this.commit();
+    }
+  }
+
   async deleteDoc<T extends DocumentData>(
     docRef: DocumentReference<T>,
   ): Promise<void> {

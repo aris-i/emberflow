@@ -68,15 +68,18 @@ describe("distributeDoc", () => {
   let queueRunViewLogicsSpy: jest.SpyInstance;
   let queueInstructionsSpy: jest.SpyInstance;
   let docSetMock: jest.Mock;
+  let docUpdateMock: jest.Mock;
   let docDeleteMock: jest.Mock;
   const batch = BatchUtil.getInstance();
   jest.spyOn(BatchUtil, "getInstance").mockImplementation(() => batch);
 
   beforeEach(() => {
     docSetMock = jest.fn().mockResolvedValue({});
+    docUpdateMock = jest.fn().mockResolvedValue({});
     docDeleteMock = jest.fn().mockResolvedValue({});
     const dbDoc = ({
       set: docSetMock,
+      update: docUpdateMock,
       delete: docDeleteMock,
       id: "test-doc-id",
     } as unknown) as admin.firestore.DocumentReference<admin.firestore.DocumentData>;
@@ -140,8 +143,8 @@ describe("distributeDoc", () => {
     await indexUtils.distributeDoc(logicResultDoc);
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
-    expect(docSetMock).toHaveBeenCalledTimes(1);
-    expect(docSetMock).toHaveBeenCalledWith(expectedData, {merge: true});
+    expect(docUpdateMock).toHaveBeenCalledTimes(1);
+    expect(docUpdateMock).toHaveBeenCalledWith(expectedData);
     expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
     expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
   });
@@ -169,14 +172,14 @@ describe("distributeDoc", () => {
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
     expect(queueInstructionsSpy).toHaveBeenCalledTimes(1);
     expect(queueInstructionsSpy).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id", logicResultDoc.instructions);
-    expect(docSetMock).toHaveBeenCalledTimes(1);
-    expect(docSetMock).toHaveBeenCalledWith(expectedData, {merge: true});
+    expect(docUpdateMock).toHaveBeenCalledTimes(1);
+    expect(docUpdateMock).toHaveBeenCalledWith(expectedData);
     expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
     expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
   });
 
   it("should merge documents in batch", async () => {
-    const batchSetSpy = jest.spyOn(batch, "set").mockResolvedValue(undefined);
+    const batchSetSpy = jest.spyOn(batch, "update").mockResolvedValue(undefined);
     const logicResultDoc: LogicResultDoc = {
       action: "merge",
       priority: "normal",
@@ -250,7 +253,7 @@ describe("distribute", () => {
   });
 
   it("should merge a document to dstPath and queue instructions", async () => {
-    const batchSetSpy = jest.spyOn(batch, "set").mockResolvedValue(undefined);
+    const batchSetSpy = jest.spyOn(batch, "update").mockResolvedValue(undefined);
 
     const userDocsByDstPath = new Map([[
       "/users/test-user-id/documents/test-doc-id",
