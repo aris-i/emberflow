@@ -444,7 +444,7 @@ const onUserRegister = async (user: UserRecord) => {
     "lastName": "",
     "avatarUrl": user.photoURL || "",
     "username": user.email || "",
-    "emailAddress": user.email || "",
+    "email": user.email || "",
     "registeredAt": admin.firestore.Timestamp.now(),
   });
 };
