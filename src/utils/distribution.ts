@@ -165,9 +165,9 @@ export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublis
       }
     }
     const dstDocRef = db.doc(dstPath);
-    await dstDocRef.set(updateData, {merge: true});
+    await dstDocRef.update(updateData);
     if (Object.keys(removeData).length > 0) {
-      await dstDocRef.set(removeData, {merge: true});
+      await dstDocRef.update(removeData);
     }
     await pubsubUtils.trackProcessedIds(INSTRUCTIONS_TOPIC_NAME, event.id);
     return "Processed instructions";

@@ -190,12 +190,12 @@ describe("queueInstructions", () => {
 
 describe("onMessageInstructionsQueue", () => {
   let dbSpy: jest.SpyInstance;
-  let docSetMock: jest.Mock;
+  let docUpdateMock: jest.Mock;
 
   beforeEach(() => {
-    docSetMock = jest.fn().mockResolvedValue({});
+    docUpdateMock = jest.fn().mockResolvedValue({});
     const dbDoc = ({
-      set: docSetMock,
+      update: docUpdateMock,
       id: "test-doc-id",
     } as unknown) as admin.firestore.DocumentReference<admin.firestore.DocumentData>;
     dbSpy = jest.spyOn(admin.firestore(), "doc").mockReturnValue(dbDoc);
@@ -226,7 +226,7 @@ describe("onMessageInstructionsQueue", () => {
 
     expect(console.log).toHaveBeenCalledWith("Invalid instruction arr[Earth] for property planets");
     expect(console.log).toHaveBeenCalledWith("Invalid instruction arr{Asia} for property continents");
-    expect(docSetMock.mock.calls[0][0]).toStrictEqual({});
+    expect(docUpdateMock.mock.calls[0][0]).toStrictEqual({});
   });
 
   it("should log no values found when parenthesis is empty", async () => {
@@ -247,7 +247,7 @@ describe("onMessageInstructionsQueue", () => {
     await distribution.onMessageInstructionsQueue(event);
 
     expect(console.log).toHaveBeenCalledWith("No values found in instruction arr() for property planets");
-    expect(docSetMock.mock.calls[0][0]).toStrictEqual({});
+    expect(docUpdateMock.mock.calls[0][0]).toStrictEqual({});
   });
 
   it("should convert array union instructions correctly", async () => {
@@ -274,7 +274,7 @@ describe("onMessageInstructionsQueue", () => {
     } as CloudEvent<MessagePublishedData>;
     await distribution.onMessageInstructionsQueue(event);
 
-    expect(docSetMock.mock.calls[0][0]).toStrictEqual(expectedData);
+    expect(docUpdateMock.mock.calls[0][0]).toStrictEqual(expectedData);
   });
 
   it("should convert array remove instructions correctly", async () => {
@@ -301,8 +301,8 @@ describe("onMessageInstructionsQueue", () => {
     } as CloudEvent<MessagePublishedData>;
     await distribution.onMessageInstructionsQueue(event);
 
-    expect(docSetMock.mock.calls[0][0]).toStrictEqual({});
-    expect(docSetMock.mock.calls[1][0]).toStrictEqual(expectedData);
+    expect(docUpdateMock.mock.calls[0][0]).toStrictEqual({});
+    expect(docUpdateMock.mock.calls[1][0]).toStrictEqual(expectedData);
   });
 
   it("should convert array union and remove instructions correctly in a single field", async () => {
@@ -328,8 +328,8 @@ describe("onMessageInstructionsQueue", () => {
     } as CloudEvent<MessagePublishedData>;
     await distribution.onMessageInstructionsQueue(event);
 
-    expect(docSetMock.mock.calls[0][0]).toStrictEqual(expectedData);
-    expect(docSetMock.mock.calls[1][0]).toStrictEqual(expectedRemoveData);
+    expect(docUpdateMock.mock.calls[0][0]).toStrictEqual(expectedData);
+    expect(docUpdateMock.mock.calls[1][0]).toStrictEqual(expectedRemoveData);
   });
 
   it("should skip duplicate message", async () => {
@@ -380,11 +380,11 @@ describe("onMessageInstructionsQueue", () => {
 
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
-    expect(docSetMock).toHaveBeenCalledTimes(2);
-    expect(docSetMock).toHaveBeenCalledWith(expectedData, {merge: true});
-    expect(docSetMock).toHaveBeenCalledWith(expectedRemoveData, {merge: true});
-    expect(docSetMock.mock.calls[0][0]).toStrictEqual(expectedData);
-    expect(docSetMock.mock.calls[1][0]).toStrictEqual(expectedRemoveData);
+    expect(docUpdateMock).toHaveBeenCalledTimes(2);
+    expect(docUpdateMock).toHaveBeenCalledWith(expectedData);
+    expect(docUpdateMock).toHaveBeenCalledWith(expectedRemoveData);
+    expect(docUpdateMock.mock.calls[0][0]).toStrictEqual(expectedData);
+    expect(docUpdateMock.mock.calls[1][0]).toStrictEqual(expectedRemoveData);
     expect(trackProcessedIdsMock).toHaveBeenCalledWith(INSTRUCTIONS_TOPIC_NAME, event.id);
     expect(result).toEqual("Processed instructions");
   });

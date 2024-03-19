@@ -61,9 +61,17 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
 
     const updateData: { [key: string]: any } = {...doc, "@id": dstDocRef.id};
     if (batch) {
-      await batch.set(dstDocRef, updateData);
+      if (action === "merge") {
+        await batch.update(dstDocRef, updateData);
+      } else {
+        await batch.set(dstDocRef, updateData);
+      }
     } else {
-      await dstDocRef.set(updateData, {merge: true});
+      if (action === "merge") {
+        await dstDocRef.update(updateData);
+      } else {
+        await dstDocRef.set(updateData);
+      }
     }
     console.log(`Document merged to ${dstPath}`);
   } else if (action === "submit-form") {
