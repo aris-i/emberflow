@@ -2,6 +2,7 @@ import {DocumentData, DocumentReference} from "firebase-admin/lib/firestore";
 import {db} from "../index";
 import {firestore} from "firebase-admin";
 import WriteBatch = firestore.WriteBatch;
+import UpdateData = firestore.UpdateData;
 
 
 export class BatchUtil {
@@ -45,7 +46,7 @@ export class BatchUtil {
 
   async update<T extends DocumentData>(
     docRef: DocumentReference<T>,
-    document: DocumentData,
+    document: UpdateData<T>,
   ): Promise<void> {
     (await this.getBatch()).update(docRef, document);
     this.writeCount++;
