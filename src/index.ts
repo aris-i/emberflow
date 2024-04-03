@@ -447,5 +447,6 @@ const onUserRegister = async (user: UserRecord) => {
     "username": user.email || "",
     "email": user.email || "",
     "registeredAt": admin.firestore.Timestamp.now(),
+    "tokens": [],
   });
 };
