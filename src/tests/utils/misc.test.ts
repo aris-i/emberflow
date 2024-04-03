@@ -3,7 +3,7 @@ import {
   deepEqual,
   deleteCollection,
   LimitedSet,
-  reviveDateAndTimestamp,
+  reviveDateAndTimestamp, trimStrings,
 } from "../../utils/misc";
 import {firestore} from "firebase-admin";
 import Timestamp = firestore.Timestamp;
@@ -275,5 +275,43 @@ describe("reviveDateAndTimestamp", () => {
 
     const result = reviveDateAndTimestamp(json);
     expect(result).toStrictEqual(object);
+  });
+});
+
+describe("trimStrings", () => {
+  it("should trim all strings", () => {
+    const data = {
+      "title": "  Sample Title  ",
+      "description": "Description  ",
+      "createdBy": {
+        "@id": "uid",
+        "firstName": "  First Name",
+        "lastName": "Last Name",
+        "username": "",
+        "tokens": ["  ExponentPushToken[xxxxxxxxxxx]  "],
+        "more": {
+          "addresses": ["  First Address", "Second Address  "],
+        },
+      },
+    };
+    const expectedData = {
+      "title": "Sample Title",
+      "description": "Description",
+      "createdBy": {
+        "@id": "uid",
+        "firstName": "First Name",
+        "lastName": "Last Name",
+        "username": "",
+        "tokens": ["ExponentPushToken[xxxxxxxxxxx]"],
+        "more": {
+          "addresses": ["First Address", "Second Address"],
+        },
+      },
+    };
+    const stringify = JSON.stringify(data);
+    const json = JSON.parse(stringify);
+
+    const result = trimStrings(json);
+    expect(result).toStrictEqual(expectedData);
   });
 });

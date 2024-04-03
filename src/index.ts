@@ -40,7 +40,7 @@ import {internalDbStructure, InternalEntity} from "./db-structure";
 import {cleanActionsAndForms, onMessageSubmitFormQueue} from "./utils/forms";
 import {PubSub, Topic} from "@google-cloud/pubsub";
 import {onMessagePublished} from "firebase-functions/v2/pubsub";
-import {reviveDateAndTimestamp, deleteForms} from "./utils/misc";
+import {reviveDateAndTimestamp, deleteForms, trimStrings} from "./utils/misc";
 import Database = database.Database;
 import {onMessageForDistributionQueue, onMessageInstructionsQueue, reduceInstructions} from "./utils/distribution";
 import {cleanPubSubProcessedIds} from "./utils/pubsub";
@@ -236,7 +236,8 @@ export async function onFormSubmit(
   const formRef = formSnapshot.ref;
 
   try {
-    const form = reviveDateAndTimestamp(JSON.parse(formSnapshot.val().formData));
+    const trimmedForm = trimStrings(JSON.parse(formSnapshot.val().formData));
+    const form = reviveDateAndTimestamp(trimmedForm);
     console.log("form", form);
 
     console.info("Validating docPath");
