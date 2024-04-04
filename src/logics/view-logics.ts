@@ -3,9 +3,9 @@ import {
   LogicResultDoc,
   LogicResultDocPriority,
   ViewDefinition,
-  ViewLogicFn,
+  ViewLogicFn, LogicResult,
 } from "../types";
-import {docPaths, VIEW_LOGICS_TOPIC, VIEW_LOGICS_TOPIC_NAME} from "../index";
+import {db, docPaths, VIEW_LOGICS_TOPIC, VIEW_LOGICS_TOPIC_NAME} from "../index";
 import * as admin from "firebase-admin";
 import {hydrateDocPath} from "../utils/paths";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
@@ -18,37 +18,47 @@ import {
 import {pubsubUtils} from "../utils/pubsub";
 import {reviveDateAndTimestamp} from "../utils/misc";
 
-export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn {
-  return async (logicResultDoc: LogicResultDoc) => {
-    const {
-      srcProps,
-      destEntity,
-      destProp,
-    } = viewDefinition;
-    const {
-      doc,
-      instructions,
-      dstPath: actualSrcPath,
-      action,
-    } = logicResultDoc;
-    console.log(`Executing ViewLogic on document at ${actualSrcPath}...`);
-    let destPaths: string[];
-    const destDocPath = docPaths[destEntity];
-    const docId = actualSrcPath.split("/").slice(-1)[0];
-    if (destProp) {
-      destPaths = await hydrateDocPath(destDocPath, {
-        [destEntity]: {
-          fieldName: `${destProp}.@id`,
-          operator: "==",
-          value: docId,
-        },
-      });
-    } else {
-      const dehydratedPath = `${destDocPath.split("/").slice(0, -1).join("/")}/${docId}`;
-      destPaths = await hydrateDocPath(dehydratedPath, {});
+export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[] {
+  const {
+    srcEntity,
+    srcProps,
+    destEntity,
+    destProp,
+  } = viewDefinition;
+  function formViewsPath(docId: string) {
+    const srcDocPath = docPaths[srcEntity];
+    const srcPath = srcDocPath.split("/").slice(0, -1).join("/") + "/" + docId;
+    const srcViewsPath = `${srcPath}/@views/${docId}+${destEntity}${destProp ? `#${destProp}` : ""}`;
+    return srcViewsPath;
+  }
+
+  const srcToDstLogicFn: ViewLogicFn = async (logicResultDoc: LogicResultDoc) => {
+    async function buildViewsCollection() {
+      const destDocPath = docPaths[destEntity];
+      const docId = actualSrcPath.split("/").slice(-1)[0];
+      if (destProp) {
+        destPaths = await hydrateDocPath(destDocPath, {
+          [destEntity]: {
+            fieldName: `${destProp}.@id`,
+            operator: "==",
+            value: docId,
+          },
+        });
+      } else {
+        const dehydratedPath = `${destDocPath.split("/").slice(0, -1).join("/")}/${docId}`;
+        destPaths = await hydrateDocPath(dehydratedPath, {});
+      }
+      for (const path of destPaths) {
+        const docId = path.split("/").slice(-1)[0];
+        const srcViewsPath = formViewsPath(docId);
+        await db.doc(srcViewsPath).set({
+          path,
+          srcProps,
+        });
+      }
     }
 
-    if (action === "delete") {
+    function syncDeleteToViews() {
       const documents = destPaths.map((destPath) => {
         if (destProp) {
           return {
@@ -72,8 +82,10 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn {
         status: "finished",
         timeFinished: admin.firestore.Timestamp.now(),
         documents,
-      };
-    } else {
+      } as LogicResult;
+    }
+
+    function syncMergeToViews() {
       const viewDoc: Record<string, any> = {};
       const viewInstructions: Record<string, string> = {};
       for (const srcProp of srcProps) {
@@ -99,9 +111,87 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn {
         status: "finished",
         timeFinished: admin.firestore.Timestamp.now(),
         documents,
-      };
+      } as LogicResult;
+    }
+
+    const {
+      doc,
+      instructions,
+      dstPath: actualSrcPath,
+      action,
+    } = logicResultDoc;
+    const modifiedFields = [
+      ...Object.keys(doc || {}),
+      ...Object.keys(instructions || {}),
+    ];
+    console.log(`Executing ViewLogic on document at ${actualSrcPath}...`);
+    const viewPaths = (await db.doc(actualSrcPath)
+      .collection("@views")
+      .where("srcProps", "array-contains-any", modifiedFields)
+      .get()).docs.map((doc) => doc.data());
+
+    let destPaths = viewPaths.map((viewPath) => viewPath.path);
+
+    if (viewPaths.length === 0) {
+      // Check if the src doc has "@viewsAlreadyBuilt" field
+      const srcRef = db.doc(actualSrcPath);
+      const isViewsAlreadyBuilt = (await srcRef.get()).data()?.["@viewsAlreadyBuilt"];
+      if (!isViewsAlreadyBuilt) {
+        await buildViewsCollection();
+        await srcRef.update({"@viewsAlreadyBuilt": true});
+      }
+    }
+
+    for (const viewPath of viewPaths) {
+      const {srcProps: viewPathSrcProps} = viewPath;
+      if (viewPathSrcProps.join(",") === srcProps.sort().join(",")) {
+        continue;
+      }
+      // Update the srcProps of View given @id
+    }
+
+    if (action === "delete") {
+      return syncDeleteToViews();
+    } else {
+      return syncMergeToViews();
     }
   };
+
+  const dstToSrcLogicFn: ViewLogicFn = async (logicResultDoc: LogicResultDoc) => {
+    const logicResult: LogicResult = {
+      name: "ViewLogic Dst to Src",
+      status: "finished",
+      documents: [],
+    };
+    const docId = logicResultDoc.dstPath.split("/").slice(-1)[0];
+    const srcViewsPath = formViewsPath(docId);
+    if (srcViewsPath.includes("{")) {
+      console.error("Cannot run Dst to Src ViewLogic on a path with a placeholder");
+      return logicResult;
+    }
+
+    if (logicResultDoc.action === "delete") {
+      const viewResultDoc: LogicResultDoc = {
+        action: "delete",
+        dstPath: srcViewsPath,
+      };
+      logicResult.documents.push(viewResultDoc);
+    } else {
+      const viewResultDoc: LogicResultDoc = {
+        action: "create",
+        dstPath: srcViewsPath,
+        doc: {
+          path: logicResultDoc.dstPath,
+          srcProps,
+        },
+      };
+      logicResult.documents.push(viewResultDoc);
+    }
+    // TODO:  Handle changing of dbStructure srcProps
+    return logicResult;
+  };
+
+  return [srcToDstLogicFn, dstToSrcLogicFn];
 }
 
 export async function queueRunViewLogics(logicResultDoc: LogicResultDoc) {
