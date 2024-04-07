@@ -143,11 +143,15 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     }
 
     for (const viewPath of viewPaths) {
-      const {srcProps: viewPathSrcProps} = viewPath;
-      if (viewPathSrcProps.join(",") === srcProps.sort().join(",")) {
+      const {srcProps: viewPathSrcProps, path} = viewPath;
+      const sortedSrcProps = srcProps.sort();
+      if (viewPathSrcProps.join(",") === sortedSrcProps.join(",")) {
         continue;
       }
-      // Update the srcProps of View given @id
+
+      const docId = path.split("/").slice(-1)[0];
+      const srcViewsPath = formViewsPath(docId);
+      await db.doc(srcViewsPath).update({srcProps: sortedSrcProps});
     }
 
     if (action === "delete") {
