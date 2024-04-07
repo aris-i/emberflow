@@ -194,7 +194,7 @@ describe("createViewLogicFn", () => {
     const logicFn = viewLogics.createViewLogicFn(vd1);
 
     // Call the logic function with the test action
-    const result = await logicFn[0](mergeLogicResultDoc); // TODO update and call [1]
+    const result = await logicFn[0](mergeLogicResultDoc);
 
     expect(colGetMock).toHaveBeenCalledTimes(1);
     expect(docUpdateMock).toHaveBeenCalledTimes(1);
@@ -231,7 +231,7 @@ describe("createViewLogicFn", () => {
     const logicFn = viewLogics.createViewLogicFn(vd1);
 
     // Call the logic function with the test action
-    const result = await logicFn[0](mergeLogicResultDoc); // TODO update and call [1]
+    const result = await logicFn[0](mergeLogicResultDoc);
 
     expect(colGetMock).toHaveBeenCalledTimes(1);
     expect(docUpdateMock).toHaveBeenCalledTimes(2);
@@ -334,7 +334,7 @@ describe("createViewLogicFn", () => {
     const logicFn = viewLogics.createViewLogicFn(vd1);
 
     // Call the logic function with the test action
-    const result = await logicFn[0](mergeLogicResultDoc); // TODO update and call [1]
+    const result = await logicFn[0](mergeLogicResultDoc);
 
     expect(result).toBeDefined();
     expect(result.documents).toBeDefined();
@@ -356,7 +356,7 @@ describe("createViewLogicFn", () => {
     const logicFn2 = viewLogics.createViewLogicFn(vd2);
 
     // Call the logic function with the test action
-    const result2 = await logicFn2[0](mergeLogicResultDoc); // TODO update and call [1]
+    const result2 = await logicFn2[0](mergeLogicResultDoc);
 
     // Add your expectations here, e.g., result.documents should have the correct properties and values
     expect(result2).toBeDefined();
@@ -383,7 +383,7 @@ describe("createViewLogicFn", () => {
     expect(document).toHaveProperty("dstPath", "users/890/posts/654");
     expect(document.doc).toEqual({"postedBy.name": "John Doe"});
 
-    const resultDelete = await logicFn[0](deleteLogicResultDoc); // TODO update and call [1]
+    const resultDelete = await logicFn[0](deleteLogicResultDoc);
 
     expect(resultDelete).toBeDefined();
     expect(resultDelete.documents).toBeDefined();
@@ -401,7 +401,7 @@ describe("createViewLogicFn", () => {
     const logicFn3 = viewLogics.createViewLogicFn(vd3);
 
     // Call the logic function with the test action
-    const result3 = await logicFn3[0](userLogicResultDoc); // TODO update and call [1]
+    const result3 = await logicFn3[0](userLogicResultDoc);
 
     expect(result3).toBeDefined();
     expect(result3.documents).toBeDefined();
