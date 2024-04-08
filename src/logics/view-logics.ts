@@ -53,7 +53,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
         const srcViewsPath = formViewsPath(docId);
         await db.doc(srcViewsPath).set({
           path,
-          srcProps,
+          srcProps: srcProps.sort(),
         });
       }
     }
@@ -186,12 +186,11 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
         dstPath: srcViewsPath,
         doc: {
           path: logicResultDoc.dstPath,
-          srcProps,
+          srcProps: srcProps.sort(),
         },
       };
       logicResult.documents.push(viewResultDoc);
     }
-    // TODO:  Handle changing of dbStructure srcProps
     return logicResult;
   };
 

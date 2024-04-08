@@ -117,9 +117,11 @@ describe("createViewLogicFn", () => {
   let colGetMock: jest.SpyInstance;
   let docGetMock: jest.SpyInstance;
   let docUpdateMock: jest.SpyInstance;
+  let docSetMock: jest.SpyInstance;
   beforeEach(() => {
     colGetMock = jest.fn();
     docUpdateMock = jest.fn();
+    docSetMock = jest.fn();
     docGetMock = jest.fn().mockResolvedValue({
       data: () => {
         return {
@@ -129,7 +131,7 @@ describe("createViewLogicFn", () => {
     });
     jest.spyOn(admin.firestore(), "doc").mockImplementation(() => {
       return {
-        set: jest.fn(),
+        set: docSetMock,
         update: docUpdateMock,
         get: docGetMock,
         collection: jest.fn().mockReturnValue({
@@ -141,7 +143,7 @@ describe("createViewLogicFn", () => {
     });
   });
 
-  it("should log error when path includes {}", async () => {
+  it("should log error when path includes {", async () => {
     jest.spyOn(console, "error").mockImplementation();
     const logicFn = viewLogics.createViewLogicFn(vd4);
 
@@ -165,7 +167,7 @@ describe("createViewLogicFn", () => {
     const document = result.documents[0];
     expect(document).toHaveProperty("action", "create");
     expect(document).toHaveProperty("dstPath", "users/1234/@views/1234+friend");
-    expect(document.doc).toEqual({"path": "users/1234", "srcProps": ["name", "avatar", "age"]});
+    expect(document.doc).toEqual({"path": "users/1234", "srcProps": ["age", "avatar", "name"]});
   });
 
   it("should delete @views doc", async () => {
@@ -197,6 +199,15 @@ describe("createViewLogicFn", () => {
     const result = await logicFn[0](mergeLogicResultDoc);
 
     expect(colGetMock).toHaveBeenCalledTimes(1);
+    expect(docSetMock).toHaveBeenCalledTimes(2);
+    expect(docSetMock).toHaveBeenNthCalledWith(1, {
+      "path": "users/456/friends/1234",
+      "srcProps": ["age", "avatar", "name"],
+    });
+    expect(docSetMock).toHaveBeenNthCalledWith(2, {
+      "path": "users/789/friends/1234",
+      "srcProps": ["age", "avatar", "name"],
+    });
     expect(docUpdateMock).toHaveBeenCalledTimes(1);
     expect(docUpdateMock).toHaveBeenCalledWith({"@viewsAlreadyBuilt": true});
 
@@ -206,6 +217,32 @@ describe("createViewLogicFn", () => {
     expect(result).toBeDefined();
     expect(result.documents).toBeDefined();
     expect(result.documents.length).toEqual(2);
+  });
+
+  it("should not build @views doc when @viewsAlreadyBuilt is true", async () => {
+    docGetMock.mockResolvedValue({
+      data: () => {
+        return {
+          "@viewsAlreadyBuilt": true,
+        };
+      },
+    });
+    colGetMock.mockResolvedValue({
+      docs: [],
+    });
+
+    // Create the logic function using the viewDefinition
+    const logicFn = viewLogics.createViewLogicFn(vd1);
+
+    // Call the logic function with the test action
+    const result = await logicFn[0](mergeLogicResultDoc);
+
+    expect(colGetMock).toHaveBeenCalledTimes(1);
+    expect(docUpdateMock).not.toHaveBeenCalled();
+
+    expect(result).toBeDefined();
+    expect(result.documents).toBeDefined();
+    expect(result.documents.length).toEqual(0);
   });
 
   it("should update @views doc when srcProps is not equal", async () => {
