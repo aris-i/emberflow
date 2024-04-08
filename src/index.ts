@@ -4,7 +4,8 @@ import {
   EventContext,
   FirebaseAdmin,
   LogicConfig,
-  LogicResultDoc,
+  LogicConfigModifiedFieldsType,
+  LogicResultDoc, LogicResultDocAction,
   ProjectConfig,
   SecurityConfig,
   ValidatorConfig,
@@ -129,14 +130,24 @@ export function initializeEmberFlow(
   colPaths = cp;
   docPathsRegex = dbr;
 
-  viewLogicConfigs = vd.map((viewDef: ViewDefinition): ViewLogicConfig => {
-    return {
+  viewLogicConfigs = vd.map((viewDef: ViewDefinition): ViewLogicConfig[] => {
+    const [srcToDestViewLogicFn, dstToSrcViewLogicFn] = createViewLogicFn(viewDef);
+    const srcToDestLogicConfig = {
       name: `${viewDef.destEntity}${viewDef.destProp ? "#" + viewDef.destProp : ""} ViewLogic`,
       entity: viewDef.srcEntity,
+      actionTypes: ["merge", "delete"] as LogicResultDocAction[],
       modifiedFields: viewDef.srcProps,
-      viewLogicFn: createViewLogicFn(viewDef),
+      viewLogicFn: srcToDestViewLogicFn,
     };
-  });
+    const dstToSrcLogicConfig = {
+      name: `${viewDef.destEntity}${viewDef.destProp ? "#" + viewDef.destProp : ""} Reverse ViewLogic`,
+      entity: viewDef.destEntity,
+      actionTypes: ["create", "delete"] as LogicResultDocAction[],
+      modifiedFields: "all" as LogicConfigModifiedFieldsType,
+      viewLogicFn: dstToSrcViewLogicFn,
+    };
+    return [srcToDestLogicConfig, dstToSrcLogicConfig];
+  }).flat();
 
   functionsConfig["onFormSubmit"] = onValueCreated(
     {

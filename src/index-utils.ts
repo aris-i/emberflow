@@ -554,8 +554,11 @@ export async function runViewLogics(userLogicResultDoc: LogicResultDoc): Promise
   const matchingLogics = _mockable.getViewLogicsConfig().filter((logic) => {
     return (
       (
-        action === "merge" &&
-              logic.modifiedFields.some((field) => modifiedFields.includes(field)) &&
+        (action === "merge" || action === "create") &&
+        (
+          logic.modifiedFields === "all" ||
+            logic.modifiedFields.some((field) => modifiedFields.includes(field))
+        ) &&
                 logic.entity === entity
       ) ||
             (
@@ -566,7 +569,11 @@ export async function runViewLogics(userLogicResultDoc: LogicResultDoc): Promise
   });
   // TODO: Handle errors
   // TODO: Add logic for execTime
-  return await Promise.all(matchingLogics.map((logic) => logic.viewLogicFn(userLogicResultDoc)));
+  const logicResults = [];
+  for (const logic of matchingLogics) {
+    logicResults.push(await logic.viewLogicFn(userLogicResultDoc));
+  }
+  return logicResults;
 }
 
 export async function onDeleteFunction(event: FirestoreEvent<QueryDocumentSnapshot | undefined, {deleteFuncId: string}>) {

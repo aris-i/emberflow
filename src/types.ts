@@ -56,10 +56,11 @@ export interface LogicResult{
 }
 export type LogicFn = (action: Action, sharedMap: Map<string, any>, nextPage?: AnyObject) => Promise<LogicResult>;
 export type LogicActionType = "create" | "update" | "delete";
+export type LogicConfigModifiedFieldsType = "all" | string[];
 export interface LogicConfig{
     name: string;
     actionTypes: LogicActionType[] | "all";
-    modifiedFields: string[] | "all"
+    modifiedFields: LogicConfigModifiedFieldsType;
     entities: string[] | "all";
     logicFn: LogicFn;
 }
@@ -67,7 +68,8 @@ export interface LogicConfig{
 export type ViewLogicFn = (logicResultDoc: LogicResultDoc) => Promise<LogicResult>;
 export interface ViewLogicConfig{
     name: string;
-    modifiedFields: string[];
+    actionTypes: LogicResultDocAction[];
+    modifiedFields: LogicConfigModifiedFieldsType;
     entity: string;
     viewLogicFn: ViewLogicFn;
 }
