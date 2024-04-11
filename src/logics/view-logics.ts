@@ -1,20 +1,17 @@
 import {
-  LogicResultDocAction,
+  LogicResult,
   LogicResultDoc,
+  LogicResultDocAction,
   LogicResultDocPriority,
   ViewDefinition,
-  ViewLogicFn, LogicResult,
+  ViewLogicFn,
 } from "../types";
 import {db, docPaths, VIEW_LOGICS_TOPIC, VIEW_LOGICS_TOPIC_NAME} from "../index";
 import * as admin from "firebase-admin";
 import {hydrateDocPath} from "../utils/paths";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
 import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
-import {
-  distribute,
-  expandConsolidateAndGroupByDstPath,
-  runViewLogics,
-} from "../index-utils";
+import {_mockable, distribute, expandConsolidateAndGroupByDstPath, runViewLogics} from "../index-utils";
 import {pubsubUtils} from "../utils/pubsub";
 import {reviveDateAndTimestamp} from "../utils/misc";
 
@@ -25,11 +22,14 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     destEntity,
     destProp,
   } = viewDefinition;
+  function formViewId(docId: string) {
+    return `${docId}+${destEntity}${destProp ? `#${destProp}` : ""}`;
+  }
+
   function formViewsPath(docId: string) {
     const srcDocPath = docPaths[srcEntity];
     const srcPath = srcDocPath.split("/").slice(0, -1).join("/") + "/" + docId;
-    const srcViewsPath = `${srcPath}/@views/${docId}+${destEntity}${destProp ? `#${destProp}` : ""}`;
-    return srcViewsPath;
+    return `${srcPath}/@views/${formViewId(docId)}`;
   }
 
   const srcToDstLogicFn: ViewLogicFn = async (logicResultDoc: LogicResultDoc) => {
@@ -143,13 +143,17 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     }
 
     for (const viewPath of viewPaths) {
-      const {srcProps: viewPathSrcProps, path} = viewPath;
+      const {srcProps: viewPathSrcProps, path, "@id": viewId} = viewPath;
+      const docId = path.split("/").slice(-1)[0];
+      if (viewId !== formViewId(docId)) {
+        continue;
+      }
+
       const sortedSrcProps = srcProps.sort();
       if (viewPathSrcProps.join(",") === sortedSrcProps.join(",")) {
         continue;
       }
 
-      const docId = path.split("/").slice(-1)[0];
       const srcViewsPath = formViewsPath(docId);
       await db.doc(srcViewsPath).update({srcProps: sortedSrcProps});
     }
@@ -222,7 +226,18 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
     console.log("Received logic result doc:", logicResultDoc);
 
     console.info("Running View Logics");
+    const start = performance.now();
     const viewLogicResults = await runViewLogics(logicResultDoc);
+    const end = performance.now();
+    const execTime = end - start;
+    const distributeFnLogicResult: LogicResult = {
+      name: "runViewLogics",
+      status: "finished",
+      documents: [],
+      execTime: execTime,
+    };
+    await _mockable.createMetricExecution([...viewLogicResults, distributeFnLogicResult]);
+
     const viewLogicResultDocs = viewLogicResults.map((result) => result.documents).flat();
     const dstPathViewLogicDocsMap: Map<string, LogicResultDoc[]> = await expandConsolidateAndGroupByDstPath(viewLogicResultDocs);
 

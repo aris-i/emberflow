@@ -250,6 +250,7 @@ describe("createViewLogicFn", () => {
       docs: [{
         data: () => {
           return {
+            "@id": "1234+friend",
             "path": "users/456/friends/1234",
             "srcProps": ["name", "avatar"],
           };
@@ -257,6 +258,7 @@ describe("createViewLogicFn", () => {
       }, {
         data: () => {
           return {
+            "@id": "1234+friend",
             "path": "users/789/friends/1234",
             "srcProps": ["name", "avatar"],
           };
@@ -288,6 +290,7 @@ describe("createViewLogicFn", () => {
       docs: [{
         data: () => {
           return {
+            "@id": "1234+friend",
             "path": "users/456/friends/1234",
             "srcProps": ["age", "avatar", "name"],
           };
@@ -295,6 +298,7 @@ describe("createViewLogicFn", () => {
       }, {
         data: () => {
           return {
+            "@id": "1234+friend",
             "path": "users/789/friends/1234",
             "srcProps": ["age", "avatar", "name"],
           };
@@ -305,6 +309,7 @@ describe("createViewLogicFn", () => {
         docs: [{
           data: () => {
             return {
+              "@id": "987+post",
               "path": "users/1234/posts/987",
               "srcProps": ["name", "avatar"],
             };
@@ -312,6 +317,7 @@ describe("createViewLogicFn", () => {
         }, {
           data: () => {
             return {
+              "@id": "654+post",
               "path": "users/1234/posts/654",
               "srcProps": ["name", "avatar"],
             };
@@ -319,6 +325,7 @@ describe("createViewLogicFn", () => {
         }, {
           data: () => {
             return {
+              "@id": "987+post",
               "path": "users/890/posts/987",
               "srcProps": ["name", "avatar"],
             };
@@ -326,6 +333,7 @@ describe("createViewLogicFn", () => {
         }, {
           data: () => {
             return {
+              "@id": "654+post",
               "path": "users/890/posts/654",
               "srcProps": ["name", "avatar"],
             };
@@ -336,6 +344,7 @@ describe("createViewLogicFn", () => {
         docs: [{
           data: () => {
             return {
+              "@id": "1234+friend",
               "path": "users/456/friends/1234",
               "srcProps": ["username", "avatarUrl"],
             };
@@ -343,6 +352,7 @@ describe("createViewLogicFn", () => {
         }, {
           data: () => {
             return {
+              "@id": "1234+friend",
               "path": "users/789/friends/1234",
               "srcProps": ["username", "avatarUrl"],
             };
@@ -483,12 +493,14 @@ describe("onMessageViewLogicsQueue", () => {
   let runViewLogicsSpy: jest.SpyInstance;
   let expandConsolidateAndGroupByDstPathSpy: jest.SpyInstance;
   let distributeSpy: jest.SpyInstance;
+  let createMetricExecutionSpy: jest.SpyInstance;
 
   const viewLogicsResult: LogicResult[] = [
     {
       name: "logic 1",
       timeFinished: firestore.Timestamp.now(),
       status: "finished",
+      execTime: 100,
       documents: [
         {
           action: "merge",
@@ -504,6 +516,7 @@ describe("onMessageViewLogicsQueue", () => {
       name: "logic 2",
       timeFinished: firestore.Timestamp.now(),
       status: "finished",
+      execTime: 100,
       documents: [
         {
           action: "merge",
@@ -555,6 +568,7 @@ describe("onMessageViewLogicsQueue", () => {
   } as CloudEvent<MessagePublishedData>;
 
   beforeEach(() => {
+    createMetricExecutionSpy = jest.spyOn(indexUtils._mockable, "createMetricExecution").mockResolvedValue();
     runViewLogicsSpy = jest.spyOn(indexUtils, "runViewLogics").mockResolvedValue(viewLogicsResult);
     expandConsolidateAndGroupByDstPathSpy = jest.spyOn(indexUtils, "expandConsolidateAndGroupByDstPath").mockResolvedValue(expandConsolidateResult);
     distributeSpy = jest.spyOn(indexUtils, "distribute").mockResolvedValue();
@@ -570,10 +584,17 @@ describe("onMessageViewLogicsQueue", () => {
   });
 
   it("should distribute queued view logics", async () => {
+    const distributeFnLogicResult: LogicResult = {
+      name: "runViewLogics",
+      status: "finished",
+      documents: [],
+      execTime: expect.any(Number),
+    };
     const viewLogicsResultDocs = viewLogicsResult.map((logicResult) => logicResult.documents).flat();
     const result = await viewLogics.onMessageViewLogicsQueue(event);
 
     expect(runViewLogicsSpy).toHaveBeenCalledWith(doc1);
+    expect(createMetricExecutionSpy).toHaveBeenCalledWith([...viewLogicsResult, distributeFnLogicResult]);
     expect(expandConsolidateAndGroupByDstPathSpy).toHaveBeenCalledWith(viewLogicsResultDocs);
     expect(distributeSpy).toHaveBeenCalledWith(expandConsolidateResult);
     expect(trackProcessedIdsMock).toHaveBeenCalledWith(VIEW_LOGICS_TOPIC_NAME, event.id);
