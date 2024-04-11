@@ -23,6 +23,7 @@ import {securityConfig} from "../../sample-custom/security";
 import {validatorConfig} from "../../sample-custom/validators";
 import {dbStructure, Entity} from "../../sample-custom/db-structure";
 import {DocumentReference} from "firebase-admin/lib/firestore";
+import Timestamp = firestore.Timestamp;
 
 jest.mock("../../utils/pubsub", () => {
   return {
@@ -136,7 +137,9 @@ describe("createViewLogicFn", () => {
         get: docGetMock,
         collection: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
-            get: colGetMock,
+            where: jest.fn().mockReturnValue({
+              get: colGetMock,
+            }),
           }),
         }),
       } as unknown as DocumentReference;
@@ -167,7 +170,11 @@ describe("createViewLogicFn", () => {
     const document = result.documents[0];
     expect(document).toHaveProperty("action", "create");
     expect(document).toHaveProperty("dstPath", "users/1234/@views/1234+friend");
-    expect(document.doc).toEqual({"path": "users/1234", "srcProps": ["age", "avatar", "name"]});
+    expect(document.doc).toEqual({
+      "path": "users/1234",
+      "srcProps": ["age", "avatar", "name"],
+      "vdId": "friend",
+    });
   });
 
   it("should delete @views doc", async () => {
@@ -203,10 +210,12 @@ describe("createViewLogicFn", () => {
     expect(docSetMock).toHaveBeenNthCalledWith(1, {
       "path": "users/456/friends/1234",
       "srcProps": ["age", "avatar", "name"],
+      "vdId": "friend",
     });
     expect(docSetMock).toHaveBeenNthCalledWith(2, {
       "path": "users/789/friends/1234",
       "srcProps": ["age", "avatar", "name"],
+      "vdId": "friend",
     });
     expect(docUpdateMock).toHaveBeenCalledTimes(1);
     expect(docUpdateMock).toHaveBeenCalledWith({"@viewsAlreadyBuilt": true});
@@ -390,13 +399,13 @@ describe("createViewLogicFn", () => {
     let document = result.documents[0];
     expect(document).toHaveProperty("action", "merge");
     expect(document).toHaveProperty("dstPath", "users/456/friends/1234");
-    expect(document.doc).toEqual({"name": "John Doe"});
+    expect(document.doc).toEqual({"name": "John Doe", "updatedByViewDefinitionAt": expect.any(Timestamp)});
     expect(document.instructions).toEqual({"age": "++"});
 
     document = result.documents[1];
     expect(document).toHaveProperty("action", "merge");
     expect(document).toHaveProperty("dstPath", "users/789/friends/1234");
-    expect(document.doc).toEqual({"name": "John Doe"});
+    expect(document.doc).toEqual({"name": "John Doe", "updatedByViewDefinitionAt": expect.any(Timestamp)});
     expect(document.instructions).toEqual({"age": "++"});
 
     // Create the logic function using the viewDefinition
@@ -413,22 +422,22 @@ describe("createViewLogicFn", () => {
     document = result2.documents[0];
     expect(document).toHaveProperty("action", "merge");
     expect(document).toHaveProperty("dstPath", "users/1234/posts/987");
-    expect(document.doc).toEqual({"postedBy.name": "John Doe"});
+    expect(document.doc).toEqual({"postedBy.name": "John Doe", "updatedByViewDefinitionAt": expect.any(Timestamp)});
 
     document = result2.documents[1];
     expect(document).toHaveProperty("action", "merge");
     expect(document).toHaveProperty("dstPath", "users/1234/posts/654");
-    expect(document.doc).toEqual({"postedBy.name": "John Doe"});
+    expect(document.doc).toEqual({"postedBy.name": "John Doe", "updatedByViewDefinitionAt": expect.any(Timestamp)});
 
     document = result2.documents[2];
     expect(document).toHaveProperty("action", "merge");
     expect(document).toHaveProperty("dstPath", "users/890/posts/987");
-    expect(document.doc).toEqual({"postedBy.name": "John Doe"});
+    expect(document.doc).toEqual({"postedBy.name": "John Doe", "updatedByViewDefinitionAt": expect.any(Timestamp)});
 
     document = result2.documents[3];
     expect(document).toHaveProperty("action", "merge");
     expect(document).toHaveProperty("dstPath", "users/890/posts/654");
-    expect(document.doc).toEqual({"postedBy.name": "John Doe"});
+    expect(document.doc).toEqual({"postedBy.name": "John Doe", "updatedByViewDefinitionAt": expect.any(Timestamp)});
 
     const resultDelete = await logicFn[0](deleteLogicResultDoc);
 
@@ -457,12 +466,12 @@ describe("createViewLogicFn", () => {
     document = result3.documents[0];
     expect(document).toHaveProperty("action", "merge");
     expect(document).toHaveProperty("dstPath", "servers/123");
-    expect(document.doc).toEqual({"createdBy.username": "new_username"});
+    expect(document.doc).toEqual({"createdBy.username": "new_username", "updatedByViewDefinitionAt": expect.any(Timestamp)});
 
     document = result3.documents[1];
     expect(document).toHaveProperty("action", "merge");
     expect(document).toHaveProperty("dstPath", "servers/456");
-    expect(document.doc).toEqual({"createdBy.username": "new_username"});
+    expect(document.doc).toEqual({"createdBy.username": "new_username", "updatedByViewDefinitionAt": expect.any(Timestamp)});
   });
 });
 

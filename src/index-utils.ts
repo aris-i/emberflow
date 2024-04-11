@@ -568,7 +568,7 @@ export async function runViewLogics(logicResultDoc: LogicResultDoc): Promise<Log
     );
   });
   // TODO: Handle errors
-  // TODO: Add logic for execTime
+
   const logicResults = [];
   for (const logic of matchingLogics) {
     const start = performance.now();

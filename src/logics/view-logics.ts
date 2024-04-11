@@ -22,14 +22,12 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     destEntity,
     destProp,
   } = viewDefinition;
-  function formViewId(docId: string) {
-    return `${docId}+${destEntity}${destProp ? `#${destProp}` : ""}`;
-  }
+  const vdId = `${destEntity}${destProp ? `#${destProp}` : ""}`;
 
   function formViewsPath(docId: string) {
     const srcDocPath = docPaths[srcEntity];
     const srcPath = srcDocPath.split("/").slice(0, -1).join("/") + "/" + docId;
-    return `${srcPath}/@views/${formViewId(docId)}`;
+    return `${srcPath}/@views/${docId}+${vdId}`;
   }
 
   const srcToDstLogicFn: ViewLogicFn = async (logicResultDoc: LogicResultDoc) => {
@@ -54,6 +52,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
         await db.doc(srcViewsPath).set({
           path,
           srcProps: srcProps.sort(),
+          vdId,
         });
       }
     }
@@ -86,7 +85,10 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     }
 
     function syncMergeToViews() {
-      const viewDoc: Record<string, any> = {};
+      const now = admin.firestore.Timestamp.now();
+      const viewDoc: Record<string, any> = {
+        "updatedByViewDefinitionAt": now,
+      };
       const viewInstructions: Record<string, string> = {};
       for (const srcProp of srcProps) {
         if (doc?.[srcProp]) {
@@ -109,7 +111,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       return {
         name: `${destEntity}#${destProp} ViewLogic`,
         status: "finished",
-        timeFinished: admin.firestore.Timestamp.now(),
+        timeFinished: now,
         documents,
       } as LogicResult;
     }
@@ -128,6 +130,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     const viewPaths = (await db.doc(actualSrcPath)
       .collection("@views")
       .where("srcProps", "array-contains-any", modifiedFields)
+      .where("vdId", "==", vdId)
       .get()).docs.map((doc) => doc.data());
 
     let destPaths = viewPaths.map((viewPath) => viewPath.path);
@@ -143,17 +146,13 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     }
 
     for (const viewPath of viewPaths) {
-      const {srcProps: viewPathSrcProps, path, "@id": viewId} = viewPath;
-      const docId = path.split("/").slice(-1)[0];
-      if (viewId !== formViewId(docId)) {
-        continue;
-      }
-
+      const {srcProps: viewPathSrcProps, path} = viewPath;
       const sortedSrcProps = srcProps.sort();
       if (viewPathSrcProps.join(",") === sortedSrcProps.join(",")) {
         continue;
       }
 
+      const docId = path.split("/").slice(-1)[0];
       const srcViewsPath = formViewsPath(docId);
       await db.doc(srcViewsPath).update({srcProps: sortedSrcProps});
     }
@@ -191,6 +190,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
         doc: {
           path: logicResultDoc.dstPath,
           srcProps: srcProps.sort(),
+          vdId,
         },
       };
       logicResult.documents.push(viewResultDoc);
