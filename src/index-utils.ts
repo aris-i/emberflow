@@ -532,13 +532,13 @@ export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultD
   return consolidated;
 }
 
-export async function runViewLogics(userLogicResultDoc: LogicResultDoc): Promise<LogicResult[]> {
+export async function runViewLogics(logicResultDoc: LogicResultDoc): Promise<LogicResult[]> {
   const {
     action,
     doc,
     instructions,
     dstPath,
-  } = userLogicResultDoc;
+  } = logicResultDoc;
   const modifiedFields: string[] = [];
   if (doc) {
     modifiedFields.push(...Object.keys(doc));
@@ -568,10 +568,14 @@ export async function runViewLogics(userLogicResultDoc: LogicResultDoc): Promise
     );
   });
   // TODO: Handle errors
-  // TODO: Add logic for execTime
+
   const logicResults = [];
   for (const logic of matchingLogics) {
-    logicResults.push(await logic.viewLogicFn(userLogicResultDoc));
+    const start = performance.now();
+    const viewLogicResult = await logic.viewLogicFn(logicResultDoc);
+    const end = performance.now();
+    const execTime = end - start;
+    logicResults.push({...viewLogicResult, execTime});
   }
   return logicResults;
 }
