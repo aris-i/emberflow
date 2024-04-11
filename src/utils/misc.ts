@@ -20,7 +20,11 @@ function isArray(item: any): boolean {
 }
 
 function isStringDate(item: any): boolean {
-  return typeof item === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(item);
+  return isString(item) && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(item);
+}
+
+function isString(item: any): boolean {
+  return typeof item === "string";
 }
 
 function isFirestoreTimestamp(item: any): boolean {
@@ -243,6 +247,35 @@ export const reviveDateAndTimestamp = (json: { [key: string]: any }) => {
             continue;
           }
 
+          stack.push(value);
+        }
+      }
+    }
+  }
+
+  return json;
+};
+
+export const trimStrings = (json: { [key: string]: any }) => {
+  const stack = [json];
+  while (stack.length > 0) {
+    const obj = stack.pop();
+
+    for (const key in obj) {
+      if (obj && Object.prototype.hasOwnProperty.call(obj, key)) {
+        const value = obj[key];
+
+        if (isArray(value)) {
+          stack.push(value);
+          continue;
+        }
+
+        if (isString(value)) {
+          obj[key] = value.trim();
+          continue;
+        }
+
+        if (isObject(value)) {
           stack.push(value);
         }
       }
