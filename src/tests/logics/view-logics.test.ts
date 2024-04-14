@@ -126,7 +126,7 @@ describe("createViewLogicFn", () => {
     docGetMock = jest.fn().mockResolvedValue({
       data: () => {
         return {
-          "@viewsAlreadyBuilt": false,
+          "@viewsAlreadyBuilt+friend": false,
         };
       },
     });
@@ -218,7 +218,7 @@ describe("createViewLogicFn", () => {
       "vdId": "friend",
     });
     expect(docUpdateMock).toHaveBeenCalledTimes(1);
-    expect(docUpdateMock).toHaveBeenCalledWith({"@viewsAlreadyBuilt": true});
+    expect(docUpdateMock).toHaveBeenCalledWith({"@viewsAlreadyBuilt+friend": true});
 
     expect(hydrateDocPathSpy.mock.calls[0][0]).toEqual("users/{userId}/friends/1234");
     expect(hydrateDocPathSpy.mock.calls[0][1]).toEqual({});
@@ -232,7 +232,7 @@ describe("createViewLogicFn", () => {
     docGetMock.mockResolvedValue({
       data: () => {
         return {
-          "@viewsAlreadyBuilt": true,
+          "@viewsAlreadyBuilt+friend": true,
         };
       },
     });

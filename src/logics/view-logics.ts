@@ -77,7 +77,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
         }
       });
       return {
-        name: `${destEntity}#${destProp} ViewLogic`,
+        name: `${vdId} ViewLogic`,
         status: "finished",
         timeFinished: admin.firestore.Timestamp.now(),
         documents,
@@ -109,7 +109,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       });
 
       return {
-        name: `${destEntity}#${destProp} ViewLogic`,
+        name: `${vdId} ViewLogic`,
         status: "finished",
         timeFinished: now,
         documents,
@@ -138,10 +138,10 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     if (viewPaths.length === 0) {
       // Check if the src doc has "@viewsAlreadyBuilt" field
       const srcRef = db.doc(actualSrcPath);
-      const isViewsAlreadyBuilt = (await srcRef.get()).data()?.["@viewsAlreadyBuilt"];
+      const isViewsAlreadyBuilt = (await srcRef.get()).data()?.[`@viewsAlreadyBuilt+${vdId}`];
       if (!isViewsAlreadyBuilt) {
         await buildViewsCollection();
-        await srcRef.update({"@viewsAlreadyBuilt": true});
+        await srcRef.update({[`@viewsAlreadyBuilt+${vdId}`]: true});
       }
     }
 
