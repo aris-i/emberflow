@@ -1517,14 +1517,14 @@ describe("runViewLogics", () => {
     {
       name: "logic 1",
       entity: "user",
-      actionTypes: [],
+      actionTypes: ["merge", "delete"],
       modifiedFields: ["sampleField1", "sampleField2"],
       viewLogicFn: viewLogicFn1,
     },
     {
       name: "logic 2",
       entity: "user",
-      actionTypes: [],
+      actionTypes: ["merge", "delete"],
       modifiedFields: ["sampleField3"],
       viewLogicFn: viewLogicFn2,
     },
