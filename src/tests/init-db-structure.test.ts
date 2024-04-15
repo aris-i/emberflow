@@ -92,7 +92,6 @@ describe("mapViewPaths", () => {
     const expectedOutput = [
       {
         destEntity: "b",
-        destProp: "f",
         srcProps: ["prop1", "prop2"],
         srcEntity: "a",
       },

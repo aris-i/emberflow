@@ -20,64 +20,40 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     srcEntity,
     srcProps,
     destEntity,
-    destProp,
   } = viewDefinition;
-  const vdId = `${destEntity}${destProp ? `#${destProp}` : ""}`;
-
   function formViewsPath(docId: string) {
     const srcDocPath = docPaths[srcEntity];
     const srcPath = srcDocPath.split("/").slice(0, -1).join("/") + "/" + docId;
-    return `${srcPath}/@views/${docId}+${vdId}`;
+    return `${srcPath}/@views/${docId}+${destEntity}`;
   }
 
   const srcToDstLogicFn: ViewLogicFn = async (logicResultDoc: LogicResultDoc) => {
     async function buildViewsCollection() {
       const destDocPath = docPaths[destEntity];
       const docId = actualSrcPath.split("/").slice(-1)[0];
-      if (destProp) {
-        destPaths = await hydrateDocPath(destDocPath, {
-          [destEntity]: {
-            fieldName: `${destProp}.@id`,
-            operator: "==",
-            value: docId,
-          },
-        });
-      } else {
-        const dehydratedPath = `${destDocPath.split("/").slice(0, -1).join("/")}/${docId}`;
-        destPaths = await hydrateDocPath(dehydratedPath, {});
-      }
+      const dehydratedPath = `${destDocPath.split("/").slice(0, -1).join("/")}/${docId}`;
+      destPaths = await hydrateDocPath(dehydratedPath, {});
       for (const path of destPaths) {
         const docId = path.split("/").slice(-1)[0];
         const srcViewsPath = formViewsPath(docId);
         await db.doc(srcViewsPath).set({
           path,
           srcProps: srcProps.sort(),
-          vdId,
+          destEntity,
         });
       }
     }
 
     function syncDeleteToViews() {
       const documents = destPaths.map((destPath) => {
-        if (destProp) {
-          return {
-            action: "merge" as LogicResultDocAction,
-            dstPath: destPath,
-            doc: {
-              [destProp]: admin.firestore.FieldValue.delete(),
-            },
-            priority: "normal" as LogicResultDocPriority,
-          };
-        } else {
-          return {
-            action: "delete" as LogicResultDocAction,
-            dstPath: destPath,
-            priority: "normal" as LogicResultDocPriority,
-          };
-        }
+        return {
+          action: "delete" as LogicResultDocAction,
+          dstPath: destPath,
+          priority: "normal" as LogicResultDocPriority,
+        };
       });
       return {
-        name: `${vdId} ViewLogic`,
+        name: `${destEntity} ViewLogic`,
         status: "finished",
         timeFinished: admin.firestore.Timestamp.now(),
         documents,
@@ -92,10 +68,10 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       const viewInstructions: Record<string, string> = {};
       for (const srcProp of srcProps) {
         if (doc?.[srcProp]) {
-          viewDoc[`${destProp ? `${destProp}.` : ""}${srcProp}`] = doc[srcProp];
+          viewDoc[srcProp] = doc[srcProp];
         }
         if (instructions?.[srcProp]) {
-          viewInstructions[`${destProp ? `${destProp}.` : ""}${srcProp}`] = instructions[srcProp];
+          viewInstructions[srcProp] = instructions[srcProp];
         }
       }
       const documents = destPaths.map((destPath) => {
@@ -109,7 +85,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       });
 
       return {
-        name: `${vdId} ViewLogic`,
+        name: `${destEntity} ViewLogic`,
         status: "finished",
         timeFinished: now,
         documents,
@@ -130,7 +106,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     const viewPaths = (await db.doc(actualSrcPath)
       .collection("@views")
       .where("srcProps", "array-contains-any", modifiedFields)
-      .where("vdId", "==", vdId)
+      .where("destEntity", "==", destEntity)
       .get()).docs.map((doc) => doc.data());
 
     let destPaths = viewPaths.map((viewPath) => viewPath.path);
@@ -138,10 +114,10 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     if (viewPaths.length === 0) {
       // Check if the src doc has "@viewsAlreadyBuilt" field
       const srcRef = db.doc(actualSrcPath);
-      const isViewsAlreadyBuilt = (await srcRef.get()).data()?.[`@viewsAlreadyBuilt+${vdId}`];
+      const isViewsAlreadyBuilt = (await srcRef.get()).data()?.[`@viewsAlreadyBuilt+${destEntity}`];
       if (!isViewsAlreadyBuilt) {
         await buildViewsCollection();
-        await srcRef.update({[`@viewsAlreadyBuilt+${vdId}`]: true});
+        await srcRef.update({[`@viewsAlreadyBuilt+${destEntity}`]: true});
       }
     }
 
@@ -190,7 +166,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
         doc: {
           path: logicResultDoc.dstPath,
           srcProps: srcProps.sort(),
-          vdId,
+          destEntity,
         },
       };
       logicResult.documents.push(viewResultDoc);

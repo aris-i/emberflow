@@ -61,14 +61,12 @@ const vd2: ViewDefinition = {
   srcEntity: "user",
   srcProps: ["name", "avatar"],
   destEntity: "post",
-  destProp: "postedBy",
 };
 
 const vd3: ViewDefinition = {
   srcEntity: "user",
   srcProps: ["username", "avatarUrl"],
   destEntity: "server",
-  destProp: "createdBy",
 };
 
 const vd4: ViewDefinition = {
@@ -173,7 +171,7 @@ describe("createViewLogicFn", () => {
     expect(document.doc).toEqual({
       "path": "users/1234",
       "srcProps": ["age", "avatar", "name"],
-      "vdId": "friend",
+      "destEntity": "friend",
     });
   });
 
@@ -210,12 +208,12 @@ describe("createViewLogicFn", () => {
     expect(docSetMock).toHaveBeenNthCalledWith(1, {
       "path": "users/456/friends/1234",
       "srcProps": ["age", "avatar", "name"],
-      "vdId": "friend",
+      "destEntity": "friend",
     });
     expect(docSetMock).toHaveBeenNthCalledWith(2, {
       "path": "users/789/friends/1234",
       "srcProps": ["age", "avatar", "name"],
-      "vdId": "friend",
+      "destEntity": "friend",
     });
     expect(docUpdateMock).toHaveBeenCalledTimes(1);
     expect(docUpdateMock).toHaveBeenCalledWith({"@viewsAlreadyBuilt+friend": true});
@@ -422,22 +420,22 @@ describe("createViewLogicFn", () => {
     document = result2.documents[0];
     expect(document).toHaveProperty("action", "merge");
     expect(document).toHaveProperty("dstPath", "users/1234/posts/987");
-    expect(document.doc).toEqual({"postedBy.name": "John Doe", "updatedByViewDefinitionAt": expect.any(Timestamp)});
+    expect(document.doc).toEqual({"name": "John Doe", "updatedByViewDefinitionAt": expect.any(Timestamp)});
 
     document = result2.documents[1];
     expect(document).toHaveProperty("action", "merge");
     expect(document).toHaveProperty("dstPath", "users/1234/posts/654");
-    expect(document.doc).toEqual({"postedBy.name": "John Doe", "updatedByViewDefinitionAt": expect.any(Timestamp)});
+    expect(document.doc).toEqual({"name": "John Doe", "updatedByViewDefinitionAt": expect.any(Timestamp)});
 
     document = result2.documents[2];
     expect(document).toHaveProperty("action", "merge");
     expect(document).toHaveProperty("dstPath", "users/890/posts/987");
-    expect(document.doc).toEqual({"postedBy.name": "John Doe", "updatedByViewDefinitionAt": expect.any(Timestamp)});
+    expect(document.doc).toEqual({"name": "John Doe", "updatedByViewDefinitionAt": expect.any(Timestamp)});
 
     document = result2.documents[3];
     expect(document).toHaveProperty("action", "merge");
     expect(document).toHaveProperty("dstPath", "users/890/posts/654");
-    expect(document.doc).toEqual({"postedBy.name": "John Doe", "updatedByViewDefinitionAt": expect.any(Timestamp)});
+    expect(document.doc).toEqual({"name": "John Doe", "updatedByViewDefinitionAt": expect.any(Timestamp)});
 
     const resultDelete = await logicFn[0](deleteLogicResultDoc);
 
@@ -466,12 +464,12 @@ describe("createViewLogicFn", () => {
     document = result3.documents[0];
     expect(document).toHaveProperty("action", "merge");
     expect(document).toHaveProperty("dstPath", "servers/123");
-    expect(document.doc).toEqual({"createdBy.username": "new_username", "updatedByViewDefinitionAt": expect.any(Timestamp)});
+    expect(document.doc).toEqual({"username": "new_username", "updatedByViewDefinitionAt": expect.any(Timestamp)});
 
     document = result3.documents[1];
     expect(document).toHaveProperty("action", "merge");
     expect(document).toHaveProperty("dstPath", "servers/456");
-    expect(document.doc).toEqual({"createdBy.username": "new_username", "updatedByViewDefinitionAt": expect.any(Timestamp)});
+    expect(document.doc).toEqual({"username": "new_username", "updatedByViewDefinitionAt": expect.any(Timestamp)});
   });
 });
 

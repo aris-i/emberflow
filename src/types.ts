@@ -92,7 +92,6 @@ export type ValidateFormResult = [hasValidationErrors: boolean, validationResult
 
 export interface ViewDefinition {
     destEntity: string;
-    destProp?: string;
     srcProps: string[];
     srcEntity: string;
 }
