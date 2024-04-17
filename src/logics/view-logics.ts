@@ -103,11 +103,19 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       ...Object.keys(instructions || {}),
     ];
     console.log(`Executing ViewLogic on document at ${actualSrcPath}...`);
-    const viewPaths = (await db.doc(actualSrcPath)
-      .collection("@views")
-      .where("srcProps", "array-contains-any", modifiedFields)
-      .where("destEntity", "==", destEntity)
-      .get()).docs.map((doc) => doc.data());
+
+    let query;
+    if (action === "delete") {
+      query = db.doc(actualSrcPath)
+        .collection("@views")
+        .where("destEntity", "==", destEntity);
+    } else {
+      query = db.doc(actualSrcPath)
+        .collection("@views")
+        .where("srcProps", "array-contains-any", modifiedFields)
+        .where("destEntity", "==", destEntity);
+    }
+    const viewPaths = (await query.get()).docs.map((doc) => doc.data());
 
     let destPaths = viewPaths.map((viewPath) => viewPath.path);
 
