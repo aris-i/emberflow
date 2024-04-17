@@ -86,7 +86,6 @@ export function mapViewDefinitions(
       const destPath = match[1];
       // Get the last word of the path
       const destEntity = destPath.split("/").slice(-1)[0];
-      const destProp = match[2]?.slice(1);
       const viewDefinitionStr = match[3];
 
       const [_, srcEntity, srcPropsStr] = viewDefinitionStr.split(":");
@@ -96,7 +95,6 @@ export function mapViewDefinitions(
       if (Object.values(Entity).includes(srcEntity) && destEntity) {
         viewDefs.push({
           destEntity,
-          destProp,
           srcProps,
           srcEntity,
         });

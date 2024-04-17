@@ -554,7 +554,7 @@ export async function runViewLogics(logicResultDoc: LogicResultDoc): Promise<Log
   const matchingLogics = _mockable.getViewLogicsConfig().filter((logic) => {
     return (
       (
-        (action === "merge" || action === "create") &&
+        logic.actionTypes.includes(action) &&
         (
           logic.modifiedFields === "all" ||
             logic.modifiedFields.some((field) => modifiedFields.includes(field))
