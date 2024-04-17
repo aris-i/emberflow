@@ -135,6 +135,7 @@ describe("createViewLogicFn", () => {
         get: docGetMock,
         collection: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
+            get: colGetMock,
             where: jest.fn().mockReturnValue({
               get: colGetMock,
             }),
