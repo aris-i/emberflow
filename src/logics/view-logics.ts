@@ -33,6 +33,9 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       const docId = actualSrcPath.split("/").slice(-1)[0];
       const dehydratedPath = `${destDocPath.split("/").slice(0, -1).join("/")}/${docId}`;
       destPaths = await hydrateDocPath(dehydratedPath, {});
+
+      if (action === "delete") return;
+
       for (const path of destPaths) {
         const docId = path.split("/").slice(-1)[0];
         const srcViewsPath = formViewsPath(docId);
@@ -125,7 +128,9 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       const isViewsAlreadyBuilt = (await srcRef.get()).data()?.[`@viewsAlreadyBuilt+${destEntity}`];
       if (!isViewsAlreadyBuilt) {
         await buildViewsCollection();
-        await srcRef.update({[`@viewsAlreadyBuilt+${destEntity}`]: true});
+        if (action === "merge") {
+          await srcRef.update({[`@viewsAlreadyBuilt+${destEntity}`]: true});
+        }
       }
     }
 
