@@ -3,9 +3,11 @@ import {
   Action,
   EventContext,
   FirebaseAdmin,
+  Instructions,
   LogicConfig,
   LogicConfigModifiedFieldsType,
-  LogicResultDoc, LogicResultDocAction,
+  LogicResultDoc,
+  LogicResultDocAction,
   ProjectConfig,
   SecurityConfig,
   ValidatorConfig,
@@ -21,16 +23,14 @@ import {
   distributeLater,
   expandConsolidateAndGroupByDstPath,
   getFormModifiedFields,
-  getSecurityFn, groupDocsByTargetDocPath,
+  getSecurityFn,
+  groupDocsByTargetDocPath,
   onDeleteFunction,
   runBusinessLogics,
   validateForm,
 } from "./index-utils";
 import {initDbStructure} from "./init-db-structure";
-import {
-  createViewLogicFn,
-  onMessageViewLogicsQueue,
-} from "./logics/view-logics";
+import {createViewLogicFn, onMessageViewLogicsQueue} from "./logics/view-logics";
 import {resetUsageStats, stopBillingIfBudgetExceeded, useBillProtect} from "./utils/bill-protect";
 import {Firestore} from "firebase-admin/firestore";
 import {DatabaseEvent, DataSnapshot, onValueCreated} from "firebase-functions/v2/database";
@@ -41,14 +41,15 @@ import {internalDbStructure, InternalEntity} from "./db-structure";
 import {cleanActionsAndForms, onMessageSubmitFormQueue} from "./utils/forms";
 import {PubSub, Topic} from "@google-cloud/pubsub";
 import {onMessagePublished} from "firebase-functions/v2/pubsub";
-import {reviveDateAndTimestamp, deleteForms, trimStrings} from "./utils/misc";
-import Database = database.Database;
-import {onMessageForDistributionQueue, onMessageInstructionsQueue, reduceInstructions} from "./utils/distribution";
+import {deleteForms, reviveDateAndTimestamp, trimStrings} from "./utils/misc";
+import {instructionsReducer, onMessageForDistributionQueue, onMessageInstructionsQueue} from "./utils/distribution";
 import {cleanPubSubProcessedIds} from "./utils/pubsub";
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import {onDocumentCreated} from "firebase-functions/v2/firestore";
 import {onRequest} from "firebase-functions/v2/https";
 import {UserRecord} from "firebase-admin/lib/auth";
+import {debounce} from "./utils/functions";
+import Database = database.Database;
 
 export let admin: FirebaseAdmin;
 export let db: Firestore;
@@ -69,20 +70,16 @@ export const SUBMIT_FORM_TOPIC_NAME = "submit-form-queue";
 export const VIEW_LOGICS_TOPIC_NAME = "view-logics-queue";
 export const FOR_DISTRIBUTION_TOPIC_NAME = "for-distribution-queue";
 export const INSTRUCTIONS_TOPIC_NAME = "instructions-queue";
-export const INSTRUCTIONS_REDUCER_TOPIC_NAME = "instructions-reducer-queue";
 export const pubSubTopics = [
   SUBMIT_FORM_TOPIC_NAME,
   VIEW_LOGICS_TOPIC_NAME,
   FOR_DISTRIBUTION_TOPIC_NAME,
   INSTRUCTIONS_TOPIC_NAME,
-  INSTRUCTIONS_REDUCER_TOPIC_NAME,
 ];
 export let SUBMIT_FORM_TOPIC: Topic;
 export let VIEW_LOGICS_TOPIC: Topic;
-export let PEER_SYNC_TOPIC: Topic;
 export let FOR_DISTRIBUTION_TOPIC: Topic;
 export let INSTRUCTIONS_TOPIC: Topic;
-export let INSTRUCTIONS_REDUCER_TOPIC: Topic;
 
 export const _mockable = {
   createNowTimestamp: () => admin.firestore.Timestamp.now(),
@@ -118,7 +115,6 @@ export function initializeEmberFlow(
   VIEW_LOGICS_TOPIC = pubsub.topic(VIEW_LOGICS_TOPIC_NAME);
   FOR_DISTRIBUTION_TOPIC = pubsub.topic(FOR_DISTRIBUTION_TOPIC_NAME);
   INSTRUCTIONS_TOPIC = pubsub.topic(INSTRUCTIONS_TOPIC_NAME);
-  INSTRUCTIONS_REDUCER_TOPIC = pubsub.topic(INSTRUCTIONS_REDUCER_TOPIC_NAME);
 
   const {
     docPaths: dp,
@@ -190,7 +186,17 @@ export function initializeEmberFlow(
     maxInstances: 1,
     concurrency: 5,
     timeoutSeconds: 540,
-  }, onMessageInstructionsQueue);
+  }, debounce(
+    onMessageInstructionsQueue,
+    200,
+    1000,
+    {
+      reducerFn: instructionsReducer,
+      initialValueFactory: () => {
+        return new Map<string, Instructions>();
+      },
+    }
+  ));
   functionsConfig["resetUsageStats"] = onSchedule({
     schedule: "every 1 hours",
     region: projectConfig.region,
@@ -221,11 +227,6 @@ export function initializeEmberFlow(
     region: projectConfig.region,
     timeoutSeconds: 540,
   }, createMetricComputation);
-  functionsConfig["reduceInstructions"] = onSchedule({
-    schedule: "every 1 minutes",
-    region: projectConfig.region,
-    timeoutSeconds: 60,
-  }, reduceInstructions);
   functionsConfig["onDeleteFunctions"] = onDocumentCreated(
     "@server/delete/functions/{deleteFuncId}", onDeleteFunction);
   functionsConfig["onUserRegister"] =

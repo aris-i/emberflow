@@ -1,8 +1,4 @@
-import {
-  Instructions,
-  InstructionsMessage,
-  LogicResultDoc,
-} from "../types";
+import {Instructions, InstructionsMessage, LogicResultDoc} from "../types";
 import {
   admin,
   db,
@@ -10,31 +6,20 @@ import {
   FOR_DISTRIBUTION_TOPIC_NAME,
   INSTRUCTIONS_TOPIC,
   INSTRUCTIONS_TOPIC_NAME,
-  INSTRUCTIONS_REDUCER_TOPIC, INSTRUCTIONS_REDUCER_TOPIC_NAME, pubsub,
 } from "../index";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
 import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
 import {distributeDoc} from "../index-utils";
 import {firestore} from "firebase-admin";
-import FieldValue = firestore.FieldValue;
 import {pubsubUtils} from "./pubsub";
 import {reviveDateAndTimestamp} from "./misc";
-import {queueRunViewLogics} from "../logics/view-logics";
+import FieldValue = firestore.FieldValue;
 
 export const queueForDistributionLater = async (...logicResultDocs: LogicResultDoc[]) => {
   try {
     for (const logicResultDoc of logicResultDocs) {
-      const {
-        instructions,
-        dstPath,
-        ...rest
-      } = logicResultDoc;
-      const forDistributionMessageId = await FOR_DISTRIBUTION_TOPIC.publishMessage({json: {...rest, dstPath}});
+      const forDistributionMessageId = await FOR_DISTRIBUTION_TOPIC.publishMessage({json: logicResultDoc});
       console.log(`Message ${forDistributionMessageId} published.`);
-      if (instructions) {
-        const instructionsReducerMessageId = await INSTRUCTIONS_REDUCER_TOPIC.publishMessage({json: {dstPath, instructions}});
-        console.log(`Instructions ${instructionsReducerMessageId} published for reduction.`);
-      }
     }
   } catch (error: unknown) {
     if (error instanceof Error) {
@@ -89,19 +74,10 @@ export const queueInstructions = async (dstPath: string, instructions: { [p: str
   }
 };
 
-export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublishedData>) {
-  if (await pubsubUtils.isProcessed(INSTRUCTIONS_TOPIC_NAME, event.id)) {
-    console.log("Skipping duplicate message");
-    return;
-  }
-  try {
-    const instructionsMessage: InstructionsMessage = event.data.message.json;
-    console.log("Received user logic result doc:", instructionsMessage);
-
-    console.info("Running Instructions");
-    const {dstPath, instructions} = instructionsMessage;
-    const updateData: {[key: string]: FieldValue} = {};
-    const removeData: {[key: string]: FieldValue} = {};
+export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublishedData> | Map<string, Instructions>) {
+  async function applyInstructions(instructions: Instructions, dstPath: string) {
+    const updateData: { [key: string]: FieldValue } = {};
+    const removeData: { [key: string]: FieldValue } = {};
 
     for (const [property, instruction] of Object.entries(instructions)) {
       if (instruction === "++") {
@@ -169,11 +145,26 @@ export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublis
     if (Object.keys(removeData).length > 0) {
       await dstDocRef.update(removeData);
     }
+  }
+
+  if (event instanceof Map) {
+    // Process the reduced instructions here
+    for (const [dstPath, instructions] of event.entries()) {
+      await applyInstructions(instructions, dstPath);
+    }
+  } else {
+    if (await pubsubUtils.isProcessed(INSTRUCTIONS_TOPIC_NAME, event.id)) {
+      console.log("Skipping duplicate message");
+      return;
+    }
+    const instructionsMessage: InstructionsMessage = event.data.message.json;
+    console.log("Received user logic result doc:", instructionsMessage);
+
+    console.info("Applying Instructions");
+    const {dstPath, instructions} = instructionsMessage;
+    await applyInstructions(instructions, dstPath);
+
     await pubsubUtils.trackProcessedIds(INSTRUCTIONS_TOPIC_NAME, event.id);
-    return "Processed instructions";
-  } catch (e) {
-    console.error("PubSub message was not JSON", e);
-    throw new Error("No json in message");
   }
 }
 
@@ -263,67 +254,25 @@ export const mergeInstructions = (existingInstructions: Instructions, instructio
   }
 };
 
-export async function reduceInstructions() {
-  const duration = 3000;
-  let timeoutId: NodeJS.Timeout | undefined;
-  let reducedInstructions: Map<string, Instructions> = new Map();
+export const instructionsReducer = async (reducedInstructions: Map<string, Instructions>, event: CloudEvent<MessagePublishedData<any>>) => {
+  if (await pubsubUtils.isProcessed(INSTRUCTIONS_TOPIC_NAME, event.id)) {
+    console.log("Skipping duplicate message");
+    return;
+  }
+  try {
+    const instructionsMessage: InstructionsMessage = event.data.message.json;
+    console.log("Received user logic result doc:", instructionsMessage);
 
-  const subscription = pubsub.subscription(INSTRUCTIONS_REDUCER_TOPIC_NAME);
-  subscription.on("message", (message) => {
-    console.log(`Received message ${message.id}.`);
-    const {dstPath, instructions} = JSON.parse(message.data.toString());
+    const {dstPath, instructions} = instructionsMessage;
     const existingInstructions = reducedInstructions.get(dstPath);
     if (!existingInstructions) {
       reducedInstructions.set(dstPath, instructions);
-      message.ack();
-      return;
+    } else {
+      mergeInstructions(existingInstructions, instructions);
     }
-    mergeInstructions(existingInstructions, instructions);
-    message.ack();
-  });
 
-  subscription.on("error", (error) => {
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-    }
-    console.error(`Received error: ${error}`);
-  });
-
-  const runReduceInstructions = (): Promise<Map<string, Instructions>> => {
-    return new Promise((resolve) => {
-      timeoutId = setTimeout(() => {
-        console.log("Time is up, stopping message reception");
-        resolve(new Map(reducedInstructions));
-        reducedInstructions = new Map<string, Instructions>();
-      }, duration);
-    });
-  };
-
-  const reduceAndQueue = async () => {
-    try {
-      const reducedInstructions = await runReduceInstructions();
-      console.log(`Received ${reducedInstructions.size} messages within ${duration / 1000} seconds.`);
-      // Process the reduced instructions here
-      for (const [dstPath, instructions] of reducedInstructions.entries()) {
-        await queueInstructions(dstPath, instructions);
-        await queueRunViewLogics({
-          action: "merge",
-          dstPath,
-          instructions,
-        });
-      }
-    } catch (error) {
-      console.error(`Error while receiving messages: ${error}`);
-    }
-  };
-
-  const startTime = Date.now();
-  const maxRuntimeSeconds = 50;
-  while (Date.now() - startTime < maxRuntimeSeconds * 1000) {
-    await reduceAndQueue();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await pubsubUtils.trackProcessedIds(INSTRUCTIONS_TOPIC_NAME, event.id);
+  } catch (e) {
+    console.error("PubSub message was not JSON. Continue processing queue", e);
   }
-  await subscription.close();
-  subscription.removeAllListeners();
-}
-
+};
