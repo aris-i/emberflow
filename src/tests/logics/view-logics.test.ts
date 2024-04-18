@@ -117,6 +117,7 @@ describe("createViewLogicFn", () => {
   let docGetMock: jest.SpyInstance;
   let docUpdateMock: jest.SpyInstance;
   let docSetMock: jest.SpyInstance;
+  let docSpy: jest.SpyInstance;
   beforeEach(() => {
     colGetMock = jest.fn();
     docUpdateMock = jest.fn();
@@ -128,7 +129,7 @@ describe("createViewLogicFn", () => {
         };
       },
     });
-    jest.spyOn(admin.firestore(), "doc").mockImplementation(() => {
+    docSpy = jest.spyOn(admin.firestore(), "doc").mockImplementation(() => {
       return {
         set: docSetMock,
         update: docUpdateMock,
@@ -217,6 +218,7 @@ describe("createViewLogicFn", () => {
     const result = await logicFn[0](mergeLogicResultDoc);
 
     expect(colGetMock).toHaveBeenCalledTimes(1);
+    expect(docSpy).toHaveBeenCalledWith("users/1234/@views/users+456+friends+1234");
     expect(docSetMock).toHaveBeenCalledTimes(2);
     expect(docSetMock).toHaveBeenNthCalledWith(1, {
       "path": "users/456/friends/1234",
@@ -293,6 +295,8 @@ describe("createViewLogicFn", () => {
     const result = await logicFn[0](mergeLogicResultDoc);
 
     expect(colGetMock).toHaveBeenCalledTimes(1);
+    expect(docSpy).toHaveBeenCalledWith("users/1234/@views/users+456+friends+1234");
+    expect(docSpy).toHaveBeenCalledWith("users/1234/@views/users+789+friends+1234");
     expect(docUpdateMock).toHaveBeenCalledTimes(2);
     expect(docUpdateMock).toHaveBeenCalledWith({
       "srcProps": [

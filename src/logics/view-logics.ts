@@ -20,11 +20,11 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     destEntity,
   } = viewDefinition;
   function formViewDocId(path: string) {
-    let viewId = path.replace("/", "+");
-    if (viewId.startsWith("+")) {
-      viewId = viewId.slice(1);
+    let viewDocId = path.replace(/\//g, "+");
+    if (viewDocId.startsWith("+")) {
+      viewDocId = viewDocId.slice(1);
     }
-    return viewId;
+    return viewDocId;
   }
 
   function formViewsPath(path: string) {
