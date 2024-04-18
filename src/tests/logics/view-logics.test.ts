@@ -185,6 +185,18 @@ describe("createViewLogicFn", () => {
     expect(document).toHaveProperty("dstPath", "users/1234/@views/users+1234");
   });
 
+  it("should add @viewsAlreadyBuilt when action is create", async () => {
+    const logicFn = viewLogics.createViewLogicFn(vd1);
+
+    const result = await logicFn[0](createLogicResultDoc);
+
+    expect(docUpdateMock).toHaveBeenCalledTimes(1);
+    expect(docUpdateMock).toHaveBeenCalledWith({"@viewsAlreadyBuilt+friend": true});
+    expect(result).toBeDefined();
+    expect(result.documents).toBeDefined();
+    expect(result.documents.length).toEqual(0);
+  });
+
   it("should build @views doc when viewPaths is empty", async () => {
     colGetMock.mockResolvedValue({
       docs: [],
