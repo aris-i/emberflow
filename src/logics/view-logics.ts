@@ -1,8 +1,6 @@
 import {
   LogicResult,
   LogicResultDoc,
-  LogicResultDocAction,
-  LogicResultDocPriority,
   ViewDefinition,
   ViewLogicFn,
 } from "../types";
@@ -79,9 +77,9 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     function syncDeleteToDestPaths() {
       const documents: LogicResultDoc[] = destPaths.map((destPath) => {
         return {
-          action: "delete" as LogicResultDocAction,
+          action: "delete",
           dstPath: destPath,
-          priority: "normal" as LogicResultDocPriority,
+          priority: "normal",
           skipRunViewLogics: true,
         };
       });
@@ -109,11 +107,11 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       }
       const documents: LogicResultDoc[] = destPaths.map((destPath) => {
         return {
-          action: "merge" as LogicResultDocAction,
+          action: "merge",
           dstPath: destPath,
           doc: viewDoc,
           instructions: viewInstructions,
-          priority: "low" as LogicResultDocPriority,
+          priority: "low",
           skipRunViewLogics: true,
         };
       });
