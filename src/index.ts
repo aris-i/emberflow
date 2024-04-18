@@ -135,7 +135,7 @@ export function initializeEmberFlow(
     const srcToDestLogicConfig = {
       name: `${viewDef.destEntity} ViewLogic`,
       entity: viewDef.srcEntity,
-      actionTypes: ["merge", "delete"] as LogicResultDocAction[],
+      actionTypes: ["create", "merge", "delete"] as LogicResultDocAction[],
       modifiedFields: viewDef.srcProps,
       viewLogicFn: srcToDestViewLogicFn,
     };
