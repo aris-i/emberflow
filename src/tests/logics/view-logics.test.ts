@@ -168,7 +168,7 @@ describe("createViewLogicFn", () => {
     const result = await logicFn[1](createLogicResultDoc);
     const document = result.documents[0];
     expect(document).toHaveProperty("action", "create");
-    expect(document).toHaveProperty("dstPath", "users/1234/@views/1234+friend");
+    expect(document).toHaveProperty("dstPath", "users/1234/@views/users+1234");
     expect(document.doc).toEqual({
       "path": "users/1234",
       "srcProps": ["age", "avatar", "name"],
@@ -182,7 +182,7 @@ describe("createViewLogicFn", () => {
     const result = await logicFn[1](deleteLogicResultDoc);
     const document = result.documents[0];
     expect(document).toHaveProperty("action", "delete");
-    expect(document).toHaveProperty("dstPath", "users/1234/@views/1234+friend");
+    expect(document).toHaveProperty("dstPath", "users/1234/@views/users+1234");
   });
 
   it("should build @views doc when viewPaths is empty", async () => {
