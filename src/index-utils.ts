@@ -86,7 +86,7 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
     console.debug("Not distributing doc for action simulate-submit-form");
   }
 
-  if (["merge", "delete"].includes(action)) {
+  if (["create", "merge", "delete"].includes(action)) {
     await queueRunViewLogics(logicResultDoc);
   }
 }
