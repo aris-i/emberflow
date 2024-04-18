@@ -28,11 +28,14 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
   }
 
   const srcToDstLogicFn: ViewLogicFn = async (logicResultDoc: LogicResultDoc) => {
-    async function buildViewsCollection() {
+    async function populateDestPathsAndBuildViewsCollection() {
       const destDocPath = docPaths[destEntity];
       const docId = actualSrcPath.split("/").slice(-1)[0];
       const dehydratedPath = `${destDocPath.split("/").slice(0, -1).join("/")}/${docId}`;
       destPaths = await hydrateDocPath(dehydratedPath, {});
+
+      if (action === "delete") return;
+
       for (const path of destPaths) {
         const docId = path.split("/").slice(-1)[0];
         const srcViewsPath = formViewsPath(docId);
@@ -44,7 +47,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       }
     }
 
-    function syncDeleteToViews() {
+    function syncDeleteToDestPaths() {
       const documents = destPaths.map((destPath) => {
         return {
           action: "delete" as LogicResultDocAction,
@@ -60,7 +63,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       } as LogicResult;
     }
 
-    function syncMergeToViews() {
+    function syncMergeToDestPaths() {
       const now = admin.firestore.Timestamp.now();
       const viewDoc: Record<string, any> = {
         "updatedByViewDefinitionAt": now,
@@ -90,6 +93,20 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
         timeFinished: now,
         documents,
       } as LogicResult;
+    }
+
+    async function syncViewSrcPropsIfDifferentFromViewDefinition() {
+      for (const viewPath of viewPaths) {
+        const {srcProps: viewPathSrcProps, path} = viewPath;
+        const sortedSrcProps = srcProps.sort();
+        if (viewPathSrcProps.join(",") === sortedSrcProps.join(",")) {
+          continue;
+        }
+
+        const docId = path.split("/").slice(-1)[0];
+        const srcViewsPath = formViewsPath(docId);
+        await db.doc(srcViewsPath).update({srcProps: sortedSrcProps});
+      }
     }
 
     const {
@@ -124,27 +141,19 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       const srcRef = db.doc(actualSrcPath);
       const isViewsAlreadyBuilt = (await srcRef.get()).data()?.[`@viewsAlreadyBuilt+${destEntity}`];
       if (!isViewsAlreadyBuilt) {
-        await buildViewsCollection();
-        await srcRef.update({[`@viewsAlreadyBuilt+${destEntity}`]: true});
+        await populateDestPathsAndBuildViewsCollection();
+        if (action === "merge") {
+          await srcRef.update({[`@viewsAlreadyBuilt+${destEntity}`]: true});
+        }
       }
     }
 
-    for (const viewPath of viewPaths) {
-      const {srcProps: viewPathSrcProps, path} = viewPath;
-      const sortedSrcProps = srcProps.sort();
-      if (viewPathSrcProps.join(",") === sortedSrcProps.join(",")) {
-        continue;
-      }
-
-      const docId = path.split("/").slice(-1)[0];
-      const srcViewsPath = formViewsPath(docId);
-      await db.doc(srcViewsPath).update({srcProps: sortedSrcProps});
-    }
+    await syncViewSrcPropsIfDifferentFromViewDefinition();
 
     if (action === "delete") {
-      return syncDeleteToViews();
+      return syncDeleteToDestPaths();
     } else {
-      return syncMergeToViews();
+      return syncMergeToDestPaths();
     }
   };
 
