@@ -37,6 +37,7 @@ export interface LogicResultDoc{
     doc?: FirebaseFirestore.DocumentData;
     instructions?: { [key: string]: string };
     skipEntityDuringRecursion?: string[];
+    skipRunViewLogics?: boolean;
 }
 
 export type Instructions = { [key: string]: string };

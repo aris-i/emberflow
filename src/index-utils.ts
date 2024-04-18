@@ -43,6 +43,7 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
     doc,
     instructions,
     dstPath,
+    skipRunViewLogics,
   } = logicResultDoc;
   const dstDocRef = db.doc(dstPath);
   console.debug(`Distributing doc with Action: ${action}`);
@@ -86,7 +87,7 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
     console.debug("Not distributing doc for action simulate-submit-form");
   }
 
-  if (["create", "merge", "delete"].includes(action)) {
+  if (!skipRunViewLogics && ["create", "merge", "delete"].includes(action)) {
     await queueRunViewLogics(logicResultDoc);
   }
 }

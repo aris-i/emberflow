@@ -21,13 +21,43 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     srcProps,
     destEntity,
   } = viewDefinition;
-  function formViewsPath(docId: string) {
+  function formViewDocId(path: string) {
+    let viewId = path.replace("/", "+");
+    if (viewId.startsWith("+")) {
+      viewId = viewId.slice(1);
+    }
+    return viewId;
+  }
+
+  function formViewsPath(path: string) {
+    const viewDocId = formViewDocId(path);
+    const docId = path.split("/").slice(-1)[0];
     const srcDocPath = docPaths[srcEntity];
     const srcPath = srcDocPath.split("/").slice(0, -1).join("/") + "/" + docId;
-    return `${srcPath}/@views/${docId}+${destEntity}`;
+    return `${srcPath}/@views/${viewDocId}`;
   }
 
   const srcToDstLogicFn: ViewLogicFn = async (logicResultDoc: LogicResultDoc) => {
+    const {
+      doc,
+      instructions,
+      dstPath: actualSrcPath,
+      action,
+    } = logicResultDoc;
+    console.log(`Executing ViewLogic on document at ${actualSrcPath}...`);
+
+    if (action === "create") {
+      const srcRef = db.doc(actualSrcPath);
+      await srcRef.update({[`@viewsAlreadyBuilt+${destEntity}`]: true});
+
+      return {
+        name: `${destEntity} ViewLogic`,
+        status: "finished",
+        timeFinished: admin.firestore.Timestamp.now(),
+        documents: [],
+      } as LogicResult;
+    }
+
     async function populateDestPathsAndBuildViewsCollection() {
       const destDocPath = docPaths[destEntity];
       const docId = actualSrcPath.split("/").slice(-1)[0];
@@ -37,8 +67,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       if (action === "delete") return;
 
       for (const path of destPaths) {
-        const docId = path.split("/").slice(-1)[0];
-        const srcViewsPath = formViewsPath(docId);
+        const srcViewsPath = formViewsPath(path);
         await db.doc(srcViewsPath).set({
           path,
           srcProps: srcProps.sort(),
@@ -48,11 +77,12 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     }
 
     function syncDeleteToDestPaths() {
-      const documents = destPaths.map((destPath) => {
+      const documents: LogicResultDoc[] = destPaths.map((destPath) => {
         return {
           action: "delete" as LogicResultDocAction,
           dstPath: destPath,
           priority: "normal" as LogicResultDocPriority,
+          skipRunViewLogics: true,
         };
       });
       return {
@@ -77,13 +107,14 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
           viewInstructions[srcProp] = instructions[srcProp];
         }
       }
-      const documents = destPaths.map((destPath) => {
+      const documents: LogicResultDoc[] = destPaths.map((destPath) => {
         return {
           action: "merge" as LogicResultDocAction,
           dstPath: destPath,
           doc: viewDoc,
           instructions: viewInstructions,
           priority: "low" as LogicResultDocPriority,
+          skipRunViewLogics: true,
         };
       });
 
@@ -103,23 +134,15 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
           continue;
         }
 
-        const docId = path.split("/").slice(-1)[0];
-        const srcViewsPath = formViewsPath(docId);
+        const srcViewsPath = formViewsPath(path);
         await db.doc(srcViewsPath).update({srcProps: sortedSrcProps});
       }
     }
 
-    const {
-      doc,
-      instructions,
-      dstPath: actualSrcPath,
-      action,
-    } = logicResultDoc;
     const modifiedFields = [
       ...Object.keys(doc || {}),
       ...Object.keys(instructions || {}),
     ];
-    console.log(`Executing ViewLogic on document at ${actualSrcPath}...`);
 
     let query;
     if (action === "delete") {
@@ -163,8 +186,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       status: "finished",
       documents: [],
     };
-    const docId = logicResultDoc.dstPath.split("/").slice(-1)[0];
-    const srcViewsPath = formViewsPath(docId);
+    const srcViewsPath = formViewsPath(logicResultDoc.dstPath);
     if (srcViewsPath.includes("{")) {
       console.error("Cannot run Dst to Src ViewLogic on a path with a placeholder");
       return logicResult;
