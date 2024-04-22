@@ -270,17 +270,17 @@ describe("createViewLogicFn", () => {
   it("should update @views doc when srcProps is not equal", async () => {
     colGetMock.mockResolvedValue({
       docs: [{
+        id: "users+456+friends+1234",
         data: () => {
           return {
-            "@id": "1234+friend",
             "path": "users/456/friends/1234",
             "srcProps": ["name", "avatar"],
           };
         },
       }, {
+        id: "users+789+friends+1234",
         data: () => {
           return {
-            "@id": "1234+friend",
             "path": "users/789/friends/1234",
             "srcProps": ["name", "avatar"],
           };
@@ -309,20 +309,74 @@ describe("createViewLogicFn", () => {
     expect(result.documents.length).toEqual(2);
   });
 
+  it("should recreate @views doc when id is incorrect", async () => {
+    const deleteMock = jest.fn();
+    colGetMock.mockResolvedValue({
+      docs: [{
+        id: "users+456+friends+1234",
+        data: () => {
+          return {
+            "path": "users/456/friends/1234",
+            "srcProps": ["name", "avatar"],
+          };
+        },
+      }, {
+        id: "1234+friend",
+        ref: {
+          delete: deleteMock,
+        },
+        data: () => {
+          return {
+            "path": "users/789/friends/1234",
+            "srcProps": ["name", "avatar"],
+          };
+        },
+      }],
+    });
+
+    // Create the logic function using the viewDefinition
+    const logicFn = viewLogics.createViewLogicFn(vd1);
+
+    // Call the logic function with the test action
+    const result = await logicFn[0](mergeLogicResultDoc);
+
+    expect(colGetMock).toHaveBeenCalledTimes(1);
+    expect(docSpy).toHaveBeenCalledWith("users/1234/@views/users+456+friends+1234");
+    expect(docUpdateMock).toHaveBeenCalledTimes(1);
+    expect(docUpdateMock).toHaveBeenCalledWith({
+      "srcProps": [
+        "age", "avatar", "name",
+      ],
+    });
+
+    expect(deleteMock).toHaveBeenCalledTimes(1);
+    expect(docSpy).toHaveBeenCalledWith("users/1234/@views/users+789+friends+1234");
+    expect(docSetMock).toHaveBeenCalledTimes(1);
+    expect(docSetMock).toHaveBeenCalledWith({
+      "path": "users/789/friends/1234",
+      "srcProps": ["age", "avatar", "name"],
+      "destEntity": "friend",
+    });
+
+    expect(result).toBeDefined();
+    expect(result.documents).toBeDefined();
+    expect(result.documents.length).toEqual(2);
+  });
+
   it("should create a logic function that processes the given logicResultDoc and view definition", async () => {
     colGetMock.mockResolvedValueOnce({
       docs: [{
+        id: "users+456+friends+1234",
         data: () => {
           return {
-            "@id": "1234+friend",
             "path": "users/456/friends/1234",
             "srcProps": ["age", "avatar", "name"],
           };
         },
       }, {
+        id: "users+789+friends+1234",
         data: () => {
           return {
-            "@id": "1234+friend",
             "path": "users/789/friends/1234",
             "srcProps": ["age", "avatar", "name"],
           };
@@ -331,33 +385,33 @@ describe("createViewLogicFn", () => {
     })
       .mockResolvedValueOnce({
         docs: [{
+          id: "users+1234+posts+987",
           data: () => {
             return {
-              "@id": "987+post",
               "path": "users/1234/posts/987",
               "srcProps": ["name", "avatar"],
             };
           },
         }, {
+          id: "users+1234+posts+654",
           data: () => {
             return {
-              "@id": "654+post",
               "path": "users/1234/posts/654",
               "srcProps": ["name", "avatar"],
             };
           },
         }, {
+          id: "users+890+posts+987",
           data: () => {
             return {
-              "@id": "987+post",
               "path": "users/890/posts/987",
               "srcProps": ["name", "avatar"],
             };
           },
         }, {
+          id: "users+890+posts+654",
           data: () => {
             return {
-              "@id": "654+post",
               "path": "users/890/posts/654",
               "srcProps": ["name", "avatar"],
             };
@@ -366,17 +420,17 @@ describe("createViewLogicFn", () => {
       })
       .mockResolvedValueOnce({
         docs: [{
+          id: "users+456+friends+1234",
           data: () => {
             return {
-              "@id": "1234+friend",
               "path": "users/456/friends/1234",
               "srcProps": ["username", "avatarUrl"],
             };
           },
         }, {
+          id: "users+789+friends+1234",
           data: () => {
             return {
-              "@id": "1234+friend",
               "path": "users/789/friends/1234",
               "srcProps": ["username", "avatarUrl"],
             };
@@ -385,6 +439,7 @@ describe("createViewLogicFn", () => {
       })
       .mockResolvedValueOnce({
         docs: [{
+          id: "servers+123",
           data: () => {
             return {
               "path": "servers/123",
@@ -392,6 +447,7 @@ describe("createViewLogicFn", () => {
             };
           },
         }, {
+          id: "servers+456",
           data: () => {
             return {
               "path": "servers/456",
