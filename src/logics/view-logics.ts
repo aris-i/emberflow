@@ -125,14 +125,26 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     }
 
     async function syncViewSrcPropsIfDifferentFromViewDefinition() {
-      for (const viewPath of viewPaths) {
-        const {srcProps: viewPathSrcProps, path} = viewPath;
+      for (const doc of viewPathDocs) {
+        const {srcProps: viewPathSrcProps, path} = doc.data();
+        const viewDocId = formViewDocId(path);
+        const srcViewsPath = formViewsPath(path);
         const sortedSrcProps = srcProps.sort();
+
+        if (viewDocId !== doc.id) {
+          await doc.ref.delete();
+          await db.doc(srcViewsPath).set({
+            path,
+            srcProps: sortedSrcProps,
+            destEntity,
+          });
+          continue;
+        }
+
         if (viewPathSrcProps.join(",") === sortedSrcProps.join(",")) {
           continue;
         }
 
-        const srcViewsPath = formViewsPath(path);
         await db.doc(srcViewsPath).update({srcProps: sortedSrcProps});
       }
     }
@@ -153,11 +165,11 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
         .where("srcProps", "array-contains-any", modifiedFields)
         .where("destEntity", "==", destEntity);
     }
-    const viewPaths = (await query.get()).docs.map((doc) => doc.data());
+    const viewPathDocs = (await query.get()).docs;
 
-    let destPaths = viewPaths.map((viewPath) => viewPath.path);
+    let destPaths = viewPathDocs.map((doc) => doc.data().path);
 
-    if (viewPaths.length === 0) {
+    if (viewPathDocs.length === 0) {
       // Check if the src doc has "@viewsAlreadyBuilt" field
       const srcRef = db.doc(actualSrcPath);
       const isViewsAlreadyBuilt = (await srcRef.get()).data()?.[`@viewsAlreadyBuilt+${destEntity}`];
@@ -194,6 +206,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       const viewResultDoc: LogicResultDoc = {
         action: "delete",
         dstPath: srcViewsPath,
+        skipRunViewLogics: true,
       };
       logicResult.documents.push(viewResultDoc);
     } else {
@@ -205,6 +218,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
           srcProps: srcProps.sort(),
           destEntity,
         },
+        skipRunViewLogics: true,
       };
       logicResult.documents.push(viewResultDoc);
     }

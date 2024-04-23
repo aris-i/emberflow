@@ -142,7 +142,7 @@ export function initializeEmberFlow(
     const dstToSrcLogicConfig = {
       name: `${viewDef.destEntity} Reverse ViewLogic`,
       entity: viewDef.destEntity,
-      actionTypes: ["create", "delete"] as LogicResultDocAction[], // TODO update test
+      actionTypes: ["create", "delete"] as LogicResultDocAction[],
       modifiedFields: "all" as LogicConfigModifiedFieldsType,
       viewLogicFn: dstToSrcViewLogicFn,
     };
