@@ -15,27 +15,27 @@ jest.mock("../../utils/pubsub", () => {
   };
 });
 
-const createEvent = () => {
-  return {
-    id: "test-event",
-    data: {
-      message: {
-        json: {
-          action: "merge",
-          priority: "high",
-          instructions: {"sample": "++"},
-          dstPath: "/users/test-user-id/documents/doc1",
-        },
-      },
-    },
-  } as CloudEvent<MessagePublishedData>;
-};
-
 describe("debounce", () => {
   let setTimeoutSpy: jest.SpyInstance;
   let clearTimeoutSpy: jest.SpyInstance;
   let initialGeneratedMap: Map<string, Instructions> | undefined;
   let func: jest.Mock;
+
+  function createEvent() {
+    return {
+      id: "test-event",
+      data: {
+        message: {
+          json: {
+            action: "merge",
+            priority: "high",
+            instructions: {"sample": "++"},
+            dstPath: "/users/test-user-id/documents/doc1",
+          },
+        },
+      },
+    } as CloudEvent<MessagePublishedData>;
+  }
 
   beforeEach(() => {
     jest.spyOn(global, "setImmediate").mockImplementation((callback) => {
