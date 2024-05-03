@@ -147,6 +147,10 @@ export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublis
     }
   }
 
+  console.debug("Event typeof:", typeof event);
+  console.debug("Is event instanceof Map", event instanceof Map);
+  console.debug("Event toString", Object.prototype.toString.call(event));
+  console.debug("Event:", event);
   if (event instanceof Map) {
     // Process the reduced instructions here
     for (const [dstPath, instructions] of event.entries()) {
