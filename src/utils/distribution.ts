@@ -157,14 +157,19 @@ export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublis
       console.log("Skipping duplicate message");
       return;
     }
-    const instructionsMessage: InstructionsMessage = event.data.message.json;
-    console.log("Received user logic result doc:", instructionsMessage);
+    try {
+      const instructionsMessage: InstructionsMessage = event.data.message.json;
+      console.log("Received user logic result doc:", instructionsMessage);
 
-    console.info("Applying Instructions");
-    const {dstPath, instructions} = instructionsMessage;
-    await applyInstructions(instructions, dstPath);
+      console.info("Applying Instructions");
+      const {dstPath, instructions} = instructionsMessage;
+      await applyInstructions(instructions, dstPath);
 
-    await pubsubUtils.trackProcessedIds(INSTRUCTIONS_TOPIC_NAME, event.id);
+      await pubsubUtils.trackProcessedIds(INSTRUCTIONS_TOPIC_NAME, event.id);
+    } catch (e) {
+      console.error("PubSub message was not JSON", e);
+      throw new Error("No json in message");
+    }
   }
 }
 
@@ -254,14 +259,14 @@ export const mergeInstructions = (existingInstructions: Instructions, instructio
   }
 };
 
-export const instructionsReducer = async (reducedInstructions: Map<string, Instructions>, event: CloudEvent<MessagePublishedData<any>>) => {
+export const instructionsReducer = async (reducedInstructions: Map<string, Instructions>, event: CloudEvent<MessagePublishedData>) => {
   if (await pubsubUtils.isProcessed(INSTRUCTIONS_TOPIC_NAME, event.id)) {
     console.log("Skipping duplicate message");
     return;
   }
   try {
     const instructionsMessage: InstructionsMessage = event.data.message.json;
-    // console.log("Received user logic result doc:", instructionsMessage);
+    console.log("Received user logic result doc:", instructionsMessage);
 
     const {dstPath, instructions} = instructionsMessage;
     const existingInstructions = reducedInstructions.get(dstPath);
