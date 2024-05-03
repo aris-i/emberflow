@@ -19,7 +19,7 @@ export function debounce<T extends any[], A extends object|any[]>(
     if (processing) return;
     processing = true;
 
-    setImmediate(async () => {
+    setImmediate(() => {
       try {
         const args = queue.shift();
         if (reducer && accumulatedResult !== undefined && args !== undefined) {
