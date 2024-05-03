@@ -8,17 +8,13 @@ import * as indexUtils from "../../index-utils";
 import {
   FOR_DISTRIBUTION_TOPIC,
   FOR_DISTRIBUTION_TOPIC_NAME,
-  initializeEmberFlow, INSTRUCTIONS_REDUCER_TOPIC_NAME,
-  INSTRUCTIONS_TOPIC, INSTRUCTIONS_TOPIC_NAME, VIEW_LOGICS_TOPIC,
+  initializeEmberFlow,
+  INSTRUCTIONS_TOPIC, INSTRUCTIONS_TOPIC_NAME,
 } from "../../index";
 import * as admin from "firebase-admin";
 import {dbStructure, Entity} from "../../sample-custom/db-structure";
 import {securityConfig} from "../../sample-custom/security";
 import {validatorConfig} from "../../sample-custom/validators";
-import {PubSub, Subscription, Message} from "@google-cloud/pubsub";
-import {firestore} from "firebase-admin";
-import Timestamp = firestore.Timestamp;
-import {StatusError} from "@google-cloud/pubsub/build/src/message-stream";
 
 jest.mock("../../utils/pubsub", () => {
   return {
@@ -88,6 +84,7 @@ describe("onMessageForDistributionQueue", () => {
       dstPath: "/users/test-user-id/documents/doc1",
     };
     const event = {
+      id: "test-event",
       data: {
         message: {
           json: doc1,
@@ -108,6 +105,7 @@ describe("onMessageForDistributionQueue", () => {
       dstPath: "/users/test-user-id/documents/doc1",
     };
     const event = {
+      id: "test-event",
       data: {
         message: {
           json: doc1,
@@ -129,6 +127,7 @@ describe("onMessageForDistributionQueue", () => {
       dstPath: "/users/test-user-id/documents/doc1",
     };
     const event = {
+      id: "test-event",
       data: {
         message: {
           json: doc1,
@@ -150,6 +149,7 @@ describe("onMessageForDistributionQueue", () => {
       dstPath: "/users/test-user-id/documents/doc1",
     };
     const event = {
+      id: "test-event",
       data: {
         message: {
           json: doc1,
@@ -344,7 +344,7 @@ describe("onMessageInstructionsQueue", () => {
     expect(console.log).toHaveBeenCalledWith("Skipping duplicate message");
   });
 
-  it("should process instructions correctly", async () => {
+  it("should process event instructions correctly", async () => {
     isProcessedMock.mockResolvedValueOnce(false);
     const expectedData = {
       "count": admin.firestore.FieldValue.increment(1),
@@ -376,7 +376,7 @@ describe("onMessageInstructionsQueue", () => {
         },
       },
     } as CloudEvent<MessagePublishedData>;
-    const result = await distribution.onMessageInstructionsQueue(event);
+    await distribution.onMessageInstructionsQueue(event);
 
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
@@ -386,7 +386,40 @@ describe("onMessageInstructionsQueue", () => {
     expect(docUpdateMock.mock.calls[0][0]).toStrictEqual(expectedData);
     expect(docUpdateMock.mock.calls[1][0]).toStrictEqual(expectedRemoveData);
     expect(trackProcessedIdsMock).toHaveBeenCalledWith(INSTRUCTIONS_TOPIC_NAME, event.id);
-    expect(result).toEqual("Processed instructions");
+  });
+
+  it("should process map instructions correctly", async () => {
+    const expectedData = {
+      "count": admin.firestore.FieldValue.increment(1),
+      "score": admin.firestore.FieldValue.increment(5),
+      "minusCount": admin.firestore.FieldValue.increment(-1),
+      "minusScore": admin.firestore.FieldValue.increment(-3),
+      "optionalField": admin.firestore.FieldValue.delete(),
+      "arrayUnion": admin.firestore.FieldValue.arrayUnion("add-this"),
+    };
+    const expectedRemoveData = {
+      "arrayRemove": admin.firestore.FieldValue.arrayRemove("remove-this"),
+    };
+    const instructions: Map<string, Instructions> = new Map();
+    instructions.set("/users/test-user-id/documents/test-doc-id", {
+      "count": "++",
+      "score": "+5",
+      "minusCount": "--",
+      "minusScore": "-3",
+      "optionalField": "del",
+      "arrayUnion": "arr(+add-this)",
+      "arrayRemove": "arr(-remove-this)",
+    });
+
+    await distribution.onMessageInstructionsQueue(instructions);
+
+    expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
+    expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
+    expect(docUpdateMock).toHaveBeenCalledTimes(2);
+    expect(docUpdateMock).toHaveBeenCalledWith(expectedData);
+    expect(docUpdateMock).toHaveBeenCalledWith(expectedRemoveData);
+    expect(docUpdateMock.mock.calls[0][0]).toStrictEqual(expectedData);
+    expect(docUpdateMock.mock.calls[1][0]).toStrictEqual(expectedRemoveData);
   });
 });
 
@@ -522,208 +555,82 @@ describe("mergeInstructions", () => {
   });
 });
 
-describe("reduceInstructions", () => {
-  const duration = 3000;
-  const sleep = 100;
-  const timeoutId = 123;
-  let queueInstructionsSpy: jest.SpyInstance;
-  let publishMessageSpy: jest.SpyInstance;
-  let subscriptionSpy: jest.SpyInstance;
-  let resolveMock: jest.Mock;
-  let reducedInstructions = new Map();
-  const subscriptionMock = {
-    close: jest.fn(),
-    on: jest.fn(),
-    removeAllListeners: jest.fn(),
-  };
+describe("instructionsReducer", () => {
+  let mergeInstructionsSpy: jest.SpyInstance;
 
   beforeEach(() => {
+    mergeInstructionsSpy = jest.spyOn(distribution, "mergeInstructions");
+  });
+
+  it("should skip duplicate message", async () => {
+    isProcessedMock.mockResolvedValueOnce(true);
     jest.spyOn(console, "log").mockImplementation();
-    jest.spyOn(console, "error").mockImplementation();
-    subscriptionSpy = jest.spyOn(PubSub.prototype, "subscription").mockImplementation(() => {
-      return subscriptionMock as unknown as Subscription;
-    });
-    queueInstructionsSpy = jest.spyOn(distribution, "queueInstructions");
-    publishMessageSpy = jest.spyOn(VIEW_LOGICS_TOPIC, "publishMessage")
-      .mockImplementation(() => {
-        return "message-id";
-      });
-    const now = Timestamp.now();
-    let startTime = false;
-    let dateNowCallInstance = 0;
-    jest.spyOn(Date, "now").mockImplementation(() => {
-      if (!startTime) {
-        startTime = true;
-        return now.toMillis();
-      }
-      const dateNow = now.toMillis() + ((duration + sleep) * dateNowCallInstance);
-      dateNowCallInstance++;
-      return dateNow;
-    });
-    jest.spyOn(global, "setTimeout").mockImplementation((callback) => {
-      callback();
-      return timeoutId as unknown as NodeJS.Timeout;
-    });
-    resolveMock = jest.fn().mockImplementation((map) => {
-      reducedInstructions = new Map(map as Map<string, Instructions>);
-    });
+    const doc1: LogicResultDoc = {
+      action: "merge",
+      priority: "high",
+      instructions: {"sample": "++"},
+      dstPath: "/users/test-user-id/documents/doc1",
+    };
+    const event = {
+      id: "test-event",
+      data: {
+        message: {
+          json: doc1,
+        },
+      },
+    } as CloudEvent<MessagePublishedData>;
+    const reducedInstructions: Map<string, Instructions> = new Map();
+    await distribution.instructionsReducer(reducedInstructions, event);
+
+    expect(isProcessedMock).toHaveBeenCalledWith(INSTRUCTIONS_TOPIC_NAME, event.id);
+    expect(console.log).toHaveBeenCalledWith("Skipping duplicate message");
   });
 
-  afterEach(() => {
-    jest.restoreAllMocks();
-    subscriptionMock.on.mockRestore();
-    subscriptionMock.close.mockRestore();
-    subscriptionMock.removeAllListeners.mockRestore();
+  it("should reduce instructions", async () => {
+    const doc1: LogicResultDoc = {
+      action: "merge",
+      priority: "high",
+      instructions: {"sample": "++"},
+      dstPath: "/users/test-user-id/documents/doc1",
+    };
+    const event = {
+      id: "test-event",
+      data: {
+        message: {
+          json: doc1,
+        },
+      },
+    } as CloudEvent<MessagePublishedData>;
+    const reducedInstructions: Map<string, Instructions> = new Map();
+    await distribution.instructionsReducer(reducedInstructions, event);
+
+    expect(trackProcessedIdsMock).toHaveBeenCalledWith(INSTRUCTIONS_TOPIC_NAME, event.id);
+    expect(reducedInstructions.get(doc1.dstPath)).toStrictEqual(doc1.instructions);
   });
 
-  it("should reject when received an error", async () => {
-    const error = {
-      code: 1,
-      details: "Unknown error",
-    } as StatusError;
-    let errorCallback: (error: StatusError) => void;
-    subscriptionMock.on.mockImplementation((event, callback) => {
-      if (event === "error") {
-        errorCallback = callback;
-      }
-    });
-    let promiseCallInstance = -1;
-    jest.spyOn(global, "Promise").mockImplementation((callback) => {
-      promiseCallInstance++;
-      if (promiseCallInstance % 2 === 0) {
-        if (promiseCallInstance === 2) {
-          errorCallback(error);
-        }
-        callback(resolveMock, jest.fn());
-        return reducedInstructions as unknown as Promise<Map<string, Instructions>>;
-      }
-      callback(jest.fn(), jest.fn());
-      return undefined as unknown as Promise<void>;
-    });
-    const clearTimeoutSpy = jest.spyOn(global, "clearTimeout");
-
-    await distribution.reduceInstructions();
-    expect(subscriptionMock.on).toHaveBeenCalledWith("error", expect.any(Function));
-    expect(resolveMock).toHaveBeenCalledTimes(17);
-    expect(clearTimeoutSpy).toHaveBeenCalledTimes(1);
-    expect(clearTimeoutSpy).toHaveBeenCalledWith(timeoutId);
-    expect(console.error).toHaveBeenCalledWith(`Received error: ${error}`);
-  });
-
-  it("should execute the sequence of operations correctly", async () => {
-    const ackMock = jest.fn();
-    const message1 = {
-      ack: ackMock,
-      data: JSON.stringify({
-        dstPath: "/users/test-user-id/documents/test-doc-id",
-        instructions: {
-          "count": "++",
+  it("should merge instructions", async () => {
+    const doc1: LogicResultDoc = {
+      action: "merge",
+      priority: "normal",
+      instructions: {"sample": "++"},
+      dstPath: "/users/test-user-id/documents/doc1",
+    };
+    const event = {
+      id: "test-event",
+      data: {
+        message: {
+          json: doc1,
         },
-      }),
-      id: "message1",
-    } as unknown as Message;
-    const message2 = {
-      ack: ackMock,
-      data: JSON.stringify({
-        dstPath: "/users/test-user-id/documents/test-doc-id",
-        instructions: {
-          "count": "+2",
-        },
-      }),
-      id: "message2",
-    } as unknown as Message;
-    const message3 = {
-      ack: ackMock,
-      data: JSON.stringify({
-        dstPath: "/users/test-user-id/documents/test-doc-id",
-        instructions: {
-          "array": "arr(value)",
-        },
-      }),
-      id: "message3",
-    } as unknown as Message;
-    const message4 = {
-      ack: ackMock,
-      data: JSON.stringify({
-        dstPath: "/users/test-user-id/documents/another-test-doc-id",
-        instructions: {
-          "count": "++",
-        },
-      }),
-      id: "message4",
-    } as unknown as Message;
-    let messageCallback: (message: Message) => void;
-    subscriptionMock.on.mockImplementation((event, callback) => {
-      if (event === "message") {
-        messageCallback = callback;
-      }
-    });
-    let promiseCallInstance = -1;
-    jest.spyOn(global, "Promise").mockImplementation((callback) => {
-      promiseCallInstance++;
-      if (promiseCallInstance % 2 === 0) {
-        if (promiseCallInstance === 0) {
-          messageCallback(message1);
-          messageCallback(message2);
-        }
-        if (promiseCallInstance === 2) {
-          messageCallback(message3);
-          messageCallback(message4);
-        }
-        callback(resolveMock, jest.fn());
-        return reducedInstructions as unknown as Promise<Map<string, Instructions>>;
-      }
-      callback(jest.fn(), jest.fn());
-      return undefined as unknown as Promise<void>;
-    });
-
-    await distribution.reduceInstructions();
-    expect(subscriptionSpy).toHaveBeenCalledWith(INSTRUCTIONS_REDUCER_TOPIC_NAME);
-    expect(subscriptionMock.on).toHaveBeenCalledTimes(2);
-    expect(subscriptionMock.on).toHaveBeenCalledWith("message", expect.any(Function));
-    expect(subscriptionMock.on).toHaveBeenCalledWith("error", expect.any(Function));
-    expect(resolveMock).toHaveBeenCalledTimes(16);
-    expect(console.log).toHaveBeenCalledWith("Time is up, stopping message reception");
-    expect(ackMock).toHaveBeenCalledTimes(4);
-    expect(console.log).toHaveBeenCalledWith("Received message message1.");
-    expect(console.log).toHaveBeenCalledWith("Received message message2.");
-    expect(console.log).toHaveBeenCalledWith("Received 1 messages within 3 seconds.");
-    expect(queueInstructionsSpy).toHaveBeenCalledTimes(3);
-    expect(publishMessageSpy).toHaveBeenCalledTimes(3);
-    expect(queueInstructionsSpy).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id", {
-      "count": "+3",
-    });
-    expect(publishMessageSpy).toHaveBeenCalledWith({
-      json: {
-        action: "merge",
-        dstPath: "/users/test-user-id/documents/test-doc-id",
-        instructions: {"count": "+3"},
       },
-    });
-    expect(console.log).toHaveBeenCalledWith("Received message message3.");
-    expect(console.log).toHaveBeenCalledWith("Received message message4.");
-    expect(console.log).toHaveBeenCalledWith("Received 2 messages within 3 seconds.");
-    expect(queueInstructionsSpy).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id", {
-      "array": "arr(value)",
-    });
-    expect(publishMessageSpy).toHaveBeenCalledWith({
-      json: {
-        action: "merge",
-        dstPath: "/users/test-user-id/documents/test-doc-id",
-        instructions: {"array": "arr(value)"},
-      },
-    });
-    expect(queueInstructionsSpy).toHaveBeenCalledWith("/users/test-user-id/documents/another-test-doc-id", {
-      "count": "++",
-    });
-    expect(publishMessageSpy).toHaveBeenCalledWith({
-      json: {
-        action: "merge",
-        dstPath: "/users/test-user-id/documents/another-test-doc-id",
-        instructions: {"count": "++"},
-      },
-    });
-    expect(subscriptionMock.close).toHaveBeenCalledTimes(1);
-    expect(subscriptionMock.removeAllListeners).toHaveBeenCalledTimes(1);
+    } as CloudEvent<MessagePublishedData>;
+    const reducedInstructions: Map<string, Instructions> = new Map();
+    const existingInstructions = {"sample": "++"};
+    reducedInstructions.set(doc1.dstPath, existingInstructions);
+    const expectedReducedInstructions = {"sample": "+2"};
+    await distribution.instructionsReducer(reducedInstructions, event);
+
+    expect(mergeInstructionsSpy).toHaveBeenCalledWith(existingInstructions, doc1.instructions);
+    expect(trackProcessedIdsMock).toHaveBeenCalledWith(INSTRUCTIONS_TOPIC_NAME, event.id);
+    expect(reducedInstructions.get(doc1.dstPath)).toStrictEqual(expectedReducedInstructions);
   });
 });

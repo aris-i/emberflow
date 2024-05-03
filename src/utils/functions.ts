@@ -18,11 +18,11 @@ export function debounce<T extends any[], A extends object|any[]>(
     if (processing) return;
     processing = true;
 
-    setImmediate(() => {
+    setImmediate(async () => {
       try {
         const args = queue.shift();
         if (reducer && accumulatedResult !== undefined && args !== undefined) {
-          reducer.reducerFn(accumulatedResult, ...args);
+          await reducer.reducerFn(accumulatedResult, ...args);
         }
       } catch (error) {
         console.error("Error processing queue:", error);

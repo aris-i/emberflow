@@ -261,7 +261,7 @@ export const instructionsReducer = async (reducedInstructions: Map<string, Instr
   }
   try {
     const instructionsMessage: InstructionsMessage = event.data.message.json;
-    console.log("Received user logic result doc:", instructionsMessage);
+    // console.log("Received user logic result doc:", instructionsMessage);
 
     const {dstPath, instructions} = instructionsMessage;
     const existingInstructions = reducedInstructions.get(dstPath);
