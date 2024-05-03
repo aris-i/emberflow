@@ -64,15 +64,15 @@ export function debounce<T extends any[], A extends object|any[]>(
       // Ensure maxWait is respected
       prevAccumulatedResult = accumulatedResult;
       accumulatedResult = reducer?.initialValueFactory(); // Reset to a new initial value after executing
-      invokeFunction(...args);
       firstTimeCalled = null; // Reset timing
+      invokeFunction(...args);
     } else {
       // Standard debounce behavior
       timeoutId = setTimeout(() => {
         prevAccumulatedResult = accumulatedResult;
         accumulatedResult = reducer?.initialValueFactory(); // Reset to a new initial value after executing
-        invokeFunction(...args);
         firstTimeCalled = null; // Reset timing
+        invokeFunction(...args);
       }, wait);
     }
   };
