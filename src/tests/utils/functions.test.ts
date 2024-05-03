@@ -18,7 +18,6 @@ jest.mock("../../utils/pubsub", () => {
 describe("debounce", () => {
   let setTimeoutSpy: jest.SpyInstance;
   let clearTimeoutSpy: jest.SpyInstance;
-  let initialGeneratedMap: Map<string, Instructions> | undefined;
   let func: jest.Mock;
 
   function createEvent() {
@@ -45,7 +44,6 @@ describe("debounce", () => {
     clearTimeoutSpy = jest.spyOn(global, "clearTimeout");
     setTimeoutSpy = jest.spyOn(global, "setTimeout");
     func = jest.fn();
-    initialGeneratedMap = undefined;
   });
 
   afterEach(() => {
@@ -69,10 +67,6 @@ describe("debounce", () => {
     const debouncedFunc = debounce(func, 200, 1000, {
       reducerFn: instructionsReducer,
       initialValueFactory: () => {
-        if (!initialGeneratedMap) {
-          initialGeneratedMap = new Map<string, Instructions>();
-          return initialGeneratedMap;
-        }
         return new Map<string, Instructions>();
       },
     },);
@@ -86,17 +80,13 @@ describe("debounce", () => {
     expect(clearTimeoutSpy).toHaveBeenCalledTimes(0);
     expect(setTimeoutSpy).toHaveBeenCalledTimes(1);
     expect(func).toHaveBeenCalledTimes(1);
-    expect(initialGeneratedMap).toStrictEqual(reducedInstructions);
+    expect(func).toHaveBeenCalledWith(reducedInstructions);
   });
 
   it("should invoke function when there are multiple events in queue", async () => {
     const debouncedFunc = debounce(func, 200, 1000, {
       reducerFn: instructionsReducer,
       initialValueFactory: () => {
-        if (!initialGeneratedMap) {
-          initialGeneratedMap = new Map<string, Instructions>();
-          return initialGeneratedMap;
-        }
         return new Map<string, Instructions>();
       },
     },);
@@ -112,17 +102,13 @@ describe("debounce", () => {
     expect(clearTimeoutSpy).toHaveBeenCalledTimes(2);
     expect(setTimeoutSpy).toHaveBeenCalledTimes(3);
     expect(func).toHaveBeenCalledTimes(1);
-    expect(initialGeneratedMap).toStrictEqual(reducedInstructions);
+    expect(func).toHaveBeenCalledWith(reducedInstructions);
   });
 
   it("should invoke function when maxWait is reached", async () => {
     const debouncedFunc = debounce(func, 200, 1000, {
       reducerFn: instructionsReducer,
       initialValueFactory: () => {
-        if (!initialGeneratedMap) {
-          initialGeneratedMap = new Map<string, Instructions>();
-          return initialGeneratedMap;
-        }
         return new Map<string, Instructions>();
       },
     },);
@@ -155,6 +141,6 @@ describe("debounce", () => {
     expect(clearTimeoutSpy).toHaveBeenCalledTimes(10);
     expect(setTimeoutSpy).toHaveBeenCalledTimes(10);
     expect(func).toHaveBeenCalledTimes(1);
-    expect(initialGeneratedMap).toStrictEqual(reducedInstructions);
+    expect(func).toHaveBeenCalledWith(reducedInstructions);
   });
 });
