@@ -156,6 +156,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
 
     let query;
     if (action === "delete") {
+      console.debug("action === delete");
       query = db.doc(actualSrcPath)
         .collection("@views")
         .where("destEntity", "==", destEntity);
@@ -170,9 +171,17 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     let destPaths = viewPathDocs.map((doc) => doc.data().path);
 
     if (viewPathDocs.length === 0) {
+      console.debug("viewPathDocs.length === 0");
       // Check if the src doc has "@viewsAlreadyBuilt" field
       const srcRef = db.doc(actualSrcPath);
-      const isViewsAlreadyBuilt = (await srcRef.get()).data()?.[`@viewsAlreadyBuilt+${destEntity}`];
+      let isViewsAlreadyBuilt;
+      if (action === "delete") {
+        console.debug("action === delete", "doc", doc);
+        isViewsAlreadyBuilt = doc?.[`@viewsAlreadyBuilt+${destEntity}`];
+      } else {
+        isViewsAlreadyBuilt = (await srcRef.get()).data()?.[`@viewsAlreadyBuilt+${destEntity}`];
+      }
+      console.debug("isViewsAlreadyBuilt", isViewsAlreadyBuilt);
       if (!isViewsAlreadyBuilt) {
         await populateDestPathsAndBuildViewsCollection();
         if (action === "merge") {

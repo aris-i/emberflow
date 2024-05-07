@@ -92,6 +92,10 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
   }
 
   if (!skipRunViewLogics && ["create", "merge", "delete"].includes(action)) {
+    if (action === "delete") {
+      const doc = (await db.doc(dstPath).get()).data();
+      logicResultDoc.doc = doc;
+    }
     await queueRunViewLogics(logicResultDoc);
   }
 }
