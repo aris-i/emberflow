@@ -48,6 +48,11 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
   const dstDocRef = db.doc(dstPath);
   console.debug(`Distributing doc with Action: ${action}`);
   if (action === "delete") {
+    if (!skipRunViewLogics){
+      const doc = (await dstDocRef.get()).data();
+      logicResultDoc.doc = doc;
+    }
+
     // Delete document at dstPath
     if (batch) {
       await batch.deleteDoc(dstDocRef);
