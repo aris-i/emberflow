@@ -141,7 +141,9 @@ export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublis
       }
     }
     const dstDocRef = db.doc(dstPath);
-    await dstDocRef.update(updateData);
+    if (Object.keys(updateData).length > 0) {
+      await dstDocRef.update(updateData);
+    }
     if (Object.keys(removeData).length > 0) {
       await dstDocRef.update(removeData);
     }

@@ -226,7 +226,7 @@ describe("onMessageInstructionsQueue", () => {
 
     expect(console.log).toHaveBeenCalledWith("Invalid instruction arr[Earth] for property planets");
     expect(console.log).toHaveBeenCalledWith("Invalid instruction arr{Asia} for property continents");
-    expect(docUpdateMock.mock.calls[0][0]).toStrictEqual({});
+    expect(docUpdateMock).not.toHaveBeenCalled();
   });
 
   it("should log no values found when parenthesis is empty", async () => {
@@ -247,7 +247,7 @@ describe("onMessageInstructionsQueue", () => {
     await distribution.onMessageInstructionsQueue(event);
 
     expect(console.log).toHaveBeenCalledWith("No values found in instruction arr() for property planets");
-    expect(docUpdateMock.mock.calls[0][0]).toStrictEqual({});
+    expect(docUpdateMock).not.toHaveBeenCalled();
   });
 
   it("should convert array union instructions correctly", async () => {
@@ -301,8 +301,8 @@ describe("onMessageInstructionsQueue", () => {
     } as CloudEvent<MessagePublishedData>;
     await distribution.onMessageInstructionsQueue(event);
 
-    expect(docUpdateMock.mock.calls[0][0]).toStrictEqual({});
-    expect(docUpdateMock.mock.calls[1][0]).toStrictEqual(expectedData);
+    expect(docUpdateMock).toHaveBeenCalledTimes(1);
+    expect(docUpdateMock.mock.calls[0][0]).toStrictEqual(expectedData);
   });
 
   it("should convert array union and remove instructions correctly in a single field", async () => {
