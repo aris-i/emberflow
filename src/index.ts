@@ -41,15 +41,19 @@ import {internalDbStructure, InternalEntity} from "./db-structure";
 import {cleanActionsAndForms, onMessageSubmitFormQueue} from "./utils/forms";
 import {PubSub, Topic} from "@google-cloud/pubsub";
 import {onMessagePublished} from "firebase-functions/v2/pubsub";
-import {deleteForms, reviveDateAndTimestamp, trimStrings} from "./utils/misc";
-import {instructionsReducer, onMessageForDistributionQueue, onMessageInstructionsQueue} from "./utils/distribution";
+import {reviveDateAndTimestamp, deleteForms, trimStrings} from "./utils/misc";
+import Database = database.Database;
+import {
+  onMessageForDistributionQueue,
+  onMessageInstructionsQueue,
+  instructionsReducer, convertInstructionsToDbValues,
+} from "./utils/distribution";
 import {cleanPubSubProcessedIds} from "./utils/pubsub";
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import {onDocumentCreated} from "firebase-functions/v2/firestore";
 import {onRequest} from "firebase-functions/v2/https";
 import {UserRecord} from "firebase-admin/lib/auth";
 import {debounce} from "./utils/functions";
-import Database = database.Database;
 
 export let admin: FirebaseAdmin;
 export let db: Firestore;
@@ -360,75 +364,119 @@ export async function onFormSubmit(
     let errorMessage = "";
     const runStatus = await runBusinessLogics(actionRef, action,
       async (actionRef, logicResults, page) => {
-      // Save all logic results under logicResults collection of action form
-        for (let i = 0; i < logicResults.length; i++) {
-          const {documents, ...logicResult} = logicResults[i];
-          const logicResultsRef = actionRef.collection("logicResults")
-            .doc(`${actionRef.id}-${page}-${i}`);
-          await logicResultsRef.set(logicResult);
-          const documentsRef = logicResultsRef.collection("documents");
-          for (let j = 0; j < documents.length; j++) {
-            await documentsRef.doc(`${logicResultsRef.id}-${j}`).set(documents[j]);
+        async function saveLogicResults() {
+          for (let i = 0; i < logicResults.length; i++) {
+            const {documents, ...logicResult} = logicResults[i];
+            const logicResultsRef = actionRef.collection("logicResults")
+              .doc(`${actionRef.id}-${page}-${i}`);
+            await logicResultsRef.set(logicResult);
+            const documentsRef = logicResultsRef.collection("documents");
+            for (let j = 0; j < documents.length; j++) {
+              await documentsRef.doc(`${logicResultsRef.id}-${j}`).set(documents[j]);
+            }
           }
         }
+        await saveLogicResults();
 
-        const errorLogicResults = logicResults.filter((result) => result.status === "error");
-        if (errorLogicResults.length > 0) {
-          errorMessage = errorMessage + errorLogicResults.map((result) => result.message).join("\n");
+        function updateErrorMessage() {
+          const errorLogicResults = logicResults.filter((result) => result.status === "error");
+          if (errorLogicResults.length > 0) {
+            errorMessage = errorMessage + errorLogicResults.map((result) => result.message).join("\n");
+          }
         }
+        updateErrorMessage();
 
-        console.info("Group logic docs by priority");
-        const {highPriorityDocs, normalPriorityDocs, lowPriorityDocs} = logicResults
-          .map((result) => result.documents)
-          .flat()
-          .reduce((acc, doc) => {
-            if (doc.priority === "high") {
-              acc.highPriorityDocs.push(doc);
-            } else if (!doc.priority || doc.priority === "normal") {
-              acc.normalPriorityDocs.push(doc);
-            } else {
-              acc.lowPriorityDocs.push(doc);
+        async function distributeTransactionalLogicResults() {
+          const transactionalResults = logicResults.filter((result) => result.transactional);
+          if (transactionalResults.length === 0) {
+            console.info("No transactional logic results to distribute");
+            return;
+          }
+          // We always distribute transactional results first
+          const transactionalDstPathLogicDocsMap = await expandConsolidateAndGroupByDstPath(transactionalResults.map((result) => result.documents).flat());
+          // Write to firestore in one transaction
+          await db.runTransaction(async (transaction) => {
+            for (const [dstPath, logicDocs] of transactionalDstPathLogicDocsMap) {
+              for (const logicDoc of logicDocs) {
+                const docRef = db.doc(dstPath);
+                const action = logicDoc.action;
+                if (action === "create") {
+                  transaction.set(docRef, logicDoc.doc);
+                } else if (action === "merge") {
+                  transaction.update(docRef, logicDoc.doc);
+                } else if (action === "delete") {
+                  transaction.delete(docRef);
+                }
+
+                if (logicDoc.instructions) {
+                  const {updateData, removeData} = convertInstructionsToDbValues(logicDoc.instructions);
+                  transaction.update(docRef, updateData);
+                  if (Object.keys(removeData).length > 0) {
+                    transaction.update(docRef, removeData);
+                  }
+                }
+              }
             }
-            return acc;
-          }, {
-            highPriorityDocs: [] as LogicResultDoc[],
-            normalPriorityDocs: [] as LogicResultDoc[],
-            lowPriorityDocs: [] as LogicResultDoc[],
           });
-
-        console.info("Consolidating and Distributing High Priority Logic Results");
-        const highPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
-          await expandConsolidateAndGroupByDstPath(highPriorityDocs);
-        const {
-          docsByDocPath: highPriorityDocsByDocPath,
-          otherDocsByDocPath: highPriorityOtherDocsByDocPath,
-        } = groupDocsByTargetDocPath(highPriorityDstPathLogicDocsMap, docPath);
-        await distribute(highPriorityDocsByDocPath);
-        await distribute(highPriorityOtherDocsByDocPath);
-
-        if (page === 0) {
-          await formRef.update({"@status": "finished"});
         }
+        await distributeTransactionalLogicResults();
 
-        console.info("Consolidating and Distributing Normal Priority Logic Results");
-        const normalPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
-          await expandConsolidateAndGroupByDstPath(normalPriorityDocs);
-        const {
-          docsByDocPath: normalPriorityDocsByDocPath,
-          otherDocsByDocPath: normalPriorityOtherDocsByDocPath,
-        } = groupDocsByTargetDocPath(normalPriorityDstPathLogicDocsMap, docPath);
-        await distribute(normalPriorityDocsByDocPath);
-        await distributeLater(normalPriorityOtherDocsByDocPath);
+        async function distributeNonTransactionalLogicResults() {
+          const nonTransactionalResults = logicResults.filter((result) => !result.transactional);
+          console.info("Group logic docs by priority");
+          const {highPriorityDocs, normalPriorityDocs, lowPriorityDocs} = nonTransactionalResults
+            .map((result) => result.documents)
+            .flat()
+            .reduce((acc, doc) => {
+              if (doc.priority === "high") {
+                acc.highPriorityDocs.push(doc);
+              } else if (!doc.priority || doc.priority === "normal") {
+                acc.normalPriorityDocs.push(doc);
+              } else {
+                acc.lowPriorityDocs.push(doc);
+              }
+              return acc;
+            }, {
+              highPriorityDocs: [] as LogicResultDoc[],
+              normalPriorityDocs: [] as LogicResultDoc[],
+              lowPriorityDocs: [] as LogicResultDoc[],
+            });
 
-        console.info("Consolidating and Distributing Low Priority Logic Results");
-        const lowPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
-          await expandConsolidateAndGroupByDstPath(lowPriorityDocs);
-        const {
-          docsByDocPath: lowPriorityDocsByDocPath,
-          otherDocsByDocPath: lowPriorityOtherDocsByDocPath,
-        } = groupDocsByTargetDocPath(lowPriorityDstPathLogicDocsMap, docPath);
-        await distributeLater(lowPriorityDocsByDocPath);
-        await distributeLater(lowPriorityOtherDocsByDocPath);
+          console.info("Consolidating and Distributing High Priority Logic Results");
+          const highPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
+              await expandConsolidateAndGroupByDstPath(highPriorityDocs);
+          const {
+            docsByDocPath: highPriorityDocsByDocPath,
+            otherDocsByDocPath: highPriorityOtherDocsByDocPath,
+          } = groupDocsByTargetDocPath(highPriorityDstPathLogicDocsMap, docPath);
+          await distribute(highPriorityDocsByDocPath);
+          await distribute(highPriorityOtherDocsByDocPath);
+
+          if (page === 0) {
+            await formRef.update({"@status": "finished"});
+          }
+
+          console.info("Consolidating and Distributing Normal Priority Logic Results");
+          const normalPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
+              await expandConsolidateAndGroupByDstPath(normalPriorityDocs);
+          const {
+            docsByDocPath: normalPriorityDocsByDocPath,
+            otherDocsByDocPath: normalPriorityOtherDocsByDocPath,
+          } = groupDocsByTargetDocPath(normalPriorityDstPathLogicDocsMap, docPath);
+          await distribute(normalPriorityDocsByDocPath);
+          await distributeLater(normalPriorityOtherDocsByDocPath);
+
+          console.info("Consolidating and Distributing Low Priority Logic Results");
+          const lowPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
+              await expandConsolidateAndGroupByDstPath(lowPriorityDocs);
+          const {
+            docsByDocPath: lowPriorityDocsByDocPath,
+            otherDocsByDocPath: lowPriorityOtherDocsByDocPath,
+          } = groupDocsByTargetDocPath(lowPriorityDstPathLogicDocsMap, docPath);
+          await distributeLater(lowPriorityDocsByDocPath);
+          await distributeLater(lowPriorityOtherDocsByDocPath);
+        }
+        await distributeNonTransactionalLogicResults();
       }
     );
 
