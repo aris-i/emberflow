@@ -241,7 +241,7 @@ describe("createViewLogicFn", () => {
     expect(result.documents.length).toEqual(2);
   });
 
-  it("should not build @views doc when @viewsAlreadyBuilt is true", async () => {
+  it("should not build @views doc when action is merge and @viewsAlreadyBuilt is true", async () => {
     docGetMock.mockResolvedValue({
       data: () => {
         return {
@@ -258,6 +258,36 @@ describe("createViewLogicFn", () => {
 
     // Call the logic function with the test action
     const result = await logicFn[0](mergeLogicResultDoc);
+
+    expect(colGetMock).toHaveBeenCalledTimes(1);
+    expect(docUpdateMock).not.toHaveBeenCalled();
+
+    expect(result).toBeDefined();
+    expect(result.documents).toBeDefined();
+    expect(result.documents.length).toEqual(0);
+  });
+
+  it("should not build @views doc when action is delete and @viewsAlreadyBuilt is true", async () => {
+    docGetMock.mockResolvedValue({
+      data: () => {
+        return {};
+      },
+    });
+    colGetMock.mockResolvedValue({
+      docs: [],
+    });
+    const newDeleteLogicResultDoc = {
+      ...deleteLogicResultDoc,
+      doc: {
+        "@viewsAlreadyBuilt+friend": true,
+      },
+    };
+
+    // Create the logic function using the viewDefinition
+    const logicFn = viewLogics.createViewLogicFn(vd1);
+
+    // Call the logic function with the test action
+    const result = await logicFn[0](newDeleteLogicResultDoc);
 
     expect(colGetMock).toHaveBeenCalledTimes(1);
     expect(docUpdateMock).not.toHaveBeenCalled();

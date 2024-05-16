@@ -48,6 +48,11 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
   const dstDocRef = db.doc(dstPath);
   console.debug(`Distributing doc with Action: ${action}`);
   if (action === "delete") {
+    if (!skipRunViewLogics){
+      const doc = (await dstDocRef.get()).data();
+      logicResultDoc.doc = doc;
+    }
+
     // Delete document at dstPath
     if (batch) {
       await batch.deleteDoc(dstDocRef);
@@ -57,7 +62,11 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
     console.log(`Document deleted at ${dstPath}`);
   } else if (action === "merge" || action === "create") {
     if (instructions) {
-      await queueInstructions(dstPath, instructions);
+      if (Object.keys(instructions).length === 0) {
+        console.log(`Instructions for ${dstPath} is empty. Skipping...`);
+      } else {
+        await queueInstructions(dstPath, instructions);
+      }
     }
 
     const updateData: { [key: string]: any } = {...doc, "@id": dstDocRef.id};

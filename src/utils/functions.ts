@@ -8,6 +8,7 @@ export function debounce<T extends any[], A extends object|any[]>(
   }
 ): (...args: T) => void {
   let accumulatedResult = reducer?.initialValueFactory(); // Generate a fresh initial value
+  let prevAccumulatedResult: A|undefined; // Generate a fresh initial value
   let timeoutId: NodeJS.Timeout | undefined;
   let firstTimeCalled: number | null = null;
 
@@ -18,11 +19,11 @@ export function debounce<T extends any[], A extends object|any[]>(
     if (processing) return;
     processing = true;
 
-    setImmediate(async () => {
+    setImmediate(() => {
       try {
         const args = queue.shift();
         if (reducer && accumulatedResult !== undefined && args !== undefined) {
-          await reducer.reducerFn(accumulatedResult, ...args);
+          reducer.reducerFn(accumulatedResult, ...args);
         }
       } catch (error) {
         console.error("Error processing queue:", error);
@@ -36,8 +37,8 @@ export function debounce<T extends any[], A extends object|any[]>(
   }
 
   const invokeFunction = (...args: T) => {
-    if (reducer && accumulatedResult !== undefined) {
-      (func as ((accumulator: A) => void))({...accumulatedResult});
+    if (reducer && prevAccumulatedResult !== undefined) {
+      (func as ((accumulator: A) => void))(prevAccumulatedResult);
     } else {
       (func as ((...args: T) => void))(...args);
     }
@@ -61,15 +62,17 @@ export function debounce<T extends any[], A extends object|any[]>(
 
     if (maxWait && timeSinceFirstCalled >= maxWait) {
       // Ensure maxWait is respected
-      invokeFunction(...args);
+      prevAccumulatedResult = accumulatedResult;
       accumulatedResult = reducer?.initialValueFactory(); // Reset to a new initial value after executing
       firstTimeCalled = null; // Reset timing
+      invokeFunction(...args);
     } else {
       // Standard debounce behavior
       timeoutId = setTimeout(() => {
-        invokeFunction(...args);
+        prevAccumulatedResult = accumulatedResult;
         accumulatedResult = reducer?.initialValueFactory(); // Reset to a new initial value after executing
         firstTimeCalled = null; // Reset timing
+        invokeFunction(...args);
       }, wait);
     }
   };

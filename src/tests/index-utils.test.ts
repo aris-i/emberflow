@@ -67,20 +67,16 @@ describe("distributeDoc", () => {
   let dbSpy: jest.SpyInstance;
   let queueRunViewLogicsSpy: jest.SpyInstance;
   let queueInstructionsSpy: jest.SpyInstance;
-  let docSetMock: jest.Mock;
-  let docUpdateMock: jest.Mock;
-  let docDeleteMock: jest.Mock;
+  let dbDoc: admin.firestore.DocumentReference<admin.firestore.DocumentData>;
   const batch = BatchUtil.getInstance();
   jest.spyOn(BatchUtil, "getInstance").mockImplementation(() => batch);
 
   beforeEach(() => {
-    docSetMock = jest.fn().mockResolvedValue({});
-    docUpdateMock = jest.fn().mockResolvedValue({});
-    docDeleteMock = jest.fn().mockResolvedValue({});
-    const dbDoc = ({
-      set: docSetMock,
-      update: docUpdateMock,
-      delete: docDeleteMock,
+    dbDoc = ({
+      set: jest.fn().mockResolvedValue({}),
+      update: jest.fn().mockResolvedValue({}),
+      delete: jest.fn().mockResolvedValue({}),
+      get: jest.fn().mockResolvedValue({exists: true, data: () => ({})}),
       id: "test-doc-id",
     } as unknown) as admin.firestore.DocumentReference<admin.firestore.DocumentData>;
     dbSpy = jest.spyOn(admin.firestore(), "doc").mockReturnValue(dbDoc);
@@ -104,8 +100,9 @@ describe("distributeDoc", () => {
     await indexUtils.distributeDoc(logicResultDoc);
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
-    expect(docDeleteMock).toHaveBeenCalledTimes(1);
-    expect(docDeleteMock).toHaveBeenCalled();
+    expect(dbDoc.get).toHaveBeenCalledTimes(1);
+    expect(dbDoc.delete).toHaveBeenCalledTimes(1);
+    expect(dbDoc.delete).toHaveBeenCalled();
     expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
     expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
   });
@@ -121,6 +118,7 @@ describe("distributeDoc", () => {
     await indexUtils.distributeDoc(logicResultDoc, batch);
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
+    expect(dbDoc.get).toHaveBeenCalledTimes(1);
     expect(batchDeleteSpy).toHaveBeenCalledTimes(1);
     expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
     expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
@@ -143,8 +141,8 @@ describe("distributeDoc", () => {
     await indexUtils.distributeDoc(logicResultDoc);
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
-    expect(docUpdateMock).toHaveBeenCalledTimes(1);
-    expect(docUpdateMock).toHaveBeenCalledWith(expectedData);
+    expect(dbDoc.update).toHaveBeenCalledTimes(1);
+    expect(dbDoc.update).toHaveBeenCalledWith(expectedData);
     expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
     expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
   });
@@ -172,8 +170,8 @@ describe("distributeDoc", () => {
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
     expect(queueInstructionsSpy).toHaveBeenCalledTimes(1);
     expect(queueInstructionsSpy).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id", logicResultDoc.instructions);
-    expect(docUpdateMock).toHaveBeenCalledTimes(1);
-    expect(docUpdateMock).toHaveBeenCalledWith(expectedData);
+    expect(dbDoc.update).toHaveBeenCalledTimes(1);
+    expect(dbDoc.update).toHaveBeenCalledWith(expectedData);
     expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
     expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
   });
@@ -227,11 +225,12 @@ describe("distribute", () => {
   let colSpy: jest.SpyInstance;
   let queueInstructionsSpy: jest.SpyInstance;
   let queueRunViewLogicsSpy: jest.SpyInstance;
+  let dbDoc: admin.firestore.DocumentReference<admin.firestore.DocumentData>;
   const batch = BatchUtil.getInstance();
   jest.spyOn(BatchUtil, "getInstance").mockImplementation(() => batch);
 
   beforeEach(() => {
-    const dbDoc = ({
+    dbDoc = ({
       get: jest.fn().mockResolvedValue({exists: true, data: () => ({})}),
       set: jest.fn().mockResolvedValue({}),
       delete: jest.fn().mockResolvedValue({}),
@@ -305,6 +304,7 @@ describe("distribute", () => {
 
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
+    expect(dbDoc.get).toHaveBeenCalledTimes(1);
     expect(batchDeleteSpy).toHaveBeenCalledTimes(1);
     expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
 
