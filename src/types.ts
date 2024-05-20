@@ -54,6 +54,7 @@ export interface LogicResult{
     execTime?: number;
     timeFinished?: Timestamp;
     documents: LogicResultDoc[];
+    transactional?: boolean;
 }
 export type LogicFn = (action: Action, sharedMap: Map<string, any>, nextPage?: AnyObject) => Promise<LogicResult>;
 export type LogicActionType = "create" | "update" | "delete";

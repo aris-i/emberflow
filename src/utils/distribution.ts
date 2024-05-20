@@ -1,4 +1,8 @@
-import {Instructions, InstructionsMessage, LogicResultDoc} from "../types";
+import {
+  Instructions,
+  InstructionsMessage,
+  LogicResultDoc,
+} from "../types";
 import {
   admin,
   db,
@@ -74,72 +78,77 @@ export const queueInstructions = async (dstPath: string, instructions: { [p: str
   }
 };
 
+export function convertInstructionsToDbValues(instructions: Instructions) {
+  const updateData: { [key: string]: FieldValue } = {};
+  const removeData: { [key: string]: FieldValue } = {};
+
+  for (const [property, instruction] of Object.entries(instructions)) {
+    if (instruction === "++") {
+      updateData[property] = admin.firestore.FieldValue.increment(1);
+    } else if (instruction === "--") {
+      updateData[property] = admin.firestore.FieldValue.increment(-1);
+    } else if (instruction.startsWith("+")) {
+      const incrementValue = parseInt(instruction.slice(1));
+      if (isNaN(incrementValue)) {
+        console.log(`Invalid increment value ${instruction} for property ${property}`);
+      } else {
+        updateData[property] = admin.firestore.FieldValue.increment(incrementValue);
+      }
+    } else if (instruction.startsWith("-")) {
+      const decrementValue = parseInt(instruction.slice(1));
+      if (isNaN(decrementValue)) {
+        console.log(`Invalid decrement value ${instruction} for property ${property}`);
+      } else {
+        updateData[property] = admin.firestore.FieldValue.increment(-decrementValue);
+      }
+    } else if (instruction.startsWith("arr")) {
+      const regex = /\((.*?)\)/;
+      const match = instruction.match(regex);
+
+      if (!match) {
+        console.log(`Invalid instruction ${instruction} for property ${property}`);
+        continue;
+      }
+
+      const paramsStr = match[1];
+      if (!paramsStr) {
+        console.log(`No values found in instruction ${instruction} for property ${property}`);
+        continue;
+      }
+
+      const params = paramsStr.split(",").map((value) => value.trim());
+      const valuesToAdd = [];
+      const valuesToRemove = [];
+      for (const param of params) {
+        const operation = param[0];
+        let value = param;
+        if (operation === "-" || operation === "+") {
+          value = param.slice(1);
+        }
+        if (operation === "-") {
+          valuesToRemove.push(value);
+          continue;
+        }
+        valuesToAdd.push(value);
+      }
+      if (valuesToAdd.length > 0) {
+        updateData[property] = admin.firestore.FieldValue.arrayUnion(...valuesToAdd);
+      }
+      if (valuesToRemove.length > 0) {
+        removeData[property] = admin.firestore.FieldValue.arrayRemove(...valuesToRemove);
+      }
+    } else if (instruction === "del") {
+      updateData[property] = admin.firestore.FieldValue.delete();
+    } else {
+      console.log(`Invalid instruction ${instruction} for property ${property}`);
+    }
+  }
+  return {updateData, removeData};
+}
+
 export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublishedData> | Map<string, Instructions>) {
   async function applyInstructions(instructions: Instructions, dstPath: string) {
-    const updateData: { [key: string]: FieldValue } = {};
-    const removeData: { [key: string]: FieldValue } = {};
-
-    for (const [property, instruction] of Object.entries(instructions)) {
-      if (instruction === "++") {
-        updateData[property] = admin.firestore.FieldValue.increment(1);
-      } else if (instruction === "--") {
-        updateData[property] = admin.firestore.FieldValue.increment(-1);
-      } else if (instruction.startsWith("+")) {
-        const incrementValue = parseInt(instruction.slice(1));
-        if (isNaN(incrementValue)) {
-          console.log(`Invalid increment value ${instruction} for property ${property}`);
-        } else {
-          updateData[property] = admin.firestore.FieldValue.increment(incrementValue);
-        }
-      } else if (instruction.startsWith("-")) {
-        const decrementValue = parseInt(instruction.slice(1));
-        if (isNaN(decrementValue)) {
-          console.log(`Invalid decrement value ${instruction} for property ${property}`);
-        } else {
-          updateData[property] = admin.firestore.FieldValue.increment(-decrementValue);
-        }
-      } else if (instruction.startsWith("arr")) {
-        const regex = /\((.*?)\)/;
-        const match = instruction.match(regex);
-
-        if (!match) {
-          console.log(`Invalid instruction ${instruction} for property ${property}`);
-          continue;
-        }
-
-        const paramsStr = match[1];
-        if (!paramsStr) {
-          console.log(`No values found in instruction ${instruction} for property ${property}`);
-          continue;
-        }
-
-        const params = paramsStr.split(",").map((value) => value.trim());
-        const valuesToAdd = [];
-        const valuesToRemove = [];
-        for (const param of params) {
-          const operation = param[0];
-          let value = param;
-          if (operation === "-" || operation === "+") {
-            value = param.slice(1);
-          }
-          if (operation === "-") {
-            valuesToRemove.push(value);
-            continue;
-          }
-          valuesToAdd.push(value);
-        }
-        if (valuesToAdd.length > 0) {
-          updateData[property] = admin.firestore.FieldValue.arrayUnion(...valuesToAdd);
-        }
-        if (valuesToRemove.length > 0) {
-          removeData[property] = admin.firestore.FieldValue.arrayRemove(...valuesToRemove);
-        }
-      } else if (instruction === "del") {
-        updateData[property] = admin.firestore.FieldValue.delete();
-      } else {
-        console.log(`Invalid instruction ${instruction} for property ${property}`);
-      }
-    }
+    const {updateData, removeData} = convertInstructionsToDbValues(instructions);
     const dstDocRef = db.doc(dstPath);
     if (Object.keys(updateData).length > 0) {
       await dstDocRef.update(updateData);
