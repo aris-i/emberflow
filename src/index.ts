@@ -410,7 +410,9 @@ export async function onFormSubmit(
 
                 if (logicDoc.instructions) {
                   const {updateData, removeData} = convertInstructionsToDbValues(logicDoc.instructions);
-                  transaction.update(docRef, updateData);
+                  if (Object.keys(updateData).length > 0) {
+                    transaction.update(docRef, updateData);
+                  }
                   if (Object.keys(removeData).length > 0) {
                     transaction.update(docRef, removeData);
                   }
