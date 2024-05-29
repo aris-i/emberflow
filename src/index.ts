@@ -132,7 +132,6 @@ export function initializeEmberFlow(
 
   logicConfigs.forEach(async (logicConfig) => {
     const {name} = logicConfig;
-
     const metricsRef = db.doc(`@metrics/${name}`);
     if (!await _pathMockable.doesPathExists(metricsRef.path)) {
       await metricsRef.set({
