@@ -130,17 +130,6 @@ export function initializeEmberFlow(
   colPaths = cp;
   docPathsRegex = dbr;
 
-  logicConfigs.forEach(async (logicConfig) => {
-    const {name} = logicConfig;
-    const metricsRef = db.doc(`@metrics/${name}`);
-    if (!await _pathMockable.doesPathExists(metricsRef.path)) {
-      await metricsRef.set({
-        totalExecTime: 0,
-        totalExecCount: 0,
-      });
-    }
-  });
-
   viewLogicConfigs = vd.map((viewDef: ViewDefinition): ViewLogicConfig[] => {
     const [srcToDestViewLogicFn, dstToSrcViewLogicFn] = createViewLogicFn(viewDef);
     const srcToDestLogicConfig = {
@@ -159,6 +148,19 @@ export function initializeEmberFlow(
     };
     return [srcToDestLogicConfig, dstToSrcLogicConfig];
   }).flat();
+
+  const logicNames = logicConfigs.map((config) => config.name);
+  const viewLogicNames = viewLogicConfigs.map((config) => config.name);
+  const allLogicNames = [...logicNames, ...viewLogicNames];
+  allLogicNames.forEach(async (logicName) => {
+    const metricsRef = db.doc(`@metrics/${logicName}`);
+    if (!await _pathMockable.doesPathExists(metricsRef.path)) {
+      await metricsRef.set({
+        totalExecTime: 0,
+        totalExecCount: 0,
+      });
+    }
+  });
 
   functionsConfig["onFormSubmit"] = onValueCreated(
     {
