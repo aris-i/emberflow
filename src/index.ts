@@ -34,7 +34,7 @@ import {createViewLogicFn, onMessageViewLogicsQueue} from "./logics/view-logics"
 import {resetUsageStats, stopBillingIfBudgetExceeded, useBillProtect} from "./utils/bill-protect";
 import {Firestore} from "firebase-admin/firestore";
 import {DatabaseEvent, DataSnapshot, onValueCreated} from "firebase-functions/v2/database";
-import {parseEntity} from "./utils/paths";
+import {_mockable as _pathMockable, parseEntity} from "./utils/paths";
 import {database} from "firebase-admin";
 import {initClient} from "emberflow-admin-client/lib";
 import {internalDbStructure, InternalEntity} from "./db-structure";
@@ -129,6 +129,18 @@ export function initializeEmberFlow(
   docPaths = dp;
   colPaths = cp;
   docPathsRegex = dbr;
+
+  logicConfigs.forEach(async (logicConfig) => {
+    const {name} = logicConfig;
+
+    const metricsRef = db.doc(`@metrics/${name}`);
+    if (!await _pathMockable.doesPathExists(metricsRef.path)) {
+      await metricsRef.set({
+        totalExecTime: 0,
+        totalExecCount: 0,
+      });
+    }
+  });
 
   viewLogicConfigs = vd.map((viewDef: ViewDefinition): ViewLogicConfig[] => {
     const [srcToDestViewLogicFn, dstToSrcViewLogicFn] = createViewLogicFn(viewDef);
