@@ -34,7 +34,7 @@ import {createViewLogicFn, onMessageViewLogicsQueue} from "./logics/view-logics"
 import {resetUsageStats, stopBillingIfBudgetExceeded, useBillProtect} from "./utils/bill-protect";
 import {Firestore} from "firebase-admin/firestore";
 import {DatabaseEvent, DataSnapshot, onValueCreated} from "firebase-functions/v2/database";
-import {parseEntity} from "./utils/paths";
+import {_mockable as _pathMockable, parseEntity} from "./utils/paths";
 import {database} from "firebase-admin";
 import {initClient} from "emberflow-admin-client/lib";
 import {internalDbStructure, InternalEntity} from "./db-structure";
@@ -148,6 +148,19 @@ export function initializeEmberFlow(
     };
     return [srcToDestLogicConfig, dstToSrcLogicConfig];
   }).flat();
+
+  const logicNames = logicConfigs.map((config) => config.name);
+  const viewLogicNames = viewLogicConfigs.map((config) => config.name);
+  const allLogicNames = [...logicNames, ...viewLogicNames];
+  allLogicNames.forEach(async (logicName) => {
+    const metricsRef = db.doc(`@metrics/${logicName}`);
+    if (!await _pathMockable.doesPathExists(metricsRef.path)) {
+      await metricsRef.set({
+        totalExecTime: 0,
+        totalExecCount: 0,
+      });
+    }
+  });
 
   functionsConfig["onFormSubmit"] = onValueCreated(
     {
@@ -410,7 +423,9 @@ export async function onFormSubmit(
 
                 if (logicDoc.instructions) {
                   const {updateData, removeData} = convertInstructionsToDbValues(logicDoc.instructions);
-                  transaction.update(docRef, updateData);
+                  if (Object.keys(updateData).length > 0) {
+                    transaction.update(docRef, updateData);
+                  }
                   if (Object.keys(removeData).length > 0) {
                     transaction.update(docRef, removeData);
                   }

@@ -24,6 +24,7 @@ import CollectionReference = firestore.CollectionReference;
 import Timestamp = firestore.Timestamp;
 import Database = database.Database;
 import {expandConsolidateAndGroupByDstPath, groupDocsByTargetDocPath} from "../index-utils";
+import * as distribution from "../utils/distribution";
 
 const projectConfig: ProjectConfig = {
   projectId: "your-project-id",
@@ -62,11 +63,18 @@ const collectionMock: CollectionReference = {
   doc: jest.fn(() => docMock),
 } as unknown as CollectionReference;
 
+const transactionMock = {
+  set: jest.fn(),
+  update: jest.fn(),
+  delete: jest.fn(),
+};
+
 jest.spyOn(admin, "firestore")
   .mockImplementation(() => {
     return {
       collection: jest.fn(() => collectionMock),
       doc: jest.fn(() => docMock),
+      runTransaction: jest.fn((fn) => fn(transactionMock)),
     } as unknown as Firestore;
   });
 
@@ -597,6 +605,12 @@ describe("onFormSubmit", () => {
     jest.spyOn(indexutils, "distribute").mockResolvedValue();
     jest.spyOn(indexutils, "distributeLater").mockResolvedValue();
     jest.spyOn(viewLogics, "queueRunViewLogics").mockResolvedValue();
+    jest.spyOn(distribution, "convertInstructionsToDbValues").mockReturnValue({
+      updateData: {
+        transactions: admin.firestore.FieldValue.increment(-1),
+      },
+      removeData: {},
+    });
 
     const highPriorityDocs: LogicResultDoc[] = [
       {
@@ -656,7 +670,7 @@ describe("onFormSubmit", () => {
         priority: "low",
       },
     ];
-    const anotherNormalPriorityDocs: LogicResultDoc[] = [
+    const additionalNormalPriorityDocs: LogicResultDoc[] = [
       {
         action: "merge" as LogicResultDocAction,
         dstPath: "users/user-1/activities/activity-1",
@@ -664,6 +678,35 @@ describe("onFormSubmit", () => {
           title: "Normal priority activity for user 1",
         },
         priority: "normal",
+      },
+    ];
+    const transactionalDocs: LogicResultDoc[] = [
+      {
+        action: "create" as LogicResultDocAction,
+        dstPath: "transactions/transaction-1",
+        doc: {
+          title: "Transaction doc for user 1",
+        },
+        priority: "high",
+      },
+      {
+        action: "merge" as LogicResultDocAction,
+        dstPath: "users/user-1",
+        doc: {
+          lastActivity: _mockable.createNowTimestamp(),
+        },
+        instructions: {
+          transactions: "--",
+        },
+        priority: "normal",
+      },
+      {
+        action: "delete" as LogicResultDocAction,
+        dstPath: "messages/message-1",
+        doc: {
+          title: "Message doc for transaction 1",
+        },
+        priority: "low",
       },
     ];
 
@@ -674,10 +717,16 @@ describe("onFormSubmit", () => {
         timeFinished: _mockable.createNowTimestamp(),
         documents: [...highPriorityDocs, ...normalPriorityDocs, ...lowPriorityDocs],
       }, {
-        name: "anotherLogic",
+        name: "additionalLogic",
         status: "finished",
         timeFinished: _mockable.createNowTimestamp(),
-        documents: [...anotherNormalPriorityDocs],
+        documents: [...additionalNormalPriorityDocs],
+      }, {
+        name: "transactionalLogic",
+        status: "finished",
+        timeFinished: _mockable.createNowTimestamp(),
+        documents: [...transactionalDocs],
+        transactional: true,
       },
     ];
 
@@ -710,7 +759,7 @@ describe("onFormSubmit", () => {
 
 
     const normalPriorityDstPathLogicDocsMap =
-      await expandConsolidateAndGroupByDstPath([...normalPriorityDocs, ...anotherNormalPriorityDocs]);
+      await expandConsolidateAndGroupByDstPath([...normalPriorityDocs, ...additionalNormalPriorityDocs]);
     const {
       docsByDocPath: normalPriorityDocsByDocPath,
       otherDocsByDocPath: normalPriorityOtherDocsByDocPath,
@@ -723,6 +772,9 @@ describe("onFormSubmit", () => {
       otherDocsByDocPath: lowPriorityOtherDocsByDocPath,
     } = groupDocsByTargetDocPath(lowPriorityDstPathLogicDocsMap, docPath);
 
+    const transactionalDstPathLogicDocsMap =
+      await expandConsolidateAndGroupByDstPath(transactionalDocs);
+
     const viewLogicResults: LogicResult[] = [{
       name: "User ViewLogic",
       status: "finished",
@@ -731,6 +783,7 @@ describe("onFormSubmit", () => {
     }];
 
     jest.spyOn(indexutils, "expandConsolidateAndGroupByDstPath")
+      .mockResolvedValueOnce(transactionalDstPathLogicDocsMap)
       .mockResolvedValueOnce(highPriorityDstPathLogicDocsMap)
       .mockResolvedValueOnce(normalPriorityDstPathLogicDocsMap)
       .mockResolvedValueOnce(lowPriorityDstPathLogicDocsMap);
@@ -755,29 +808,34 @@ describe("onFormSubmit", () => {
 
     // Test that the runBusinessLogics function was called with the correct parameters
     expect(runBusinessLogicsSpy).toHaveBeenCalled();
-    expect(docMock.set).toHaveBeenCalledTimes(11);
+    expect(docMock.set).toHaveBeenCalledTimes(15);
     expect(refMock.update).toHaveBeenCalledTimes(3);
     expect(refMock.update).toHaveBeenNthCalledWith(1, {"@status": "processing"});
     expect(refMock.update).toHaveBeenNthCalledWith(2, {"@status": "submitted"});
     expect(refMock.update).toHaveBeenNthCalledWith(3, {"@status": "finished"});
 
     // Test that the functions are called in the correct sequence
-    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(1, highPriorityDocs);
+    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(1, transactionalDocs);
+    expect(transactionMock.set).toHaveBeenCalledTimes(1);
+    expect(transactionMock.update).toHaveBeenCalledTimes(2);
+    expect(transactionMock.delete).toHaveBeenCalledTimes(1);
+
+    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(2, highPriorityDocs);
     expect(indexutils.groupDocsByTargetDocPath).toHaveBeenNthCalledWith(1, highPriorityDstPathLogicDocsMap, docPath);
     expect(indexutils.distribute).toHaveBeenNthCalledWith(1, highPriorityDocsByDocPath);
     expect(indexutils.distribute).toHaveBeenNthCalledWith(2, highPriorityOtherDocsByDocPath);
 
-    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(2, [...normalPriorityDocs, ...anotherNormalPriorityDocs]);
+    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(3, [...normalPriorityDocs, ...additionalNormalPriorityDocs]);
     expect(indexutils.groupDocsByTargetDocPath).toHaveBeenNthCalledWith(2, normalPriorityDstPathLogicDocsMap, docPath);
     expect(indexutils.distribute).toHaveBeenNthCalledWith(3, normalPriorityDocsByDocPath);
     expect(indexutils.distributeLater).toHaveBeenNthCalledWith(1, normalPriorityOtherDocsByDocPath);
 
-    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(3, lowPriorityDocs);
+    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(4, lowPriorityDocs);
     expect(indexutils.groupDocsByTargetDocPath).toHaveBeenNthCalledWith(3, lowPriorityDstPathLogicDocsMap, docPath);
     expect(indexutils.distributeLater).toHaveBeenNthCalledWith(2, lowPriorityDocsByDocPath);
     expect(indexutils.distributeLater).toHaveBeenNthCalledWith(3, lowPriorityOtherDocsByDocPath);
 
-    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenCalledTimes(3);
+    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenCalledTimes(4);
     expect(updateMock).toHaveBeenCalledTimes(1);
     expect(updateMock.mock.calls[0][0]).toEqual({status: "finished"});
   });
