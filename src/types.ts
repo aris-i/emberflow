@@ -36,8 +36,23 @@ export interface LogicResultDoc{
     srcPath?: string;
     doc?: FirebaseFirestore.DocumentData;
     instructions?: { [key: string]: string };
+    journalEntry?: JournalEntry;
     skipEntityDuringRecursion?: string[];
     skipRunViewLogics?: boolean;
+}
+
+export interface LedgerEntry {
+    account: string;
+    debit: number;
+    credit: number;
+    description?: string;
+}
+
+export interface JournalEntry {
+    date: Timestamp;
+    ledgerEntries: LedgerEntry[];
+    equation: string;
+    recordEntry?: boolean;
 }
 
 export type Instructions = { [key: string]: string };

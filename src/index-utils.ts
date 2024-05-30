@@ -48,7 +48,7 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
   const dstDocRef = db.doc(dstPath);
   console.debug(`Distributing doc with Action: ${action}`);
   if (action === "delete") {
-    if (!skipRunViewLogics){
+    if (!skipRunViewLogics) {
       const doc = (await dstDocRef.get()).data();
       logicResultDoc.doc = doc;
     }
@@ -445,6 +445,81 @@ export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultD
     existingDocs.push(logicResultDoc);
   }
 
+  function expandJournalEntry() {
+    for (let i = logicDocs.length - 1; i >= 0; i--) {
+      const expandedLogicResultDocs: LogicResultDoc[] = [];
+      const logicResultDoc = logicDocs[i];
+      const {
+        dstPath,
+        instructions = {},
+        journalEntry,
+        priority,
+      } = logicResultDoc;
+
+      const docId = dstPath.split("/").pop();
+      if (!docId) {
+        console.error("Dst path has no docId");
+        continue;
+      }
+
+      if (!journalEntry) {
+        continue;
+      }
+      delete logicResultDoc.journalEntry;
+
+      const {
+        ledgerEntries,
+        recordEntry,
+        equation,
+      } = journalEntry;
+
+      const totalCreditDebit = ledgerEntries
+        .reduce((acc, entry) => {
+          return {
+            credit: acc.credit + entry.credit,
+            debit: acc.debit + entry.debit,
+          };
+        }, {credit: 0, debit: 0});
+      if (totalCreditDebit.debit !== totalCreditDebit.credit) {
+        console.error("Debit and credit should be equal");
+        continue;
+      }
+
+      const [leftSide, ..._] = equation.split("=");
+
+      for (let j = 0; j < ledgerEntries.length; j++) {
+        const {account, debit, credit, description} = ledgerEntries[j];
+
+        // totalTodoCount = leafCount + nonLeafCount
+        const increment = leftSide.includes(account) ? debit - credit : credit - debit;
+        instructions[account] = `${increment >= 0 ? "+" : "-"}${increment}`;
+
+        if (recordEntry) {
+          const journalEntryId = docId + i;
+          const ledgerEntryId = journalEntryId + j;
+          const ledgerEntryDoc = {
+            journalEntryId,
+            account,
+            credit,
+            debit,
+            description,
+          };
+          expandedLogicResultDocs.push({
+            action: "create",
+            doc: ledgerEntryDoc,
+            dstPath: dstPath + "/@ledgers/" + ledgerEntryId,
+            priority,
+          });
+        }
+      }
+
+      if (recordEntry) {
+        logicDocs.splice(i, 0, ...expandedLogicResultDocs);
+      }
+    }
+  }
+  expandJournalEntry();
+
   async function expandRecursiveActions() {
     const expandedLogicResultDocs: LogicResultDoc[] = [];
     for (let i = logicDocs.length - 1; i >= 0; i--) {
@@ -493,6 +568,7 @@ export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultD
       logicDocs.splice(i, 1, ...expandedLogicResultDocs);
     }
   }
+  await expandRecursiveActions();
 
   async function convertCopyToMerge() {
     for (const doc of logicDocs) {
@@ -511,9 +587,6 @@ export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultD
       doc.action = "merge";
     }
   }
-
-  await expandRecursiveActions();
-
   await convertCopyToMerge();
 
   const consolidated: Map<string, LogicResultDoc[]> = new Map();
