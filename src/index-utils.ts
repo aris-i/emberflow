@@ -15,7 +15,7 @@ import {
   validatorConfig,
   viewLogicConfigs,
 } from "./index";
-import {expandAndGroupDocPathsByEntity, findMatchingDocPathRegex} from "./utils/paths";
+import {_mockable as _pathMockable, expandAndGroupDocPathsByEntity, findMatchingDocPathRegex} from "./utils/paths";
 import {deepEqual, deleteCollection} from "./utils/misc";
 import {CloudFunctionsServiceClient} from "@google-cloud/functions";
 import {FormData} from "emberflow-admin-client/lib/types";
@@ -711,6 +711,16 @@ async function deleteFunction(projectId: string, functionName: string): Promise<
     console.log(`Function '${functionName}' in location '${location}' deleted successfully.`);
   } else {
     console.log(`Function '${functionName}' not found or location not available.`);
+  }
+}
+
+export async function createMetricLogicDoc(logicName: string) {
+  const metricsRef = db.doc(`@metrics/${logicName}`);
+  if (!await _pathMockable.doesPathExists(metricsRef.path)) {
+    await metricsRef.set({
+      totalExecTime: 0,
+      totalExecCount: 0,
+    });
   }
 }
 
