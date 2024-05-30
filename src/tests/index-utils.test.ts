@@ -10,7 +10,7 @@ import {
   LogicResultDoc,
   ProjectConfig,
   ViewLogicConfig,
-  EventContext,
+  EventContext, JournalEntry,
 } from "../types";
 import {Entity, dbStructure} from "../sample-custom/db-structure";
 import {securityConfig} from "../sample-custom/security";
@@ -1179,6 +1179,7 @@ describe("groupDocsByTargetDocPath", () => {
 describe("expandConsolidateAndGroupByDstPath", () => {
   let dbSpy: jest.SpyInstance;
   let consoleWarnSpy: jest.SpyInstance;
+  let consoleErrorSpy: jest.SpyInstance;
 
   const games = [
     {
@@ -1218,6 +1219,7 @@ describe("expandConsolidateAndGroupByDstPath", () => {
 
     // Mock console.warn
     consoleWarnSpy = jest.spyOn(console, "warn").mockImplementation(jest.fn());
+    consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(jest.fn());
 
     // Clear the mock before each test
     (expandAndGroupDocPathsByEntity as jest.Mock).mockClear();
@@ -1236,6 +1238,7 @@ describe("expandConsolidateAndGroupByDstPath", () => {
     // Cleanup
     dbSpy.mockRestore();
     consoleWarnSpy.mockRestore();
+    consoleErrorSpy.mockRestore();
   });
 
   it("should consolidate logic results documents correctly", async () => {
@@ -1322,6 +1325,131 @@ describe("expandConsolidateAndGroupByDstPath", () => {
     expect(consoleWarnSpy.mock.calls[4][0]).toBe("Action delete for dstPath \"path7/doc7\" is being overwritten by action \"delete\"");
     expect(consoleWarnSpy.mock.calls[5][0]).toBe("Action delete for dstPath \"path2/doc2\" is being overwritten by action \"delete\"");
     expect(consoleWarnSpy.mock.calls[6][0]).toBe("Action merge ignored because a \"delete\" for dstPath \"path7/doc7\" already exists");
+  });
+
+  it("should expand journal entry", async () => {
+    const equation = "totalTodos = notStartedCount + inProgressCount + toVerifyCount + requestChangesCount + doneCount";
+    const journalEntry: JournalEntry = {
+      date: firestore.Timestamp.now(),
+      ledgerEntries: [
+        {
+          account: "totalTodos",
+          debit: 1,
+          credit: 0,
+        },
+        {
+          account: "notStartedCount",
+          debit: 0,
+          credit: 1,
+        },
+      ],
+      equation: equation,
+    };
+    const unbalancedJournalEntry: JournalEntry = {
+      date: firestore.Timestamp.now(),
+      ledgerEntries: [
+        {
+          account: "totalTodos",
+          debit: 1,
+          credit: 0,
+        },
+        {
+          account: "notStartedCount",
+          debit: 0,
+          credit: 1,
+        },
+        {
+          account: "inProgressCount",
+          debit: 0,
+          credit: 1,
+        },
+      ],
+      equation: equation,
+    };
+    const recordedJournalEntry: JournalEntry = {
+      date: firestore.Timestamp.now(),
+      ledgerEntries: [
+        {
+          account: "inProgressCount",
+          debit: 0,
+          credit: 1,
+        },
+        {
+          account: "doneCount",
+          debit: 1,
+          credit: 0,
+        },
+      ],
+      equation: equation,
+      recordEntry: true,
+    };
+    const zeroJournalEntry: JournalEntry = {
+      date: firestore.Timestamp.now(),
+      ledgerEntries: [
+        {
+          account: "inProgressCount",
+          debit: 1,
+          credit: 1,
+        },
+        {
+          account: "doneCount",
+          debit: 1,
+          credit: 1,
+        },
+      ],
+      equation: equation,
+      recordEntry: true,
+    };
+    const logicResults: LogicResult[] = [
+      {
+        name: "logic 1",
+        timeFinished: firestore.Timestamp.now(),
+        status: "finished",
+        documents: [
+          {action: "merge", priority: "normal", dstPath: "path1/doc1", journalEntry: journalEntry},
+          {action: "create", priority: "normal", dstPath: "path1/doc2", journalEntry: unbalancedJournalEntry},
+        ],
+      },
+      {
+        name: "logic 2",
+        timeFinished: firestore.Timestamp.now(),
+        status: "finished",
+        documents: [
+          {action: "merge", priority: "normal", dstPath: "path1/doc3", doc: {field1: "value"}, instructions: {field2: "--"}},
+          {action: "delete", priority: "low", dstPath: "path1/doc4"},
+          {action: "merge", priority: "normal", dstPath: "", journalEntry: journalEntry},
+        ],
+      },
+      {
+        name: "logic 3",
+        timeFinished: firestore.Timestamp.now(),
+        status: "finished",
+        documents: [
+          {action: "merge", priority: "high", dstPath: "path1/doc5", doc: {field2: "value"}, journalEntry: recordedJournalEntry},
+          {action: "create", priority: "normal", dstPath: "path1/doc6", doc: {field3: "value"}, journalEntry: zeroJournalEntry},
+        ],
+      },
+    ];
+
+    // Act
+    const logicResultDocs = logicResults.map((logicResult) => logicResult.documents).flat();
+    const result = await indexUtils.expandConsolidateAndGroupByDstPath(logicResultDocs);
+
+    // Assert
+    const expectedResult = new Map<string, LogicResultDoc[]>([
+      ["path1/doc6", [{action: "create", priority: "normal", dstPath: "path1/doc6", doc: {field3: "value"}}]],
+      ["path1/doc5", [{action: "merge", priority: "high", dstPath: "path1/doc5", doc: {field2: "value"}, instructions: {doneCount: "-1", inProgressCount: "+1"}}]],
+      ["path1/doc5/@ledgers/doc550", [{action: "create", priority: "high", dstPath: "path1/doc5/@ledgers/doc550", doc: {journalEntryId: "doc55", account: "inProgressCount", credit: 1, debit: 0}}]],
+      ["path1/doc5/@ledgers/doc551", [{action: "create", priority: "high", dstPath: "path1/doc5/@ledgers/doc551", doc: {journalEntryId: "doc55", account: "doneCount", credit: 0, debit: 1}}]],
+      ["path1/doc4", [{action: "delete", priority: "low", dstPath: "path1/doc4"}]],
+      ["path1/doc3", [{action: "merge", priority: "normal", dstPath: "path1/doc3", doc: {field1: "value"}, instructions: {field2: "--"}}]],
+      ["path1/doc2", [{action: "create", priority: "normal", dstPath: "path1/doc2"}]],
+      ["path1/doc1", [{action: "merge", priority: "normal", dstPath: "path1/doc1", instructions: {totalTodos: "+1", notStartedCount: "+1"}}]],
+    ]);
+
+    expect(consoleErrorSpy.mock.calls[0][0]).toBe("Dst path has no docId");
+    expect(consoleErrorSpy.mock.calls[1][0]).toBe("Debit and credit should be equal");
+    expect(result).toStrictEqual(expectedResult);
   });
 
   it("should expand recursive-copy logic results documents to merge logic results", async () => {

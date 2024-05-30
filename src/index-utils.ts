@@ -459,6 +459,7 @@ export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultD
       const docId = dstPath.split("/").pop();
       if (!docId) {
         console.error("Dst path has no docId");
+        logicDocs.splice(i, 1);
         continue;
       }
 
@@ -492,17 +493,23 @@ export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultD
 
         // totalTodoCount = leafCount + nonLeafCount
         const increment = leftSide.includes(account) ? debit - credit : credit - debit;
-        instructions[account] = `${increment >= 0 ? "+" : "-"}${increment}`;
+        if (increment === 0) {
+          continue;
+        }
+        instructions[account] = `${increment >= 0 ? "+" : "-"}${Math.abs(increment)}`;
+        if (!logicResultDoc.instructions) {
+          logicResultDoc.instructions = instructions;
+        }
 
         if (recordEntry) {
           const journalEntryId = docId + i;
           const ledgerEntryId = journalEntryId + j;
-          const ledgerEntryDoc = {
+          const ledgerEntryDoc: DocumentData = {
             journalEntryId,
             account,
             credit,
             debit,
-            description,
+            ...(description && {description}),
           };
           expandedLogicResultDocs.push({
             action: "create",
