@@ -15,7 +15,7 @@ import {
   validatorConfig,
   viewLogicConfigs,
 } from "./index";
-import {expandAndGroupDocPathsByEntity, findMatchingDocPathRegex} from "./utils/paths";
+import {_mockable as _pathMockable, expandAndGroupDocPathsByEntity, findMatchingDocPathRegex} from "./utils/paths";
 import {deepEqual, deleteCollection} from "./utils/misc";
 import {CloudFunctionsServiceClient} from "@google-cloud/functions";
 import {FormData} from "emberflow-admin-client/lib/types";
@@ -48,7 +48,7 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
   const dstDocRef = db.doc(dstPath);
   console.debug(`Distributing doc with Action: ${action}`);
   if (action === "delete") {
-    if (!skipRunViewLogics){
+    if (!skipRunViewLogics) {
       const doc = (await dstDocRef.get()).data();
       logicResultDoc.doc = doc;
     }
@@ -445,6 +445,88 @@ export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultD
     existingDocs.push(logicResultDoc);
   }
 
+  function expandJournalEntry() {
+    for (let i = logicDocs.length - 1; i >= 0; i--) {
+      const expandedLogicResultDocs: LogicResultDoc[] = [];
+      const logicResultDoc = logicDocs[i];
+      const {
+        dstPath,
+        instructions = {},
+        journalEntry,
+        priority,
+      } = logicResultDoc;
+
+      const docId = dstPath.split("/").pop();
+      if (!docId) {
+        console.error("Dst path has no docId");
+        logicDocs.splice(i, 1);
+        continue;
+      }
+
+      if (!journalEntry) {
+        continue;
+      }
+      delete logicResultDoc.journalEntry;
+
+      const {
+        ledgerEntries,
+        recordEntry,
+        equation,
+      } = journalEntry;
+
+      const totalCreditDebit = ledgerEntries
+        .reduce((acc, entry) => {
+          return {
+            credit: acc.credit + entry.credit,
+            debit: acc.debit + entry.debit,
+          };
+        }, {credit: 0, debit: 0});
+      if (totalCreditDebit.debit !== totalCreditDebit.credit) {
+        console.error("Debit and credit should be equal");
+        continue;
+      }
+
+      const [leftSide, ..._] = equation.split("=");
+
+      for (let j = 0; j < ledgerEntries.length; j++) {
+        const {account, debit, credit, description} = ledgerEntries[j];
+
+        // totalTodoCount = leafCount + nonLeafCount
+        const increment = leftSide.includes(account) ? debit - credit : credit - debit;
+        if (increment === 0) {
+          continue;
+        }
+        instructions[account] = `${increment >= 0 ? "+" : "-"}${Math.abs(increment)}`;
+        if (!logicResultDoc.instructions) {
+          logicResultDoc.instructions = instructions;
+        }
+
+        if (recordEntry) {
+          const journalEntryId = docId + i;
+          const ledgerEntryId = journalEntryId + j;
+          const ledgerEntryDoc: DocumentData = {
+            journalEntryId,
+            account,
+            credit,
+            debit,
+            ...(description && {description}),
+          };
+          expandedLogicResultDocs.push({
+            action: "create",
+            doc: ledgerEntryDoc,
+            dstPath: dstPath + "/@ledgers/" + ledgerEntryId,
+            priority,
+          });
+        }
+      }
+
+      if (recordEntry) {
+        logicDocs.splice(i, 0, ...expandedLogicResultDocs);
+      }
+    }
+  }
+  expandJournalEntry();
+
   async function expandRecursiveActions() {
     const expandedLogicResultDocs: LogicResultDoc[] = [];
     for (let i = logicDocs.length - 1; i >= 0; i--) {
@@ -493,6 +575,7 @@ export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultD
       logicDocs.splice(i, 1, ...expandedLogicResultDocs);
     }
   }
+  await expandRecursiveActions();
 
   async function convertCopyToMerge() {
     for (const doc of logicDocs) {
@@ -511,9 +594,6 @@ export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultD
       doc.action = "merge";
     }
   }
-
-  await expandRecursiveActions();
-
   await convertCopyToMerge();
 
   const consolidated: Map<string, LogicResultDoc[]> = new Map();
@@ -631,6 +711,16 @@ async function deleteFunction(projectId: string, functionName: string): Promise<
     console.log(`Function '${functionName}' in location '${location}' deleted successfully.`);
   } else {
     console.log(`Function '${functionName}' not found or location not available.`);
+  }
+}
+
+export async function createMetricLogicDoc(logicName: string) {
+  const metricsRef = db.doc(`@metrics/${logicName}`);
+  if (!await _pathMockable.doesPathExists(metricsRef.path)) {
+    await metricsRef.set({
+      totalExecTime: 0,
+      totalExecCount: 0,
+    });
   }
 }
 
