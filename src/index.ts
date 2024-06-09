@@ -36,7 +36,7 @@ import {resetUsageStats, stopBillingIfBudgetExceeded, useBillProtect} from "./ut
 import {Firestore} from "firebase-admin/firestore";
 import {DatabaseEvent, DataSnapshot, onValueCreated} from "firebase-functions/v2/database";
 import {parseEntity} from "./utils/paths";
-import {database} from "firebase-admin";
+import {database, firestore} from "firebase-admin";
 import {initClient} from "emberflow-admin-client/lib";
 import {internalDbStructure, InternalEntity} from "./db-structure";
 import {cleanActionsAndForms, onMessageSubmitFormQueue} from "./utils/forms";
@@ -55,6 +55,8 @@ import {onDocumentCreated} from "firebase-functions/v2/firestore";
 import {onRequest} from "firebase-functions/v2/https";
 import {UserRecord} from "firebase-admin/lib/auth";
 import {debounce} from "./utils/functions";
+import {DocumentData} from "firebase-admin/lib/firestore";
+import FieldValue = firestore.FieldValue;
 
 export let admin: FirebaseAdmin;
 export let db: Firestore;
@@ -392,6 +394,128 @@ export async function onFormSubmit(
         }
         updateErrorMessage();
 
+        async function writeJournalEntriesFirst() {
+          // Gather all logicResultDoc with journalEntries
+          const logicResultDocsWithJournalEntries = logicResults
+            .map((result) => result.documents).flat()
+            .filter((logicResultDoc) => logicResultDoc.journalEntries);
+          if (logicResultDocsWithJournalEntries.length === 0) {
+            console.info("No journal entries to write");
+            return;
+          }
+
+          const dstPathLogicDocsWithJournalEntriesMap =
+              await expandConsolidateAndGroupByDstPath(logicResultDocsWithJournalEntries);
+          for (const [dstPath, logicDocs] of dstPathLogicDocsWithJournalEntriesMap) {
+            for (const logicDoc of logicDocs) {
+              await db.runTransaction(async (transaction) => {
+                const {
+                  doc,
+                  instructions,
+                  journalEntries,
+                } = logicDoc;
+
+                const docId = dstPath.split("/").pop();
+                if (!docId) {
+                  console.error("Dst path has no docId");
+                  return;
+                }
+
+                if (!journalEntries) {
+                  return;
+                }
+
+                const docRef = db.doc(dstPath);
+                const currData = (await transaction.get(docRef)).data();
+
+                for (let i=0; i < journalEntries.length; i++) {
+                  const {
+                    ledgerEntries,
+                    recordEntry,
+                    equation,
+                  } = journalEntries[i];
+
+                  let instructionsDbValues;
+                  if (instructions) {
+                    instructionsDbValues = convertInstructionsToDbValues(instructions);
+                  }
+
+                  if (currData) {
+                    transaction.update(
+                      docRef,
+                      {
+                        ...currData,
+                        ...(doc ? doc : {}),
+                        ...(instructionsDbValues ? instructionsDbValues : {}),
+                        "@forDeletionLater": true,
+                      });
+                  } else {
+                    transaction.set(
+                      docRef,
+                      {
+                        ...(doc ? doc : {}),
+                        ...(instructionsDbValues ? instructionsDbValues : {}),
+                        "@forDeletionLater": true,
+                      });
+                  }
+
+                  const totalCreditDebit = ledgerEntries
+                    .reduce((acc, entry) => {
+                      return {
+                        credit: acc.credit + entry.credit,
+                        debit: acc.debit + entry.debit,
+                      };
+                    }, {credit: 0, debit: 0});
+                  if (totalCreditDebit.debit !== totalCreditDebit.credit) {
+                    console.error("Debit and credit should be equal");
+                    continue;
+                  }
+
+                  const [leftSide, ..._] = equation.split("=");
+
+                  for (let j = 0; j < ledgerEntries.length; j++) {
+                    const {account, debit, credit, description} = ledgerEntries[j];
+
+                    const increment = leftSide.includes(account) ? debit - credit : credit - debit;
+                    if (increment === 0) {
+                      continue;
+                    }
+                    const accountVal = (currData?.[account] || 0) + increment;
+                    if (accountVal < 0) {
+                      throw new Error("Account value cannot be negative");
+                    }
+
+                    transaction.update(
+                      docRef,
+                      {
+                        [account]: accountVal,
+                        "@forDeletionLater": FieldValue.delete(),
+                      });
+
+                    if (recordEntry) {
+                      const journalEntryId = docId + i;
+                      const ledgerEntryId = journalEntryId + j;
+                      const ledgerEntryDoc: DocumentData = {
+                        journalEntryId,
+                        account,
+                        credit,
+                        debit,
+                        ...(description && {description}),
+                      };
+                      const entryRef = docRef.collection("@ledgers").doc(ledgerEntryId);
+                      transaction.set(
+                        entryRef,
+                        ledgerEntryDoc,
+                      );
+                    }
+                  }
+                }
+              });
+            }
+          }
+        }
+        await writeJournalEntriesFirst();
+
         async function distributeTransactionalLogicResults() {
           const transactionalResults = logicResults.filter((result) => result.transactional);
           if (transactionalResults.length === 0) {
@@ -399,7 +523,10 @@ export async function onFormSubmit(
             return;
           }
           // We always distribute transactional results first
-          const transactionalDstPathLogicDocsMap = await expandConsolidateAndGroupByDstPath(transactionalResults.map((result) => result.documents).flat());
+          const transactionalDstPathLogicDocsMap =
+              await expandConsolidateAndGroupByDstPath(transactionalResults.map(
+                (result) => result.documents).flat().filter( (doc) => !doc.journalEntries)
+              );
           // Write to firestore in one transaction
           await db.runTransaction(async (transaction) => {
             for (const [dstPath, logicDocs] of transactionalDstPathLogicDocsMap) {
@@ -435,6 +562,7 @@ export async function onFormSubmit(
           const {highPriorityDocs, normalPriorityDocs, lowPriorityDocs} = nonTransactionalResults
             .map((result) => result.documents)
             .flat()
+            .filter((doc) => !doc.journalEntries)
             .reduce((acc, doc) => {
               if (doc.priority === "high") {
                 acc.highPriorityDocs.push(doc);
