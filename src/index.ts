@@ -407,33 +407,74 @@ export async function onFormSubmit(
           const dstPathLogicDocsWithJournalEntriesMap =
               await expandConsolidateAndGroupByDstPath(logicResultDocsWithJournalEntries);
           for (const [dstPath, logicDocs] of dstPathLogicDocsWithJournalEntriesMap) {
+            const docId = dstPath.split("/").pop();
+            if (!docId) {
+              console.error("Dst path has no docId");
+              continue;
+            }
+
             for (const logicDoc of logicDocs) {
-              await db.runTransaction(async (transaction) => {
+              const {
+                doc,
+                instructions,
+                journalEntries,
+              } = logicDoc;
+
+              if (!journalEntries) {
+                continue;
+              }
+
+              const accounts = new Set(
+                journalEntries.map((entry) => entry.ledgerEntries).flat()
+                  .map((entry) => entry.account)
+              );
+              if (Object.keys(doc || {}).some((key) => accounts.has(key))) {
+                console.error("Doc cannot have keys that are the same as account names");
+                continue;
+              }
+              if (Object.keys(instructions || {}).some((key) => accounts.has(key))) {
+                console.error("Instructions cannot have keys that are the same as account names");
+                continue;
+              }
+
+              for (let i=0; i < journalEntries.length; i++) {
                 const {
-                  doc,
-                  instructions,
-                  journalEntries,
-                } = logicDoc;
+                  ledgerEntries,
+                  recordEntry,
+                  equation,
+                } = journalEntries[i];
 
-                const docId = dstPath.split("/").pop();
-                if (!docId) {
-                  console.error("Dst path has no docId");
-                  return;
+                const consolidatedPerAccount = ledgerEntries
+                  .reduce((acc, entry) => {
+                    const {account} = entry;
+                    if (acc[account]) {
+                      acc[account].debit += entry.debit;
+                      acc[account].credit += entry.credit;
+                    } else {
+                      acc[account] = {
+                        debit: entry.debit,
+                        credit: entry.credit,
+                      };
+                    }
+                    return acc;
+                  }, {} as {[key: string]: {debit: number, credit: number}});
+
+                // loop through keys of consolidatedPerAccount
+                const totalCreditDebit = Object.entries(consolidatedPerAccount)
+                  .reduce((acc, [account, {debit, credit}]) => {
+                    return {
+                      debit: acc.debit + debit,
+                      credit: acc.credit + credit,
+                    };
+                  }, {debit: 0, credit: 0});
+                if (totalCreditDebit.debit !== totalCreditDebit.credit) {
+                  console.error("Debit and credit should be equal");
+                  continue;
                 }
 
-                if (!journalEntries) {
-                  return;
-                }
-
-                const docRef = db.doc(dstPath);
-                const currData = (await transaction.get(docRef)).data();
-
-                for (let i=0; i < journalEntries.length; i++) {
-                  const {
-                    ledgerEntries,
-                    recordEntry,
-                    equation,
-                  } = journalEntries[i];
+                await db.runTransaction(async (transaction) => {
+                  const docRef = db.doc(dstPath);
+                  const currData = (await transaction.get(docRef)).data();
 
                   let instructionsDbValues;
                   if (instructions) {
@@ -459,26 +500,17 @@ export async function onFormSubmit(
                       });
                   }
 
-                  const totalCreditDebit = ledgerEntries
-                    .reduce((acc, entry) => {
-                      return {
-                        credit: acc.credit + entry.credit,
-                        debit: acc.debit + entry.debit,
-                      };
-                    }, {credit: 0, debit: 0});
-                  if (totalCreditDebit.debit !== totalCreditDebit.credit) {
-                    console.error("Debit and credit should be equal");
-                    continue;
-                  }
-
                   const [leftSide, ..._] = equation.split("=");
 
-                  for (let j = 0; j < ledgerEntries.length; j++) {
-                    const {account, debit, credit, description} = ledgerEntries[j];
-
+                  Object.entries(consolidatedPerAccount).forEach(([account, {debit, credit}]) => {
                     const increment = leftSide.includes(account) ? debit - credit : credit - debit;
                     if (increment === 0) {
-                      continue;
+                      transaction.update(
+                        docRef,
+                        {
+                          "@forDeletionLater": FieldValue.delete(),
+                        });
+                      return;
                     }
                     const accountVal = (currData?.[account] || 0) + increment;
                     if (accountVal < 0) {
@@ -491,8 +523,11 @@ export async function onFormSubmit(
                         [account]: accountVal,
                         "@forDeletionLater": FieldValue.delete(),
                       });
+                  });
 
-                    if (recordEntry) {
+                  if (recordEntry) {
+                    for (let j = 0; j < ledgerEntries.length; j++) {
+                      const {account, debit, credit, description} = ledgerEntries[j];
                       const journalEntryId = docId + i;
                       const ledgerEntryId = journalEntryId + j;
                       const ledgerEntryDoc: DocumentData = {
@@ -509,8 +544,8 @@ export async function onFormSubmit(
                       );
                     }
                   }
-                }
-              });
+                });
+              }
             }
           }
         }
