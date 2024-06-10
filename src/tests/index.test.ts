@@ -1,4 +1,4 @@
-import {_mockable, initializeEmberFlow, onFormSubmit} from "../index";
+import {_mockable, db, initializeEmberFlow, onFormSubmit} from "../index";
 import * as indexutils from "../index-utils";
 import * as admin from "firebase-admin";
 import * as viewLogics from "../logics/view-logics";
@@ -11,7 +11,7 @@ import {
   LogicResultDoc,
   ProjectConfig,
   SecurityResult,
-  ValidateFormResult,
+  ValidateFormResult, JournalEntry,
 } from "../types";
 import * as functions from "firebase-functions";
 import {dbStructure, Entity} from "../sample-custom/db-structure";
@@ -25,6 +25,7 @@ import Timestamp = firestore.Timestamp;
 import Database = database.Database;
 import {expandConsolidateAndGroupByDstPath, groupDocsByTargetDocPath} from "../index-utils";
 import * as distribution from "../utils/distribution";
+import FieldValue = firestore.FieldValue;
 
 const projectConfig: ProjectConfig = {
   projectId: "your-project-id",
@@ -51,9 +52,9 @@ const getMock: CollectionReference = {
 } as unknown as CollectionReference;
 
 const updateMock: jest.Mock = jest.fn();
-
+const setMock = jest.fn();
 const docMock: DocumentReference = {
-  set: jest.fn(),
+  set: setMock,
   get: jest.fn().mockResolvedValue(getMock),
   update: updateMock,
   collection: jest.fn(() => collectionMock),
@@ -63,9 +64,13 @@ const collectionMock: CollectionReference = {
   doc: jest.fn(() => docMock),
 } as unknown as CollectionReference;
 
+const transactionGetMock = jest.fn();
+const transactionSetMock = jest.fn();
+const transactionUpdateMock = jest.fn();
 const transactionMock = {
-  set: jest.fn(),
-  update: jest.fn(),
+  get: transactionGetMock,
+  set: transactionSetMock,
+  update: transactionUpdateMock,
   delete: jest.fn(),
 };
 
@@ -89,8 +94,9 @@ admin.initializeApp();
 
 initializeEmberFlow(projectConfig, admin, dbStructure, Entity, {}, {}, []);
 
+const refUpdateMock = jest.fn();
 const refMock = {
-  update: jest.fn(),
+  update: refUpdateMock,
 };
 
 function createDocumentSnapshot(form: FirebaseFirestore.DocumentData)
@@ -138,6 +144,41 @@ describe("onFormSubmit", () => {
       nestedField2: "oldValue",
     },
   };
+  const equation = "totalTodos = notStartedCount + inProgressCount + toVerifyCount + requestChangesCount + doneCount";
+  const now = Timestamp.fromDate(new Date());
+  const journalEntry: JournalEntry = {
+    date: now,
+    ledgerEntries: [
+      {
+        account: "totalTodos",
+        debit: 1,
+        credit: 0,
+      },
+      {
+        account: "notStartedCount",
+        debit: 0,
+        credit: 1,
+      },
+    ],
+    equation: equation,
+  };
+  const recordedJournalEntry: JournalEntry = {
+    date: now,
+    ledgerEntries: [
+      {
+        account: "inProgressCount",
+        debit: 1,
+        credit: 0,
+      },
+      {
+        account: "doneCount",
+        debit: 0,
+        credit: 1,
+      },
+    ],
+    equation: equation,
+    recordEntry: true,
+  };
 
   beforeEach(() => {
     jest.spyOn(_mockable, "createNowTimestamp").mockReturnValue(Timestamp.now());
@@ -149,6 +190,14 @@ describe("onFormSubmit", () => {
     });
     refMock.update.mockReset();
     updateMock.mockReset();
+    transactionGetMock.mockResolvedValue({
+      data: () => ({
+        totalTodos: 3,
+        notStartedCount: 1,
+        inProgressCount: 1,
+        doneCount: 1,
+      }),
+    });
   });
 
   afterEach(() => {
@@ -597,7 +646,338 @@ describe("onFormSubmit", () => {
     (docMock.update as jest.Mock).mockReset();
   });
 
+  it("should write journal entries first", async () => {
+    const consoleErrorSpy = jest.spyOn(console, "error").mockImplementation();
+    const consoleInfoSpy = jest.spyOn(console, "info").mockImplementation();
+    jest.spyOn(indexutils, "runBusinessLogics").mockImplementation(
+      async (actionRef, action, distributeFn) => {
+        await distributeFn(actionRef, logicResults, 0);
+        return "done";
+      },
+    );
+    let logicResults: LogicResult[] = [
+      {
+        name: "logic 1",
+        timeFinished: _mockable.createNowTimestamp(),
+        status: "finished",
+        documents: [
+          {action: "merge", priority: "normal", dstPath: "path1/doc1"},
+        ],
+      },
+    ];
+    const docPath = "users/user-1";
+    const form = {
+      "formData": JSON.stringify({
+        "@actionType": "create",
+        "name": "test",
+        "@docPath": docPath,
+      }),
+      "@status": "submit",
+    };
+
+    const event = createEvent(form);
+    await onFormSubmit(event);
+
+    expect(consoleInfoSpy).toHaveBeenCalledWith("No journal entries to write");
+    expect(transactionUpdateMock).not.toHaveBeenCalled();
+    expect(transactionSetMock).not.toHaveBeenCalled();
+    expect(transactionGetMock).not.toHaveBeenCalled();
+    logicResults = [
+      {
+        name: "logic 1",
+        timeFinished: _mockable.createNowTimestamp(),
+        status: "finished",
+        documents: [
+          {action: "merge", priority: "normal", dstPath: "", journalEntries: [journalEntry]},
+        ],
+      },
+    ];
+    await onFormSubmit(event);
+    expect(consoleErrorSpy).toHaveBeenCalledWith("Dst path has no docId");
+    expect(transactionUpdateMock).not.toHaveBeenCalled();
+    expect(transactionSetMock).not.toHaveBeenCalled();
+    expect(transactionGetMock).not.toHaveBeenCalled();
+
+    logicResults = [
+      {
+        name: "logic 1",
+        timeFinished: _mockable.createNowTimestamp(),
+        status: "finished",
+        documents: [
+          {action: "merge", priority: "high", dstPath: "path1/doc5", doc: {totalTodos: 1}, journalEntries: [journalEntry]},
+        ],
+      },
+    ];
+    await onFormSubmit(event);
+    expect(consoleErrorSpy).toHaveBeenCalledWith("Doc cannot have keys that are the same as account names");
+    expect(transactionUpdateMock).not.toHaveBeenCalled();
+    expect(transactionSetMock).not.toHaveBeenCalled();
+    expect(transactionGetMock).not.toHaveBeenCalled();
+
+    logicResults = [
+      {
+        name: "logic 1",
+        timeFinished: _mockable.createNowTimestamp(),
+        status: "finished",
+        documents: [
+          {action: "merge", priority: "high", dstPath: "path1/doc5", instructions: {totalTodos: "+1"}, journalEntries: [journalEntry]},
+        ],
+      },
+    ];
+    await onFormSubmit(event);
+    expect(consoleErrorSpy).toHaveBeenCalledWith("Instructions cannot have keys that are the same as account names");
+    expect(transactionUpdateMock).not.toHaveBeenCalled();
+    expect(transactionSetMock).not.toHaveBeenCalled();
+    expect(transactionGetMock).not.toHaveBeenCalled();
+    const unbalancedJournalEntry: JournalEntry = {
+      date: _mockable.createNowTimestamp(),
+      ledgerEntries: [
+        {
+          account: "totalTodos",
+          debit: 1,
+          credit: 0,
+        },
+        {
+          account: "notStartedCount",
+          debit: 0,
+          credit: 1,
+        },
+        {
+          account: "inProgressCount",
+          debit: 0,
+          credit: 1,
+        },
+      ],
+      equation: equation,
+    };
+    logicResults = [
+      {
+        name: "logic 1",
+        timeFinished: _mockable.createNowTimestamp(),
+        status: "finished",
+        documents: [
+          {action: "merge", priority: "high", dstPath: "path1/doc5", journalEntries: [unbalancedJournalEntry]},
+        ],
+      },
+    ];
+    await onFormSubmit(event);
+    expect(consoleErrorSpy).toHaveBeenCalledWith("Debit and credit should be equal");
+    expect(transactionUpdateMock).not.toHaveBeenCalled();
+    expect(transactionSetMock).not.toHaveBeenCalled();
+    expect(transactionGetMock).not.toHaveBeenCalled();
+
+    transactionGetMock.mockRestore();
+    transactionSetMock.mockRestore();
+    transactionUpdateMock.mockRestore();
+    transactionGetMock.mockResolvedValueOnce({
+      data: () => undefined,
+    });
+    const docRef = db.doc("path1/doc1");
+    logicResults = [
+      {
+        name: "logic 1",
+        timeFinished: _mockable.createNowTimestamp(),
+        status: "finished",
+        documents: [
+          {action: "merge", priority: "normal", dstPath: "path1/doc1", doc: {field: "value"}, journalEntries: [journalEntry]},
+        ],
+      },
+    ];
+    await onFormSubmit(event);
+    expect(transactionGetMock).toHaveBeenCalledTimes(1);
+    expect(transactionGetMock).toHaveBeenCalledWith(docRef);
+    expect(transactionSetMock).toHaveBeenCalledTimes(1);
+    expect(transactionSetMock).toHaveBeenCalledWith(docRef, {"field": "value", "@forDeletionLater": true});
+    expect(transactionUpdateMock).toHaveBeenCalledTimes(2);
+    expect(transactionUpdateMock).toHaveBeenNthCalledWith(1, docRef, {
+      "totalTodos": 1,
+      "@forDeletionLater": FieldValue.delete(),
+    });
+    expect(transactionUpdateMock).toHaveBeenNthCalledWith(2, docRef, {
+      "notStartedCount": 1,
+      "@forDeletionLater": FieldValue.delete(),
+    });
+
+    transactionGetMock.mockRestore();
+    transactionSetMock.mockRestore();
+    transactionUpdateMock.mockRestore();
+    transactionGetMock.mockResolvedValueOnce({
+      data: () => ({
+        "totalTodos": 1,
+        "notStartedCount": 1,
+      }),
+    });
+    logicResults = [
+      {
+        name: "logic 1",
+        timeFinished: _mockable.createNowTimestamp(),
+        status: "finished",
+        documents: [
+          {action: "merge", priority: "normal", dstPath: "path1/doc1", doc: {field: "value"}, journalEntries: [journalEntry]},
+        ],
+      },
+    ];
+    await onFormSubmit(event);
+    expect(transactionGetMock).toHaveBeenCalledTimes(1);
+    expect(transactionGetMock).toHaveBeenCalledWith(docRef);
+    expect(transactionSetMock).not.toHaveBeenCalled();
+    expect(transactionUpdateMock).toHaveBeenCalledTimes(3);
+    expect(transactionUpdateMock).toHaveBeenNthCalledWith(1, docRef, {"field": "value", "@forDeletionLater": true});
+    expect(transactionUpdateMock).toHaveBeenNthCalledWith(2, docRef, {
+      "totalTodos": 2,
+      "@forDeletionLater": FieldValue.delete(),
+    });
+    expect(transactionUpdateMock).toHaveBeenNthCalledWith(3, docRef, {
+      "notStartedCount": 2,
+      "@forDeletionLater": FieldValue.delete(),
+    });
+
+    transactionGetMock.mockRestore();
+    transactionSetMock.mockRestore();
+    transactionUpdateMock.mockRestore();
+    transactionGetMock.mockResolvedValueOnce({
+      data: () => ({
+        "totalTodos": 2,
+        "notStartedCount": 0,
+        "inProgressCount": 2,
+      }),
+    });
+    const zeroJournalEntry: JournalEntry = {
+      date: _mockable.createNowTimestamp(),
+      ledgerEntries: [
+        {
+          account: "notStartedCount",
+          debit: 1,
+          credit: 1,
+        },
+        {
+          account: "inProgressCount",
+          debit: 1,
+          credit: 1,
+        },
+      ],
+      equation: equation,
+    };
+    logicResults = [
+      {
+        name: "logic 1",
+        timeFinished: _mockable.createNowTimestamp(),
+        status: "finished",
+        documents: [
+          {action: "merge", priority: "normal", dstPath: "path1/doc1", journalEntries: [zeroJournalEntry]},
+        ],
+      },
+    ];
+    await onFormSubmit(event);
+    expect(transactionGetMock).toHaveBeenCalledTimes(1);
+    expect(transactionGetMock).toHaveBeenCalledWith(docRef);
+    expect(transactionSetMock).not.toHaveBeenCalled();
+    expect(transactionUpdateMock).toHaveBeenCalledTimes(3);
+    expect(transactionUpdateMock).toHaveBeenNthCalledWith(1, docRef, {"@forDeletionLater": true});
+    expect(transactionUpdateMock).toHaveBeenNthCalledWith(2, docRef, {"@forDeletionLater": FieldValue.delete()});
+    expect(transactionUpdateMock).toHaveBeenNthCalledWith(3, docRef, {"@forDeletionLater": FieldValue.delete()});
+
+    const errorMock = jest.spyOn(global, "Error")
+      .mockImplementation();
+    transactionGetMock.mockRestore();
+    transactionSetMock.mockRestore();
+    transactionUpdateMock.mockRestore();
+    transactionGetMock.mockResolvedValueOnce({
+      data: () => ({
+        "totalTodos": 2,
+        "notStartedCount": 0,
+        "inProgressCount": 2,
+      }),
+    });
+    const changeStatusJournalEntry: JournalEntry = {
+      date: _mockable.createNowTimestamp(),
+      ledgerEntries: [
+        {
+          account: "notStartedCount",
+          debit: 1,
+          credit: 0,
+        },
+        {
+          account: "inProgressCount",
+          debit: 0,
+          credit: 1,
+        },
+      ],
+      equation: equation,
+    };
+    logicResults = [
+      {
+        name: "logic 1",
+        timeFinished: _mockable.createNowTimestamp(),
+        status: "finished",
+        documents: [
+          {action: "merge", priority: "normal", dstPath: "path1/doc1", journalEntries: [changeStatusJournalEntry]},
+        ],
+      },
+    ];
+    await onFormSubmit(event);
+    expect(transactionGetMock).toHaveBeenCalledTimes(1);
+    expect(transactionGetMock).toHaveBeenCalledWith(docRef);
+    expect(transactionSetMock).not.toHaveBeenCalled();
+    expect(transactionUpdateMock).toHaveBeenCalledTimes(1);
+    expect(transactionUpdateMock).toHaveBeenCalledWith(docRef, {"@forDeletionLater": true});
+    expect(errorMock).toHaveBeenCalledTimes(1);
+    expect(errorMock).toHaveBeenCalledWith("Account value cannot be negative");
+
+    transactionGetMock.mockRestore();
+    transactionSetMock.mockRestore();
+    transactionUpdateMock.mockRestore();
+    transactionGetMock.mockResolvedValueOnce({
+      data: () => ({
+        "totalTodos": 2,
+        "notStartedCount": 1,
+        "inProgressCount": 1,
+        "doneCount": 0,
+      }),
+    });
+    logicResults = [
+      {
+        name: "logic 1",
+        timeFinished: _mockable.createNowTimestamp(),
+        status: "finished",
+        documents: [
+          {action: "merge", priority: "normal", dstPath: "path1/doc1", journalEntries: [recordedJournalEntry]},
+        ],
+      },
+    ];
+    await onFormSubmit(event);
+    expect(transactionGetMock).toHaveBeenCalledTimes(1);
+    expect(transactionGetMock).toHaveBeenCalledWith(docRef);
+    expect(transactionUpdateMock).toHaveBeenCalledTimes(3);
+    expect(transactionUpdateMock).toHaveBeenNthCalledWith(1, docRef, {"@forDeletionLater": true});
+    expect(transactionUpdateMock).toHaveBeenNthCalledWith(2, docRef, {
+      "inProgressCount": 0,
+      "@forDeletionLater": FieldValue.delete(),
+    });
+    expect(transactionUpdateMock).toHaveBeenNthCalledWith(3, docRef, {
+      "doneCount": 1,
+      "@forDeletionLater": FieldValue.delete(),
+    });
+    expect(transactionSetMock).toHaveBeenCalledTimes(2);
+    expect(transactionSetMock).toHaveBeenNthCalledWith(1, db.doc("path/doc1/@ledgers/doc100"), {
+      "journalEntryId": "doc10",
+      "account": "inProgressCount",
+      "debit": 1,
+      "credit": 0,
+    });
+    expect(transactionSetMock).toHaveBeenNthCalledWith(2, db.doc("path/doc1/@ledgers/doc101"), {
+      "journalEntryId": "doc10",
+      "account": "doneCount",
+      "debit": 0,
+      "credit": 1,
+    });
+  });
+
   it("should execute the sequence of operations correctly", async () => {
+    refUpdateMock.mockRestore();
+    setMock.mockRestore();
+    transactionSetMock.mockRestore();
+    transactionUpdateMock.mockRestore();
     jest.spyOn(indexutils, "validateForm").mockResolvedValue([false, {}]);
     jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue({"field1": "value1", "field2": "value2"});
     jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() => Promise.resolve({status: "allowed"}));
@@ -607,7 +987,7 @@ describe("onFormSubmit", () => {
     jest.spyOn(viewLogics, "queueRunViewLogics").mockResolvedValue();
     jest.spyOn(distribution, "convertInstructionsToDbValues").mockReturnValue({
       updateData: {
-        transactions: admin.firestore.FieldValue.increment(-1),
+        transactions: FieldValue.increment(-1),
       },
       removeData: {},
     });
@@ -710,6 +1090,38 @@ describe("onFormSubmit", () => {
       },
     ];
 
+    const recordedJournalEntry: JournalEntry = {
+      date: _mockable.createNowTimestamp(),
+      ledgerEntries: [
+        {
+          account: "inProgressCount",
+          debit: 1,
+          credit: 0,
+        },
+        {
+          account: "doneCount",
+          debit: 0,
+          credit: 1,
+        },
+      ],
+      equation: equation,
+      recordEntry: true,
+    };
+    const journalDocs: LogicResultDoc[] = [
+      {
+        action: "merge",
+        priority: "normal",
+        dstPath: "journal/doc1",
+        journalEntries: [recordedJournalEntry, journalEntry],
+      },
+      {
+        action: "merge",
+        priority: "normal",
+        dstPath: "journal/doc2",
+        journalEntries: [journalEntry],
+      },
+    ];
+
     const logicResults: LogicResult[] = [
       {
         name: "testLogic",
@@ -726,6 +1138,12 @@ describe("onFormSubmit", () => {
         status: "finished",
         timeFinished: _mockable.createNowTimestamp(),
         documents: [...transactionalDocs],
+        transactional: true,
+      }, {
+        name: "journalLogic",
+        status: "finished",
+        timeFinished: _mockable.createNowTimestamp(),
+        documents: [...journalDocs],
         transactional: true,
       },
     ];
@@ -775,6 +1193,9 @@ describe("onFormSubmit", () => {
     const transactionalDstPathLogicDocsMap =
       await expandConsolidateAndGroupByDstPath(transactionalDocs);
 
+    const journalDstPathLogicDocsMap =
+      await expandConsolidateAndGroupByDstPath(journalDocs);
+
     const viewLogicResults: LogicResult[] = [{
       name: "User ViewLogic",
       status: "finished",
@@ -783,6 +1204,7 @@ describe("onFormSubmit", () => {
     }];
 
     jest.spyOn(indexutils, "expandConsolidateAndGroupByDstPath")
+      .mockResolvedValueOnce(journalDstPathLogicDocsMap)
       .mockResolvedValueOnce(transactionalDstPathLogicDocsMap)
       .mockResolvedValueOnce(highPriorityDstPathLogicDocsMap)
       .mockResolvedValueOnce(normalPriorityDstPathLogicDocsMap)
@@ -808,34 +1230,38 @@ describe("onFormSubmit", () => {
 
     // Test that the runBusinessLogics function was called with the correct parameters
     expect(runBusinessLogicsSpy).toHaveBeenCalled();
-    expect(docMock.set).toHaveBeenCalledTimes(15);
+    expect(setMock).toHaveBeenCalledTimes(18);
     expect(refMock.update).toHaveBeenCalledTimes(3);
     expect(refMock.update).toHaveBeenNthCalledWith(1, {"@status": "processing"});
     expect(refMock.update).toHaveBeenNthCalledWith(2, {"@status": "submitted"});
     expect(refMock.update).toHaveBeenNthCalledWith(3, {"@status": "finished"});
 
     // Test that the functions are called in the correct sequence
-    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(1, transactionalDocs);
-    expect(transactionMock.set).toHaveBeenCalledTimes(1);
-    expect(transactionMock.update).toHaveBeenCalledTimes(2);
+    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(1, journalDocs);
+    console.debug("set", transactionSetMock.mock.calls);
+    console.debug("update", transactionUpdateMock.mock.calls);
+    expect(transactionMock.set).toHaveBeenCalledTimes(3);
+    expect(transactionMock.update).toHaveBeenCalledTimes(11);
+
+    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(2, transactionalDocs);
     expect(transactionMock.delete).toHaveBeenCalledTimes(1);
 
-    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(2, highPriorityDocs);
+    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(3, highPriorityDocs);
     expect(indexutils.groupDocsByTargetDocPath).toHaveBeenNthCalledWith(1, highPriorityDstPathLogicDocsMap, docPath);
     expect(indexutils.distribute).toHaveBeenNthCalledWith(1, highPriorityDocsByDocPath);
     expect(indexutils.distribute).toHaveBeenNthCalledWith(2, highPriorityOtherDocsByDocPath);
 
-    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(3, [...normalPriorityDocs, ...additionalNormalPriorityDocs]);
+    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(4, [...normalPriorityDocs, ...additionalNormalPriorityDocs]);
     expect(indexutils.groupDocsByTargetDocPath).toHaveBeenNthCalledWith(2, normalPriorityDstPathLogicDocsMap, docPath);
     expect(indexutils.distribute).toHaveBeenNthCalledWith(3, normalPriorityDocsByDocPath);
     expect(indexutils.distributeLater).toHaveBeenNthCalledWith(1, normalPriorityOtherDocsByDocPath);
 
-    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(4, lowPriorityDocs);
+    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(5, lowPriorityDocs);
     expect(indexutils.groupDocsByTargetDocPath).toHaveBeenNthCalledWith(3, lowPriorityDstPathLogicDocsMap, docPath);
     expect(indexutils.distributeLater).toHaveBeenNthCalledWith(2, lowPriorityDocsByDocPath);
     expect(indexutils.distributeLater).toHaveBeenNthCalledWith(3, lowPriorityOtherDocsByDocPath);
 
-    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenCalledTimes(4);
+    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenCalledTimes(5);
     expect(updateMock).toHaveBeenCalledTimes(1);
     expect(updateMock.mock.calls[0][0]).toEqual({status: "finished"});
   });
