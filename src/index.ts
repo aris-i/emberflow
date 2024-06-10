@@ -437,7 +437,7 @@ export async function onFormSubmit(
                 continue;
               }
 
-              for (let i=0; i < journalEntries.length; i++) {
+              for (let i= 0; i < journalEntries.length; i++) {
                 const {
                   ledgerEntries,
                   recordEntry,
@@ -485,7 +485,6 @@ export async function onFormSubmit(
                     transaction.update(
                       docRef,
                       {
-                        ...currData,
                         ...(doc ? doc : {}),
                         ...(instructionsDbValues ? instructionsDbValues : {}),
                         "@forDeletionLater": true,
