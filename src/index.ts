@@ -442,6 +442,7 @@ export async function onFormSubmit(
                   ledgerEntries,
                   recordEntry,
                   equation,
+                  date,
                 } = journalEntries[i];
 
                 const consolidatedPerAccount = ledgerEntries
@@ -534,6 +535,8 @@ export async function onFormSubmit(
                         account,
                         credit,
                         debit,
+                        equation,
+                        date,
                         ...(description && {description}),
                       };
                       const entryRef = docRef.collection("@ledgers").doc(ledgerEntryId);

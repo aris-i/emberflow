@@ -964,12 +964,16 @@ describe("onFormSubmit", () => {
       "account": "inProgressCount",
       "debit": 1,
       "credit": 0,
+      "date": expect.any(Timestamp),
+      "equation": equation,
     });
     expect(transactionSetMock).toHaveBeenNthCalledWith(2, db.doc("path/doc1/@ledgers/doc101"), {
       "journalEntryId": "doc10",
       "account": "doneCount",
       "debit": 0,
       "credit": 1,
+      "date": expect.any(Timestamp),
+      "equation": equation,
     });
   });
 
