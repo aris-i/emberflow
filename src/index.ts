@@ -442,6 +442,7 @@ export async function onFormSubmit(
                   ledgerEntries,
                   recordEntry,
                   equation,
+                  date,
                 } = journalEntries[i];
 
                 const consolidatedPerAccount = ledgerEntries
@@ -525,7 +526,6 @@ export async function onFormSubmit(
                   });
 
                   if (recordEntry) {
-                    const now = admin.firestore.Timestamp.now();
                     for (let j = 0; j < ledgerEntries.length; j++) {
                       const {account, debit, credit, description} = ledgerEntries[j];
                       const journalEntryId = docId + i;
@@ -536,7 +536,7 @@ export async function onFormSubmit(
                         credit,
                         debit,
                         equation,
-                        createdAt: now,
+                        date,
                         ...(description && {description}),
                       };
                       const entryRef = docRef.collection("@ledgers").doc(ledgerEntryId);
