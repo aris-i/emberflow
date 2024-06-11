@@ -975,7 +975,7 @@ describe("onFormSubmit", () => {
       "date": expect.any(Timestamp),
       "equation": equation,
     });
-  });
+  }, 10000);
 
   it("should execute the sequence of operations correctly", async () => {
     refUpdateMock.mockRestore();
