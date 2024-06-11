@@ -525,6 +525,7 @@ export async function onFormSubmit(
                   });
 
                   if (recordEntry) {
+                    const now = admin.firestore.Timestamp.now();
                     for (let j = 0; j < ledgerEntries.length; j++) {
                       const {account, debit, credit, description} = ledgerEntries[j];
                       const journalEntryId = docId + i;
@@ -534,6 +535,8 @@ export async function onFormSubmit(
                         account,
                         credit,
                         debit,
+                        equation,
+                        createdAt: now,
                         ...(description && {description}),
                       };
                       const entryRef = docRef.collection("@ledgers").doc(ledgerEntryId);
