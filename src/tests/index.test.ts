@@ -649,6 +649,7 @@ describe("onFormSubmit", () => {
   it("should write journal entries first", async () => {
     const consoleErrorSpy = jest.spyOn(console, "error").mockImplementation();
     const consoleInfoSpy = jest.spyOn(console, "info").mockImplementation();
+    const queueRunViewLogicsSpy = jest.spyOn(viewLogics, "queueRunViewLogics").mockResolvedValue();
     jest.spyOn(indexutils, "runBusinessLogics").mockImplementation(
       async (actionRef, action, distributeFn) => {
         await distributeFn(actionRef, logicResults, 0);
@@ -677,11 +678,27 @@ describe("onFormSubmit", () => {
 
     const event = createEvent(form);
     await onFormSubmit(event);
-
     expect(consoleInfoSpy).toHaveBeenCalledWith("No journal entries to write");
     expect(transactionUpdateMock).not.toHaveBeenCalled();
     expect(transactionSetMock).not.toHaveBeenCalled();
     expect(transactionGetMock).not.toHaveBeenCalled();
+
+    logicResults = [
+      {
+        name: "logic 1",
+        timeFinished: _mockable.createNowTimestamp(),
+        status: "finished",
+        documents: [
+          {action: "delete", priority: "normal", dstPath: "path1/doc1", journalEntries: [journalEntry]},
+        ],
+      },
+    ];
+    await onFormSubmit(event);
+    expect(consoleInfoSpy).toHaveBeenCalledWith("No journal entries to write");
+    expect(transactionUpdateMock).not.toHaveBeenCalled();
+    expect(transactionSetMock).not.toHaveBeenCalled();
+    expect(transactionGetMock).not.toHaveBeenCalled();
+
     logicResults = [
       {
         name: "logic 1",
@@ -797,7 +814,17 @@ describe("onFormSubmit", () => {
       "notStartedCount": 1,
       "@forDeletionLater": FieldValue.delete(),
     });
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith({
+      ...logicResults[0].documents[0],
+      doc: {
+        field: "value",
+        totalTodos: 1,
+        notStartedCount: 1,
+      },
+    });
 
+    queueRunViewLogicsSpy.mockReset();
     transactionGetMock.mockRestore();
     transactionSetMock.mockRestore();
     transactionUpdateMock.mockRestore();
@@ -831,7 +858,17 @@ describe("onFormSubmit", () => {
       "notStartedCount": 2,
       "@forDeletionLater": FieldValue.delete(),
     });
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith({
+      ...logicResults[0].documents[0],
+      doc: {
+        field: "value",
+        totalTodos: 2,
+        notStartedCount: 2,
+      },
+    });
 
+    queueRunViewLogicsSpy.mockReset();
     transactionGetMock.mockRestore();
     transactionSetMock.mockRestore();
     transactionUpdateMock.mockRestore();
@@ -974,6 +1011,14 @@ describe("onFormSubmit", () => {
       "credit": 1,
       "date": expect.any(Timestamp),
       "equation": equation,
+    });
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith({
+      ...logicResults[0].documents[0],
+      doc: {
+        inProgressCount: 0,
+        doneCount: 1,
+      },
     });
   });
 
