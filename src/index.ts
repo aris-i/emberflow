@@ -31,7 +31,7 @@ import {
   validateForm,
 } from "./index-utils";
 import {initDbStructure} from "./init-db-structure";
-import {createViewLogicFn, onMessageViewLogicsQueue} from "./logics/view-logics";
+import {createViewLogicFn, onMessageViewLogicsQueue, queueRunViewLogics} from "./logics/view-logics";
 import {resetUsageStats, stopBillingIfBudgetExceeded, useBillProtect} from "./utils/bill-protect";
 import {Firestore} from "firebase-admin/firestore";
 import {DatabaseEvent, DataSnapshot, onValueCreated} from "firebase-functions/v2/database";
@@ -398,7 +398,8 @@ export async function onFormSubmit(
           // Gather all logicResultDoc with journalEntries
           const logicResultDocsWithJournalEntries = logicResults
             .map((result) => result.documents).flat()
-            .filter((logicResultDoc) => logicResultDoc.journalEntries);
+            .filter((logicResultDoc) => logicResultDoc.journalEntries &&
+              logicResultDoc.action !== "delete");
           if (logicResultDocsWithJournalEntries.length === 0) {
             console.info("No journal entries to write");
             return;
@@ -418,6 +419,8 @@ export async function onFormSubmit(
                 doc,
                 instructions,
                 journalEntries,
+                action,
+                skipRunViewLogics,
               } = logicDoc;
 
               if (!journalEntries) {
@@ -482,22 +485,20 @@ export async function onFormSubmit(
                     instructionsDbValues = convertInstructionsToDbValues(instructions);
                   }
 
+                  const finalDoc: DocumentData = {
+                    ...(doc ? doc : {}),
+                    ...(instructionsDbValues ? instructionsDbValues : {}),
+                  };
                   if (currData) {
-                    transaction.update(
-                      docRef,
-                      {
-                        ...(doc ? doc : {}),
-                        ...(instructionsDbValues ? instructionsDbValues : {}),
-                        "@forDeletionLater": true,
-                      });
+                    transaction.update(docRef, {
+                      ...finalDoc,
+                      "@forDeletionLater": true,
+                    });
                   } else {
-                    transaction.set(
-                      docRef,
-                      {
-                        ...(doc ? doc : {}),
-                        ...(instructionsDbValues ? instructionsDbValues : {}),
-                        "@forDeletionLater": true,
-                      });
+                    transaction.set(docRef, {
+                      ...finalDoc,
+                      "@forDeletionLater": true,
+                    });
                   }
 
                   const [leftSide, ..._] = equation.split("=");
@@ -517,6 +518,7 @@ export async function onFormSubmit(
                       throw new Error("Account value cannot be negative");
                     }
 
+                    finalDoc[account] = accountVal;
                     transaction.update(
                       docRef,
                       {
@@ -524,6 +526,12 @@ export async function onFormSubmit(
                         "@forDeletionLater": FieldValue.delete(),
                       });
                   });
+
+                  if (Object.keys(finalDoc).length > 0 && !skipRunViewLogics &&
+                    ["create", "merge"].includes(action)) {
+                    logicDoc.doc = finalDoc;
+                    await queueRunViewLogics(logicDoc);
+                  }
 
                   if (recordEntry) {
                     for (let j = 0; j < ledgerEntries.length; j++) {
@@ -562,8 +570,8 @@ export async function onFormSubmit(
           // We always distribute transactional results first
           const transactionalDstPathLogicDocsMap =
               await expandConsolidateAndGroupByDstPath(transactionalResults.map(
-                (result) => result.documents).flat().filter( (doc) => !doc.journalEntries)
-              );
+                (result) => result.documents).flat().filter((doc) =>
+                !doc.journalEntries || doc.journalEntries && doc.action === "delete"));
           // Write to firestore in one transaction
           await db.runTransaction(async (transaction) => {
             for (const [dstPath, logicDocs] of transactionalDstPathLogicDocsMap) {
@@ -599,7 +607,7 @@ export async function onFormSubmit(
           const {highPriorityDocs, normalPriorityDocs, lowPriorityDocs} = nonTransactionalResults
             .map((result) => result.documents)
             .flat()
-            .filter((doc) => !doc.journalEntries)
+            .filter((doc) => !doc.journalEntries || doc.journalEntries && doc.action === "delete")
             .reduce((acc, doc) => {
               if (doc.priority === "high") {
                 acc.highPriorityDocs.push(doc);
