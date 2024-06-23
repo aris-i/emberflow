@@ -73,12 +73,20 @@ export interface LogicResult{
 }
 export type LogicFn = (action: Action, sharedMap: Map<string, any>, nextPage?: AnyObject) => Promise<LogicResult>;
 export type LogicActionType = "create" | "update" | "delete";
+export type LogicConfigActionTypes = LogicActionType[] | "all";
+export type LogicConfigEntities = string[] | "all";
 export type LogicConfigModifiedFieldsType = "all" | string[];
+export type LogicConfigFilterFn = (
+    actionType: string,
+    modifiedFields: FirebaseFirestore.DocumentData,
+    entity: string,
+) => boolean;
 export interface LogicConfig{
     name: string;
-    actionTypes: LogicActionType[] | "all";
+    actionTypes: LogicConfigActionTypes;
     modifiedFields: LogicConfigModifiedFieldsType;
-    entities: string[] | "all";
+    entities: LogicConfigEntities;
+    addtlFilterFn?: LogicConfigFilterFn;
     logicFn: LogicFn;
 }
 

@@ -278,7 +278,8 @@ function getMatchingLogics(actionType: "create" | "update" | "delete", modifiedF
       (logic.actionTypes === "all" || logic.actionTypes.includes(actionType as LogicActionType)) &&
         (logic.modifiedFields === "all" ||
             logic.modifiedFields.some((field) => field in modifiedFields)) &&
-        (logic.entities === "all" || logic.entities.includes(entity))
+        (logic.entities === "all" || logic.entities.includes(entity)) &&
+      (logic.addtlFilterFn ? logic.addtlFilterFn(actionType, modifiedFields, entity) : true)
     );
   });
 }
