@@ -1,5 +1,5 @@
 import {
-  Action, DistributeFn, LogicActionType, LogicConfig,
+  Action, ActionType, DistributeFn, LogicActionType, LogicConfig,
   LogicResult,
   LogicResultDoc,
   SecurityFn,
@@ -271,7 +271,7 @@ async function simulateSubmitForm(logicResults: LogicResult[], action: Action,
   }
 }
 
-function getMatchingLogics(actionType: "create" | "update" | "delete", modifiedFields: FirebaseFirestore.DocumentData,
+function getMatchingLogics(actionType: ActionType, modifiedFields: FirebaseFirestore.DocumentData,
   entity: string) {
   return logicConfigs.filter((logic) => {
     return (
