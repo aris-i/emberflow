@@ -271,15 +271,15 @@ async function simulateSubmitForm(logicResults: LogicResult[], action: Action,
   }
 }
 
-function getMatchingLogics(actionType: ActionType, modifiedFields: FirebaseFirestore.DocumentData,
-  entity: string) {
+function getMatchingLogics(actionType: ActionType, modifiedFields: DocumentData,
+  document: DocumentData, entity: string) {
   return logicConfigs.filter((logic) => {
     return (
       (logic.actionTypes === "all" || logic.actionTypes.includes(actionType as LogicActionType)) &&
         (logic.modifiedFields === "all" ||
             logic.modifiedFields.some((field) => field in modifiedFields)) &&
         (logic.entities === "all" || logic.entities.includes(entity)) &&
-      (logic.addtlFilterFn ? logic.addtlFilterFn(actionType, modifiedFields, entity) : true)
+      (logic.addtlFilterFn ? logic.addtlFilterFn(actionType, modifiedFields, document, entity) : true)
     );
   });
 }
@@ -342,9 +342,9 @@ export const runBusinessLogics = async (
   actionRef: DocumentReference,
   action: Action,
   distributeFn: DistributeFn): Promise<"done" | "cancel-then-retry" | "no-matching-logics"> => {
-  const {actionType, modifiedFields, eventContext: {entity}} = action;
+  const {actionType, modifiedFields, document, eventContext: {entity}} = action;
 
-  const matchingLogics = getMatchingLogics(actionType, modifiedFields, entity);
+  const matchingLogics = getMatchingLogics(actionType, modifiedFields, document, entity);
   console.debug("Matching logics:", matchingLogics.map((logic) => logic.name));
   if (matchingLogics.length === 0) {
     console.log("No matching logics found");

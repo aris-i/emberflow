@@ -467,6 +467,7 @@ describe("runBusinessLogics", () => {
   let logicFn3: jest.Mock;
   let logicFn4: jest.Mock;
   let logicFn5: jest.Mock;
+  let logicFn6: jest.Mock;
 
   let dbSpy: jest.SpyInstance;
   let simulateSubmitFormSpy: jest.SpyInstance;
@@ -480,6 +481,7 @@ describe("runBusinessLogics", () => {
     logicFn3 = jest.fn().mockResolvedValue({status: "error", message: "Error message"});
     logicFn4 = jest.fn().mockResolvedValue({status: "finished"});
     logicFn5 = jest.fn().mockResolvedValue({status: "finished"});
+    logicFn6 = jest.fn().mockResolvedValue({status: "finished"});
 
     simulateSubmitFormSpy = jest.spyOn(indexUtils._mockable, "simulateSubmitForm").mockResolvedValue();
     createMetricExecutionSpy = jest.spyOn(indexUtils._mockable, "createMetricExecution").mockResolvedValue();
@@ -558,9 +560,19 @@ describe("runBusinessLogics", () => {
         actionTypes: ["create"],
         modifiedFields: ["field2"],
         entities: ["user"],
-        logicFn: logicFn4,
+        logicFn: logicFn5,
         addtlFilterFn(actionType, modifiedFields) {
           return !Object.prototype.hasOwnProperty.call(modifiedFields, "field1");
+        },
+      },
+      {
+        name: "Logic 6",
+        actionTypes: ["create"],
+        modifiedFields: ["field2"],
+        entities: ["user"],
+        logicFn: logicFn6,
+        addtlFilterFn(actionType, modifiedFields, document) {
+          return !Object.prototype.hasOwnProperty.call(document, "field3");
         },
       },
     ];
@@ -572,6 +584,7 @@ describe("runBusinessLogics", () => {
     expect(logicFn3).not.toHaveBeenCalled();
     expect(logicFn4).not.toHaveBeenCalled();
     expect(logicFn5).not.toHaveBeenCalled();
+    expect(logicFn6).not.toHaveBeenCalled();
     expect(distributeFn).toHaveBeenCalledTimes(1);
     expect(distributeFn).toHaveBeenCalledWith(actionRef,
       [expect.objectContaining({

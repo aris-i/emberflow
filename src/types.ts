@@ -79,6 +79,7 @@ export type LogicConfigModifiedFieldsType = "all" | string[];
 export type LogicConfigFilterFn = (
     actionType: string,
     modifiedFields: FirebaseFirestore.DocumentData,
+    document: FirebaseFirestore.DocumentData,
     entity: string,
 ) => boolean;
 export interface LogicConfig{
