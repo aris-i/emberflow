@@ -465,6 +465,9 @@ describe("runBusinessLogics", () => {
   let logicFn1: jest.Mock;
   let logicFn2: jest.Mock;
   let logicFn3: jest.Mock;
+  let logicFn4: jest.Mock;
+  let logicFn5: jest.Mock;
+  let logicFn6: jest.Mock;
 
   let dbSpy: jest.SpyInstance;
   let simulateSubmitFormSpy: jest.SpyInstance;
@@ -476,6 +479,9 @@ describe("runBusinessLogics", () => {
     logicFn1 = jest.fn().mockResolvedValue({status: "finished"});
     logicFn2 = jest.fn().mockResolvedValue({status: "finished"});
     logicFn3 = jest.fn().mockResolvedValue({status: "error", message: "Error message"});
+    logicFn4 = jest.fn().mockResolvedValue({status: "finished"});
+    logicFn5 = jest.fn().mockResolvedValue({status: "finished"});
+    logicFn6 = jest.fn().mockResolvedValue({status: "finished"});
 
     simulateSubmitFormSpy = jest.spyOn(indexUtils._mockable, "simulateSubmitForm").mockResolvedValue();
     createMetricExecutionSpy = jest.spyOn(indexUtils._mockable, "createMetricExecution").mockResolvedValue();
@@ -539,6 +545,36 @@ describe("runBusinessLogics", () => {
         entities: ["user"],
         logicFn: logicFn3,
       },
+      {
+        name: "Logic 4",
+        actionTypes: ["create"],
+        modifiedFields: ["field1"],
+        entities: ["user"],
+        logicFn: logicFn4,
+        addtlFilterFn(actionType) {
+          return actionType !== "create";
+        },
+      },
+      {
+        name: "Logic 5",
+        actionTypes: ["create"],
+        modifiedFields: ["field2"],
+        entities: ["user"],
+        logicFn: logicFn5,
+        addtlFilterFn(actionType, modifiedFields) {
+          return !Object.prototype.hasOwnProperty.call(modifiedFields, "field1");
+        },
+      },
+      {
+        name: "Logic 6",
+        actionTypes: ["create"],
+        modifiedFields: ["field2"],
+        entities: ["user"],
+        logicFn: logicFn6,
+        addtlFilterFn(actionType, modifiedFields, document) {
+          return !Object.prototype.hasOwnProperty.call(document, "field3");
+        },
+      },
     ];
     initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
     const runStatus = await indexUtils.runBusinessLogics(actionRef, action, distributeFn);
@@ -546,6 +582,9 @@ describe("runBusinessLogics", () => {
     expect(logicFn1).toHaveBeenCalledWith(action, new Map(), undefined);
     expect(logicFn2).toHaveBeenCalledWith(action, new Map(), undefined);
     expect(logicFn3).not.toHaveBeenCalled();
+    expect(logicFn4).not.toHaveBeenCalled();
+    expect(logicFn5).not.toHaveBeenCalled();
+    expect(logicFn6).not.toHaveBeenCalled();
     expect(distributeFn).toHaveBeenCalledTimes(1);
     expect(distributeFn).toHaveBeenCalledWith(actionRef,
       [expect.objectContaining({
