@@ -22,6 +22,7 @@ import * as distribution from "../utils/distribution";
 import * as forms from "../utils/forms";
 import {FormData} from "emberflow-admin-client/lib/types";
 import {DocumentData, DocumentReference} from "firebase-admin/lib/firestore";
+import * as indexutils from "../index-utils";
 import SpyInstance = jest.SpyInstance;
 import CollectionReference = firestore.CollectionReference;
 import * as misc from "../utils/misc";
@@ -179,22 +180,21 @@ describe("distributeDoc", () => {
   });
 
   it("should merge documents in batch", async () => {
-    const batchUpdateSpy = jest.spyOn(batch, "update").mockResolvedValue(undefined);
+    const batchSetSpy = jest.spyOn(batch, "update").mockResolvedValue(undefined);
     const logicResultDoc: LogicResultDoc = {
       action: "merge",
       priority: "normal",
       dstPath: "/users/test-user-id/documents/test-doc-id",
-      doc: {name: "test-doc-name-updated"},
     };
 
     await indexUtils.distributeDoc(logicResultDoc, batch);
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
-    expect(batchUpdateSpy).toHaveBeenCalledTimes(1);
+    expect(batchSetSpy).toHaveBeenCalledTimes(1);
     expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
     expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
 
-    batchUpdateSpy.mockRestore();
+    batchSetSpy.mockRestore();
   });
 
   it("should queue a document to submit form", async () => {
@@ -864,7 +864,7 @@ describe("simulateSubmitForm", () => {
     jest.spyOn(indexUtils._mockable, "createNowTimestamp").mockReturnValue(now);
 
     runBusinessLogicsSpy =
-      jest.spyOn(indexUtils, "runBusinessLogics").mockResolvedValue("done");
+      jest.spyOn(indexutils, "runBusinessLogics").mockResolvedValue("done");
   });
 
   afterEach(() => {

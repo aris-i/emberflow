@@ -68,7 +68,7 @@ describe("mapDocPaths", () => {
   });
 });
 
-describe("mapViewDefinitions", () => {
+describe("mapViewPaths", () => {
   it("should map view paths based on the given paths and Entity object", () => {
     const paths = [
       "as",
@@ -77,7 +77,6 @@ describe("mapViewDefinitions", () => {
       "as/a/bs/b",
       "as/a/bs/b#f=View:a:prop1,prop2",
       "as/a/ds/d=View:a:prop1,prop2",
-      "a/d#g=[View:b:prop1,prop2]",
     ];
 
     const Entity = {
@@ -86,13 +85,15 @@ describe("mapViewDefinitions", () => {
       Entity3: "d",
     };
 
+    const docPaths= {
+      "a": "as/{aId}",
+      "b": "as/{aId}/bs/{bId}",
+      "d": "as/{aId}/ds/{dId}",
+    };
+
     const expectedOutput = [
       {
         destEntity: "b",
-        destProp: {
-          name: "#f",
-          type: "map",
-        },
         srcProps: ["prop1", "prop2"],
         srcEntity: "a",
       },
@@ -100,19 +101,10 @@ describe("mapViewDefinitions", () => {
         destEntity: "d",
         srcProps: ["prop1", "prop2"],
         srcEntity: "a",
-      },
-      {
-        destEntity: "d",
-        destProp: {
-          name: "#g",
-          type: "array-map",
-        },
-        srcProps: ["prop1", "prop2"],
-        srcEntity: "b",
       },
     ];
 
-    const result = mapViewDefinitions(paths, Entity);
+    const result = mapViewDefinitions(paths, Entity, docPaths);
     expect(result).toEqual(expectedOutput);
   });
 });

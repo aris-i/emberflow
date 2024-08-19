@@ -121,13 +121,14 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
         for (const key of Object.keys(doc)) {
           updateData[`${destProp}.${key}`] = doc[key];
         }
+        await _update(dstDocRef, updateData);
       } else {
         updateData = {
           ...doc,
           "@id": dstDocRef.id,
         };
+        await _update(dstDocRef, updateData);
       }
-      await _update(dstDocRef, updateData);
     } else {
       if (destProp) {
         updateData[destProp] = doc;

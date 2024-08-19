@@ -85,7 +85,7 @@ export function mapColPaths(docPathsMap: { [key: string]: string }): { [key: str
 export function mapViewDefinitions(
   paths: string[],
   Entity: Record<string, string>,
-): ViewDefinition[] {
+  docPaths: Record<string, string>): ViewDefinition[] {
   const viewDefs: ViewDefinition[] = [];
 
   for (const path of paths) {
@@ -134,7 +134,7 @@ export function initDbStructure(
 ) {
   const paths = traverseBFS(dbStructure);
   const docPaths = mapDocPaths(paths, Entity);
-  const viewDefinitions = mapViewDefinitions(paths, Entity);
+  const viewDefinitions = mapViewDefinitions(paths, Entity, docPaths);
   const docPathsRegex: Record<string, RegExp> = {} as Record<string, RegExp>;
   for (const [key, value] of Object.entries(docPaths)) {
     const regexPattern = value.replace(/{([^/]+)Id}/g, "([^/]+)");
