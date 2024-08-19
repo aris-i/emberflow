@@ -250,7 +250,15 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       action,
       doc,
     } = logicResultDoc;
-    const srcDocId = doc?.["@id"];
+    let srcDocId = doc?.["@id"];
+    if (action === "delete") {
+      srcDocId = dstPath.split("/").pop();
+
+      if (srcDocId && srcDocId.includes("#")) {
+        srcDocId = srcDocId.split("#")[0];
+      }
+    }
+
     if (!srcDocId) {
       console.error("Document does not have an @id attribute");
       logicResult.status = "error";

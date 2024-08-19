@@ -79,8 +79,9 @@ const createLogicResultDoc: LogicResultDoc = {
   action: "create",
   dstPath: "users/1234",
   doc: {
-    name: "John Doe",
-    age: "26",
+    "@id": "1234",
+    "name": "John Doe",
+    "age": "26",
   },
   priority: "normal",
 };
@@ -89,7 +90,8 @@ const mergeLogicResultDoc: LogicResultDoc = {
   action: "merge",
   dstPath: "users/1234",
   doc: {
-    name: "John Doe",
+    "@id": "1234",
+    "name": "John Doe",
   },
   instructions: {
     age: "++",
@@ -146,7 +148,7 @@ describe("createViewLogicFn", () => {
     });
   });
 
-  it("should log error when path includes {", async () => {
+  it("should log error document does not have @id", async () => {
     jest.spyOn(console, "error").mockImplementation();
     const logicFn = viewLogics.createViewLogicFn(vd4);
 
@@ -160,7 +162,25 @@ describe("createViewLogicFn", () => {
     };
     const result = await logicFn[1](logicResultDoc);
     expect(result.documents.length).toEqual(0);
-    expect(console.error).toHaveBeenCalledWith("Cannot run Dst to Src ViewLogic on a path with a placeholder");
+    expect(console.error).toHaveBeenCalledWith("Document does not have an @id attribute");
+  });
+
+  it("should log error when srcPath includes placeholder", async () => {
+    jest.spyOn(console, "error").mockImplementation();
+    const logicFn = viewLogics.createViewLogicFn(vd4);
+
+    const logicResultDoc: LogicResultDoc = {
+      action: "create",
+      dstPath: "users/5678/friends/1234",
+      doc: {
+        "@id": "1234",
+        "name": "John Doe",
+      },
+      priority: "normal",
+    };
+    const result = await logicFn[1](logicResultDoc);
+    expect(result.documents.length).toEqual(0);
+    expect(console.error).toHaveBeenCalledWith("srcPath should not have a placeholder");
   });
 
   it("should create @views doc", async () => {
@@ -301,6 +321,9 @@ describe("createViewLogicFn", () => {
     colGetMock.mockResolvedValue({
       docs: [{
         id: "users+456+friends+1234",
+        ref: {
+          path: "users/1234/@views/users+456+friends+1234",
+        },
         data: () => {
           return {
             "path": "users/456/friends/1234",
@@ -309,6 +332,9 @@ describe("createViewLogicFn", () => {
         },
       }, {
         id: "users+789+friends+1234",
+        ref: {
+          path: "users/1234/@views/users+789+friends+1234",
+        },
         data: () => {
           return {
             "path": "users/789/friends/1234",
@@ -344,6 +370,9 @@ describe("createViewLogicFn", () => {
     colGetMock.mockResolvedValue({
       docs: [{
         id: "users+456+friends+1234",
+        ref: {
+          path: "users/1234/@views/users+456+friends+1234",
+        },
         data: () => {
           return {
             "path": "users/456/friends/1234",
@@ -397,6 +426,9 @@ describe("createViewLogicFn", () => {
     colGetMock.mockResolvedValueOnce({
       docs: [{
         id: "users+456+friends+1234",
+        ref: {
+          path: "users/1234/@views/users+456+friends+1234",
+        },
         data: () => {
           return {
             "path": "users/456/friends/1234",
@@ -405,6 +437,9 @@ describe("createViewLogicFn", () => {
         },
       }, {
         id: "users+789+friends+1234",
+        ref: {
+          path: "users/1234/@views/users+789+friends+1234",
+        },
         data: () => {
           return {
             "path": "users/789/friends/1234",
@@ -416,6 +451,9 @@ describe("createViewLogicFn", () => {
       .mockResolvedValueOnce({
         docs: [{
           id: "users+1234+posts+987",
+          ref: {
+            path: "users/1234/@views/users+1234+posts+987",
+          },
           data: () => {
             return {
               "path": "users/1234/posts/987",
@@ -424,6 +462,9 @@ describe("createViewLogicFn", () => {
           },
         }, {
           id: "users+1234+posts+654",
+          ref: {
+            path: "users/1234/@views/users+1234+posts+654",
+          },
           data: () => {
             return {
               "path": "users/1234/posts/654",
@@ -432,6 +473,9 @@ describe("createViewLogicFn", () => {
           },
         }, {
           id: "users+890+posts+987",
+          ref: {
+            path: "users/1234/@views/users+890+posts+987",
+          },
           data: () => {
             return {
               "path": "users/890/posts/987",
@@ -440,6 +484,9 @@ describe("createViewLogicFn", () => {
           },
         }, {
           id: "users+890+posts+654",
+          ref: {
+            path: "users/1234/@views/users+890+posts+654",
+          },
           data: () => {
             return {
               "path": "users/890/posts/654",
@@ -451,6 +498,9 @@ describe("createViewLogicFn", () => {
       .mockResolvedValueOnce({
         docs: [{
           id: "users+456+friends+1234",
+          ref: {
+            path: "users/1234/@views/users+456+friends+1234",
+          },
           data: () => {
             return {
               "path": "users/456/friends/1234",
@@ -459,6 +509,9 @@ describe("createViewLogicFn", () => {
           },
         }, {
           id: "users+789+friends+1234",
+          ref: {
+            path: "users/1234/@views/users+789+friends+1234",
+          },
           data: () => {
             return {
               "path": "users/789/friends/1234",
@@ -470,6 +523,9 @@ describe("createViewLogicFn", () => {
       .mockResolvedValueOnce({
         docs: [{
           id: "servers+123",
+          ref: {
+            path: "users/123/@views/servers+123",
+          },
           data: () => {
             return {
               "path": "servers/123",
@@ -478,6 +534,9 @@ describe("createViewLogicFn", () => {
           },
         }, {
           id: "servers+456",
+          ref: {
+            path: "users/123/@views/servers+456",
+          },
           data: () => {
             return {
               "path": "servers/456",
@@ -500,13 +559,13 @@ describe("createViewLogicFn", () => {
     let document = result.documents[0];
     expect(document).toHaveProperty("action", "merge");
     expect(document).toHaveProperty("dstPath", "users/456/friends/1234");
-    expect(document.doc).toEqual({"name": "John Doe", "updatedByViewDefinitionAt": expect.any(Timestamp)});
+    expect(document.doc).toEqual({"name": "John Doe", "@updatedByViewDefinitionAt": expect.any(Timestamp)});
     expect(document.instructions).toEqual({"age": "++"});
 
     document = result.documents[1];
     expect(document).toHaveProperty("action", "merge");
     expect(document).toHaveProperty("dstPath", "users/789/friends/1234");
-    expect(document.doc).toEqual({"name": "John Doe", "updatedByViewDefinitionAt": expect.any(Timestamp)});
+    expect(document.doc).toEqual({"name": "John Doe", "@updatedByViewDefinitionAt": expect.any(Timestamp)});
     expect(document.instructions).toEqual({"age": "++"});
 
     // Create the logic function using the viewDefinition
@@ -523,22 +582,22 @@ describe("createViewLogicFn", () => {
     document = result2.documents[0];
     expect(document).toHaveProperty("action", "merge");
     expect(document).toHaveProperty("dstPath", "users/1234/posts/987");
-    expect(document.doc).toEqual({"name": "John Doe", "updatedByViewDefinitionAt": expect.any(Timestamp)});
+    expect(document.doc).toEqual({"name": "John Doe", "@updatedByViewDefinitionAt": expect.any(Timestamp)});
 
     document = result2.documents[1];
     expect(document).toHaveProperty("action", "merge");
     expect(document).toHaveProperty("dstPath", "users/1234/posts/654");
-    expect(document.doc).toEqual({"name": "John Doe", "updatedByViewDefinitionAt": expect.any(Timestamp)});
+    expect(document.doc).toEqual({"name": "John Doe", "@updatedByViewDefinitionAt": expect.any(Timestamp)});
 
     document = result2.documents[2];
     expect(document).toHaveProperty("action", "merge");
     expect(document).toHaveProperty("dstPath", "users/890/posts/987");
-    expect(document.doc).toEqual({"name": "John Doe", "updatedByViewDefinitionAt": expect.any(Timestamp)});
+    expect(document.doc).toEqual({"name": "John Doe", "@updatedByViewDefinitionAt": expect.any(Timestamp)});
 
     document = result2.documents[3];
     expect(document).toHaveProperty("action", "merge");
     expect(document).toHaveProperty("dstPath", "users/890/posts/654");
-    expect(document.doc).toEqual({"name": "John Doe", "updatedByViewDefinitionAt": expect.any(Timestamp)});
+    expect(document.doc).toEqual({"name": "John Doe", "@updatedByViewDefinitionAt": expect.any(Timestamp)});
 
     const resultDelete = await logicFn[0](deleteLogicResultDoc);
 
@@ -567,12 +626,12 @@ describe("createViewLogicFn", () => {
     document = result3.documents[0];
     expect(document).toHaveProperty("action", "merge");
     expect(document).toHaveProperty("dstPath", "servers/123");
-    expect(document.doc).toEqual({"username": "new_username", "updatedByViewDefinitionAt": expect.any(Timestamp)});
+    expect(document.doc).toEqual({"username": "new_username", "@updatedByViewDefinitionAt": expect.any(Timestamp)});
 
     document = result3.documents[1];
     expect(document).toHaveProperty("action", "merge");
     expect(document).toHaveProperty("dstPath", "servers/456");
-    expect(document.doc).toEqual({"username": "new_username", "updatedByViewDefinitionAt": expect.any(Timestamp)});
+    expect(document.doc).toEqual({"username": "new_username", "@updatedByViewDefinitionAt": expect.any(Timestamp)});
   });
 });
 
