@@ -577,49 +577,43 @@ export async function onFormSubmit(
             for (const [dstPath, logicDocs] of transactionalDstPathLogicDocsMap) {
               for (const logicDoc of logicDocs) {
                 const docRef = db.doc(dstPath);
-                const action = logicDoc.action;
+                const {action, doc} = logicDoc;
                 if (action === "create") {
+                  if (doc) {
+                    for (const [key, value] of Object.keys(doc)) {
+                      if (!value.includes("globalCounter")) {
+                        continue;
+                      }
 
-                  @counters/${counterId}
-                  lastUpdated: Date,
+                      // TODO: check doc if there are values containing globalCounter
+                      // if there are, get text inside ()
+                      // then split by "comma" and trim,
+                      const [counterId, resetDaily, maxCount] = doc.queueNumber.split("(")[1].split(")")[0].split(",").map((val) => val.trim());
 
-                  doc: {
-                    queueNumber: `globalCounter(${restaurantId}, true, 100)`,
-                  }
+                      let currentCount = 0;
+                      const counterRef = db.doc(`@counters/${counterId}`);
+                      const counterDoc = await transaction.get(counterRef);
+                      const {count, lastUpdated} = counterDoc.data();
 
-                  for (const [key, value] of Object.keys(doc)) {
-                    if (!value.includes("globalCounter")) {
-                      continue;
+                      if (maxCount && count == maxCount) {
+                        // reset count to 1
+                        currentCount = 1;
+                      }
+
+                      // check current date, if it is a different, reset the counter to 1
+                      if () {
+                        currentCount = 1;
+                      }
+
+                      currentCount = count + 1;
+
+                      transaction.update(counterRef, {
+                        count: currentCount,
+                        lastUpdated: admin.firestore.Timestamp.now(),
+                      })
+
+                      doc[key] = currentCount;
                     }
-
-                    // TODO: check doc if there are values containing globalCounter
-                    // if there are, get text inside ()
-                    // then split by "comma" and trim,
-                    const [counterId, resetDaily, maxCount] = doc.queueNumber.split("(")[1].split(")")[0].split(",").map((val) => val.trim());
-
-                    let currentCount = 0;
-                    const counterRef = db.doc(`@counters/${counterId}`);
-                    const counterDoc = await transaction.get(counterRef);
-                    const {count, lastUpdated} = counterDoc.data();
-
-                    if (maxCount && count == maxCount) {
-                      // reset count to 1
-                      currentCount = 1;
-                    }
-
-                    // check current date, if it is a different, reset the counter to 1
-                    if () {
-                      currentCount = 1;
-                    }
-
-                    currentCount = count + 1;
-
-                    transaction.update(counterRef, {
-                      count: currentCount,
-                      lastUpdated: admin.firestore.Timestamp.now(),
-                    })
-
-                    doc[key] = currentCount;
                   }
 
                   transaction.set(docRef, logicDoc.doc);
