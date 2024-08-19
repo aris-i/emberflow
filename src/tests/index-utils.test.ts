@@ -22,7 +22,6 @@ import * as distribution from "../utils/distribution";
 import * as forms from "../utils/forms";
 import {FormData} from "emberflow-admin-client/lib/types";
 import {DocumentData, DocumentReference} from "firebase-admin/lib/firestore";
-import * as indexutils from "../index-utils";
 import SpyInstance = jest.SpyInstance;
 import CollectionReference = firestore.CollectionReference;
 import * as misc from "../utils/misc";
@@ -93,40 +92,26 @@ describe("distributeDoc", () => {
     queueRunViewLogicsSpy.mockRestore();
   });
 
-  it("should delete a document from dstPath", async () => {
+  it("should create a document to dstPath", async () => {
     const logicResultDoc: LogicResultDoc = {
-      action: "delete",
+      action: "create",
       priority: "normal",
       dstPath: "/users/test-user-id/documents/test-doc-id",
+      doc: {name: "test-doc-name-updated"},
+    };
+    const expectedData = {
+      ...logicResultDoc.doc,
+      "@id": "test-doc-id",
+      "@dateCreated": expect.any(Timestamp),
     };
 
     await indexUtils.distributeDoc(logicResultDoc);
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
-    expect(dbDoc.get).toHaveBeenCalledTimes(1);
-    expect(dbDoc.delete).toHaveBeenCalledTimes(1);
-    expect(dbDoc.delete).toHaveBeenCalled();
+    expect(dbDoc.set).toHaveBeenCalledTimes(1);
+    expect(dbDoc.set).toHaveBeenCalledWith(expectedData);
     expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
     expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
-  });
-
-  it("should delete documents in batch", async () => {
-    const batchDeleteSpy = jest.spyOn(batch, "deleteDoc").mockResolvedValue(undefined);
-    const logicResultDoc: LogicResultDoc = {
-      action: "delete",
-      priority: "normal",
-      dstPath: "/users/test-user-id/documents/test-doc-id",
-    };
-
-    await indexUtils.distributeDoc(logicResultDoc, batch);
-    expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
-    expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
-    expect(dbDoc.get).toHaveBeenCalledTimes(1);
-    expect(batchDeleteSpy).toHaveBeenCalledTimes(1);
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
-
-    batchDeleteSpy.mockRestore();
   });
 
   it("should merge a document to dstPath", async () => {
@@ -179,22 +164,35 @@ describe("distributeDoc", () => {
     expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
   });
 
-  it("should merge documents in batch", async () => {
-    const batchSetSpy = jest.spyOn(batch, "update").mockResolvedValue(undefined);
+  it("should not merge when document is undefined", async () => {
     const logicResultDoc: LogicResultDoc = {
       action: "merge",
       priority: "normal",
       dstPath: "/users/test-user-id/documents/test-doc-id",
     };
 
-    await indexUtils.distributeDoc(logicResultDoc, batch);
+    await indexUtils.distributeDoc(logicResultDoc);
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
-    expect(batchSetSpy).toHaveBeenCalledTimes(1);
+    expect(dbDoc.update).not.toHaveBeenCalled();
+    expect(queueRunViewLogicsSpy).not.toHaveBeenCalled();
+  });
+
+  it("should delete a document from dstPath", async () => {
+    const logicResultDoc: LogicResultDoc = {
+      action: "delete",
+      priority: "normal",
+      dstPath: "/users/test-user-id/documents/test-doc-id",
+    };
+
+    await indexUtils.distributeDoc(logicResultDoc);
+    expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
+    expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
+    expect(dbDoc.get).toHaveBeenCalledTimes(1);
+    expect(dbDoc.delete).toHaveBeenCalledTimes(1);
+    expect(dbDoc.delete).toHaveBeenCalled();
     expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
     expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
-
-    batchSetSpy.mockRestore();
   });
 
   it("should queue a document to submit form", async () => {
@@ -220,6 +218,218 @@ describe("distributeDoc", () => {
     expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(0);
 
     queueSubmitFormSpy.mockRestore();
+  });
+
+  describe("batched", () => {
+    it("should create a document to dstPath", async () => {
+      const batchSetSpy = jest.spyOn(batch, "set").mockResolvedValue(undefined);
+      const logicResultDoc: LogicResultDoc = {
+        action: "create",
+        priority: "normal",
+        dstPath: "/users/test-user-id/documents/test-doc-id",
+        doc: {name: "test-doc-name-updated"},
+      };
+      const expectedData = {
+        ...logicResultDoc.doc,
+        "@id": "test-doc-id",
+        "@dateCreated": expect.any(Timestamp),
+      };
+
+      await indexUtils.distributeDoc(logicResultDoc, batch);
+      expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
+      expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
+      expect(batchSetSpy).toHaveBeenCalledTimes(1);
+      expect(batchSetSpy.mock.calls[0][1]).toEqual(expectedData);
+      expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
+      expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
+
+      batchSetSpy.mockRestore();
+    });
+
+    it("should merge a document to dstPath", async () => {
+      const batchUpdateSpy = jest.spyOn(batch, "update").mockResolvedValue(undefined);
+      const logicResultDoc: LogicResultDoc = {
+        action: "merge",
+        priority: "normal",
+        dstPath: "/users/test-user-id/documents/test-doc-id",
+        doc: {name: "test-doc-name-updated"},
+      };
+      const expectedData = {
+        ...logicResultDoc.doc,
+        "@id": "test-doc-id",
+      };
+
+      await indexUtils.distributeDoc(logicResultDoc, batch);
+      expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
+      expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
+      expect(batchUpdateSpy).toHaveBeenCalledTimes(1);
+      expect(batchUpdateSpy.mock.calls[0][1]).toEqual(expectedData);
+      expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
+      expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
+
+      batchUpdateSpy.mockRestore();
+    });
+
+    it("should a delete document from dstPath", async () => {
+      const batchDeleteSpy = jest.spyOn(batch, "deleteDoc").mockResolvedValue(undefined);
+      const logicResultDoc: LogicResultDoc = {
+        action: "delete",
+        priority: "normal",
+        dstPath: "/users/test-user-id/documents/test-doc-id",
+      };
+
+      await indexUtils.distributeDoc(logicResultDoc, batch);
+      expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
+      expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
+      expect(dbDoc.get).toHaveBeenCalledTimes(1);
+      expect(batchDeleteSpy).toHaveBeenCalledTimes(1);
+      expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
+      expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
+
+      batchDeleteSpy.mockRestore();
+    });
+  });
+
+  describe("map destProp", () => {
+    it("should create destProp", async () => {
+      const logicResultDoc: LogicResultDoc = {
+        action: "create",
+        priority: "normal",
+        dstPath: "/users/test-user-id/documents/test-doc-id#createdBy",
+        doc: {name: "test-doc-name-updated"},
+      };
+      const expectedData = {
+        "createdBy": logicResultDoc.doc,
+      };
+
+      await indexUtils.distributeDoc(logicResultDoc);
+      expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
+      expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
+      expect(dbDoc.update).toHaveBeenCalledTimes(1);
+      expect(dbDoc.update).toHaveBeenCalledWith(expectedData);
+      expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
+      expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
+    });
+
+    it("should update destProp", async () => {
+      const logicResultDoc: LogicResultDoc = {
+        action: "merge",
+        priority: "normal",
+        dstPath: "/users/test-user-id/documents/test-doc-id#createdBy",
+        doc: {name: "test-doc-name-updated"},
+      };
+      const expectedData = {
+        "createdBy.name": "test-doc-name-updated",
+      };
+
+      await indexUtils.distributeDoc(logicResultDoc);
+      expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
+      expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
+      expect(dbDoc.update).toHaveBeenCalledTimes(1);
+      expect(dbDoc.update).toHaveBeenCalledWith(expectedData);
+      expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
+      expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
+    });
+
+    it("should delete destProp", async () => {
+      const logicResultDoc: LogicResultDoc = {
+        action: "delete",
+        priority: "normal",
+        dstPath: "/users/test-user-id/documents/test-doc-id#createdBy",
+      };
+      const expectedData = {
+        "createdBy": admin.firestore.FieldValue.delete(),
+      };
+
+      await indexUtils.distributeDoc(logicResultDoc);
+      expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
+      expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
+      expect(dbDoc.get).toHaveBeenCalledTimes(1);
+      expect(dbDoc.update).toHaveBeenCalledTimes(1);
+      expect(dbDoc.update).toHaveBeenCalledWith(expectedData);
+      expect(dbDoc.delete).not.toHaveBeenCalled();
+      expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
+      expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
+    });
+  });
+
+  describe("array map destProp", () => {
+    it("should return when destProp id is empty", async () => {
+      const consoleErrorSpy = jest.spyOn(console, "error").mockImplementation();
+      const logicResultDoc: LogicResultDoc = {
+        action: "merge",
+        priority: "normal",
+        dstPath: "/users/test-user-id/documents/test-doc-id#followers[]",
+        doc: {name: "test-doc-name-updated"},
+      };
+
+      await indexUtils.distributeDoc(logicResultDoc);
+      expect(consoleErrorSpy).toHaveBeenCalledWith("destPropId should not be blank for array map");
+      expect(admin.firestore().doc).not.toHaveBeenCalled();
+      expect(dbDoc.update).not.toHaveBeenCalled();
+      expect(queueRunViewLogicsSpy).not.toHaveBeenCalled();
+    });
+
+    it("should create destProp", async () => {
+      const logicResultDoc: LogicResultDoc = {
+        action: "create",
+        priority: "normal",
+        dstPath: "/users/test-user-id/documents/test-doc-id#followers[test-another-user]",
+        doc: {name: "test-doc-name-updated"},
+      };
+      const expectedData = {
+        "followers.test-another-user": logicResultDoc.doc,
+      };
+
+      await indexUtils.distributeDoc(logicResultDoc);
+      expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
+      expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
+      expect(dbDoc.update).toHaveBeenCalledTimes(1);
+      expect(dbDoc.update).toHaveBeenCalledWith(expectedData);
+      expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
+      expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
+    });
+
+    it("should update destProp", async () => {
+      const logicResultDoc: LogicResultDoc = {
+        action: "merge",
+        priority: "normal",
+        dstPath: "/users/test-user-id/documents/test-doc-id#followers[test-another-user]",
+        doc: {name: "test-doc-name-updated"},
+      };
+      const expectedData = {
+        "followers.test-another-user.name": "test-doc-name-updated",
+      };
+
+      await indexUtils.distributeDoc(logicResultDoc);
+      expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
+      expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
+      expect(dbDoc.update).toHaveBeenCalledTimes(1);
+      expect(dbDoc.update).toHaveBeenCalledWith(expectedData);
+      expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
+      expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
+    });
+
+    it("should delete destProp", async () => {
+      const logicResultDoc: LogicResultDoc = {
+        action: "delete",
+        priority: "normal",
+        dstPath: "/users/test-user-id/documents/test-doc-id#followers[test-another-user]",
+      };
+      const expectedData = {
+        "followers.test-another-user": admin.firestore.FieldValue.delete(),
+      };
+
+      await indexUtils.distributeDoc(logicResultDoc);
+      expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
+      expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
+      expect(dbDoc.get).toHaveBeenCalledTimes(1);
+      expect(dbDoc.update).toHaveBeenCalledTimes(1);
+      expect(dbDoc.update).toHaveBeenCalledWith(expectedData);
+      expect(dbDoc.delete).not.toHaveBeenCalled();
+      expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
+      expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
+    });
   });
 });
 
@@ -864,7 +1074,7 @@ describe("simulateSubmitForm", () => {
     jest.spyOn(indexUtils._mockable, "createNowTimestamp").mockReturnValue(now);
 
     runBusinessLogicsSpy =
-      jest.spyOn(indexutils, "runBusinessLogics").mockResolvedValue("done");
+      jest.spyOn(indexUtils, "runBusinessLogics").mockResolvedValue("done");
   });
 
   afterEach(() => {

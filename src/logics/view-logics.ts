@@ -186,17 +186,13 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       ...Object.keys(instructions || {}),
     ];
 
-    let query;
+    let query = db.doc(srcPath)
+      .collection("@views")
+      .where("destEntity", "==", destEntity);
     if (action === "delete") {
       console.debug("action === delete");
-      query = db.doc(srcPath)
-        .collection("@views")
-        .where("destEntity", "==", destEntity);
     } else {
-      query = db.doc(srcPath)
-        .collection("@views")
-        .where("srcProps", "array-contains-any", modifiedFields)
-        .where("destEntity", "==", destEntity);
+      query = query.where("srcProps", "array-contains-any", modifiedFields);
     }
     if (destProp) {
       query = query.where("destProp", "==", destProp.name);
