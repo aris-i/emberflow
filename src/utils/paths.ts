@@ -1,4 +1,4 @@
-import {QueryCondition} from "../types";
+import {EntityCondition, QueryCondition} from "../types";
 import {fetchIds} from "./query";
 import {docPaths, docPathsRegex, db} from "../index";
 
@@ -99,7 +99,7 @@ async function doesPathExists(path: string) {
   return doc.exists;
 }
 
-export async function hydrateDocPath(destDocPath: string, entityCondition: Record<string, QueryCondition>): Promise<string[]> {
+export async function hydrateDocPath(destDocPath: string, entityCondition: EntityCondition): Promise<string[]> {
   const pathSegments = destDocPath.split("/");
   const documentPaths: string[] = [];
 

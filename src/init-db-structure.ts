@@ -1,4 +1,4 @@
-import {ViewDefinition} from "./types";
+import {DestPropType, ViewDefinition} from "./types";
 
 export function traverseBFS(obj: Record<string, object>): string[] {
   const paths: string[] = [];
@@ -18,13 +18,22 @@ export function traverseBFS(obj: Record<string, object>): string[] {
     // Enqueue the child objects with their paths
     for (const key in node) {
       if (typeof node[key] === "object" && node[key] !== null) {
-        if (key.startsWith("View:")) {
-          const viewPath = `${path}=${key}`;
-          paths.push(viewPath);
+        if (Array.isArray(node[key])) {
+          const firstElement = (node[key] as string[])[0];
+          if (firstElement.startsWith("View:")) {
+            const propView = `#${key}=[${firstElement}]`;
+            const viewPath = `${path}${propView}`;
+            paths.push(viewPath);
+          }
         } else {
-          const newPath = path === "" ? key : `${path}/${key}`;
-          paths.push(newPath);
-          queue.push({node: node[key] as Record<string, object>, path: newPath});
+          if (key.startsWith("View:")) {
+            const viewPath = `${path}=${key}`;
+            paths.push(viewPath);
+          } else {
+            const newPath = path === "" ? key : `${path}/${key}`;
+            paths.push(newPath);
+            queue.push({node: node[key] as Record<string, object>, path: newPath});
+          }
         }
       } else if (typeof node[key] === "string") {
         const value = (node[key] as unknown) as string;
@@ -80,13 +89,19 @@ export function mapViewDefinitions(
   const viewDefs: ViewDefinition[] = [];
 
   for (const path of paths) {
-    const match = path.match(/^([^#]*)(#.+)?=(View:.+)$/);
+    const match = path.match(/^([^#]*)(#.+)?=(\[?View:.+)$/);
 
     if (match) {
       const destPath = match[1];
       // Get the last word of the path
       const destEntity = destPath.split("/").slice(-1)[0];
-      const viewDefinitionStr = match[3];
+      const destProp = match[2];
+      let viewDefinitionStr = match[3];
+      let destType = "map";
+      if (viewDefinitionStr.startsWith("[") && viewDefinitionStr.endsWith("]")) {
+        viewDefinitionStr = viewDefinitionStr.slice(1, -1);
+        destType = "array-map";
+      }
 
       const [_, srcEntity, srcPropsStr] = viewDefinitionStr.split(":");
       const srcProps = srcPropsStr.split(",");
@@ -97,6 +112,13 @@ export function mapViewDefinitions(
           destEntity,
           srcProps,
           srcEntity,
+          ...( destProp ? {
+            destProp: {
+              name: destProp,
+              type: destType as DestPropType,
+            },
+          } :
+            {}),
         });
       }
     }

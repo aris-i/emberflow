@@ -10,6 +10,7 @@ describe("traverseBFS", () => {
         },
         e: {
           f: "View:b:prop1,prop2",
+          g: ["View:b:prop1,prop2"],
         },
       },
       h: {
@@ -28,6 +29,7 @@ describe("traverseBFS", () => {
       "a/b/c",
       "a/b/d",
       "a/e#f=View:b:prop1,prop2",
+      "a/e#g=[View:b:prop1,prop2]",
       "h/i=View:b:prop1,prop2",
     ];
 
