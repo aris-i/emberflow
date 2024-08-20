@@ -88,10 +88,6 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
     }
   }
 
-  if (!skipRunViewLogics && ["create", "merge", "delete"].includes(action)) {
-    await queueRunViewLogics(logicResultDoc);
-  }
-
   console.debug(`Distributing doc with Action: ${action}`);
   const dstDocRef = db.doc(baseDstPath);
   if (action === "delete") {
@@ -115,37 +111,35 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
       }
     }
 
-    if (!doc) {
-      return;
-    }
-
-    let updateData: { [key: string]: any } = {};
-    if (action === "merge") {
-      if (destProp) {
-        for (const key of Object.keys(doc)) {
-          updateData[`${destProp}.${key}`] = doc[key];
+    if (doc) {
+      let updateData: { [key: string]: any } = {};
+      if (action === "merge") {
+        if (destProp) {
+          for (const key of Object.keys(doc)) {
+            updateData[`${destProp}.${key}`] = doc[key];
+          }
+        } else {
+          updateData = {
+            ...doc,
+            "@id": dstDocRef.id,
+          };
         }
-      } else {
-        updateData = {
-          ...doc,
-          "@id": dstDocRef.id,
-        };
-      }
-      await _update(dstDocRef, updateData);
-    } else {
-      if (destProp) {
-        updateData[destProp] = doc;
         await _update(dstDocRef, updateData);
       } else {
-        updateData = {
-          ...doc,
-          "@id": dstDocRef.id,
-          "@dateCreated": Timestamp.now(),
-        };
-        await _set(dstDocRef, updateData);
+        if (destProp) {
+          updateData[destProp] = doc;
+          await _update(dstDocRef, updateData);
+        } else {
+          updateData = {
+            ...doc,
+            "@id": dstDocRef.id,
+            "@dateCreated": Timestamp.now(),
+          };
+          await _set(dstDocRef, updateData);
+        }
       }
+      console.log(`Document merged to ${dstPath}`);
     }
-    console.log(`Document merged to ${dstPath}`);
   } else if (action === "submit-form") {
     console.debug("Queuing submit form...");
     const formData: FormData = {
@@ -156,6 +150,10 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
     await queueSubmitForm(formData);
   } else if (action === "simulate-submit-form") {
     console.debug("Not distributing doc for action simulate-submit-form");
+  }
+
+  if (!skipRunViewLogics && ["create", "merge", "delete"].includes(action)) {
+    await queueRunViewLogics(logicResultDoc);
   }
 }
 
