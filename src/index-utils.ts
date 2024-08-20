@@ -88,6 +88,10 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
     }
   }
 
+  if (!skipRunViewLogics && ["create", "merge", "delete"].includes(action)) {
+    await queueRunViewLogics(logicResultDoc);
+  }
+
   console.debug(`Distributing doc with Action: ${action}`);
   const dstDocRef = db.doc(baseDstPath);
   if (action === "delete") {
@@ -152,10 +156,6 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
     await queueSubmitForm(formData);
   } else if (action === "simulate-submit-form") {
     console.debug("Not distributing doc for action simulate-submit-form");
-  }
-
-  if (!skipRunViewLogics && ["create", "merge", "delete"].includes(action)) {
-    await queueRunViewLogics(logicResultDoc);
   }
 }
 

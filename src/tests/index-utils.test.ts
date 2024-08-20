@@ -175,7 +175,8 @@ describe("distributeDoc", () => {
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
     expect(dbDoc.update).not.toHaveBeenCalled();
-    expect(queueRunViewLogicsSpy).not.toHaveBeenCalled();
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
   });
 
   it("should delete a document from dstPath", async () => {
