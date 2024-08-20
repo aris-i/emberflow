@@ -34,6 +34,7 @@ export const dbStructure = {
           [view(Entity.User, ["name"])]: {},
         },
       },
+      followers: [view(Entity.User, ["name", "email"])],
     },
   },
   users: {

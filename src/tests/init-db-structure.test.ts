@@ -10,6 +10,7 @@ describe("traverseBFS", () => {
         },
         e: {
           f: "View:b:prop1,prop2",
+          g: ["View:b:prop1,prop2"],
         },
       },
       h: {
@@ -28,6 +29,7 @@ describe("traverseBFS", () => {
       "a/b/c",
       "a/b/d",
       "a/e#f=View:b:prop1,prop2",
+      "a/e#g=[View:b:prop1,prop2]",
       "h/i=View:b:prop1,prop2",
     ];
 
@@ -66,7 +68,7 @@ describe("mapDocPaths", () => {
   });
 });
 
-describe("mapViewPaths", () => {
+describe("mapViewDefinitions", () => {
   it("should map view paths based on the given paths and Entity object", () => {
     const paths = [
       "as",
@@ -75,6 +77,7 @@ describe("mapViewPaths", () => {
       "as/a/bs/b",
       "as/a/bs/b#f=View:a:prop1,prop2",
       "as/a/ds/d=View:a:prop1,prop2",
+      "a/d#g=[View:b:prop1,prop2]",
     ];
 
     const Entity = {
@@ -83,15 +86,13 @@ describe("mapViewPaths", () => {
       Entity3: "d",
     };
 
-    const docPaths= {
-      "a": "as/{aId}",
-      "b": "as/{aId}/bs/{bId}",
-      "d": "as/{aId}/ds/{dId}",
-    };
-
     const expectedOutput = [
       {
         destEntity: "b",
+        destProp: {
+          name: "#f",
+          type: "map",
+        },
         srcProps: ["prop1", "prop2"],
         srcEntity: "a",
       },
@@ -100,9 +101,18 @@ describe("mapViewPaths", () => {
         srcProps: ["prop1", "prop2"],
         srcEntity: "a",
       },
+      {
+        destEntity: "d",
+        destProp: {
+          name: "#g",
+          type: "array-map",
+        },
+        srcProps: ["prop1", "prop2"],
+        srcEntity: "b",
+      },
     ];
 
-    const result = mapViewDefinitions(paths, Entity, docPaths);
+    const result = mapViewDefinitions(paths, Entity);
     expect(result).toEqual(expectedOutput);
   });
 });

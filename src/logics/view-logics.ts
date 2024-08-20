@@ -1,4 +1,5 @@
 import {
+  EntityCondition,
   LogicResult,
   LogicResultDoc,
   ViewDefinition,
@@ -18,20 +19,22 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     srcEntity,
     srcProps,
     destEntity,
+    destProp,
   } = viewDefinition;
-  function formViewDocId(path: string) {
-    let viewDocId = path.replace(/\//g, "+");
+
+  const logicName = `${destEntity}${destProp ? `#${destProp.name}` : ""}`;
+  const flagName = `@viewsAlreadyBuilt+${logicName}`;
+
+  function formViewDocId(viewDstPath: string) {
+    let viewDocId = viewDstPath.replace(/\//g, "+");
     if (viewDocId.startsWith("+")) {
       viewDocId = viewDocId.slice(1);
     }
     return viewDocId;
   }
 
-  function formViewsPath(path: string) {
-    const viewDocId = formViewDocId(path);
-    const docId = path.split("/").slice(-1)[0];
-    const srcDocPath = docPaths[srcEntity];
-    const srcPath = srcDocPath.split("/").slice(0, -1).join("/") + "/" + docId;
+  function formAtViewsPath(viewDstPath: string, srcPath: string) {
+    const viewDocId = formViewDocId(viewDstPath);
     return `${srcPath}/@views/${viewDocId}`;
   }
 
@@ -39,52 +42,81 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     const {
       doc,
       instructions,
-      dstPath: actualSrcPath,
+      dstPath: srcPath,
       action,
     } = logicResultDoc;
-    console.log(`Executing ViewLogic on document at ${actualSrcPath}...`);
+    console.log(`Executing ViewLogic on document at ${srcPath}...`);
 
     if (action === "create") {
-      const srcRef = db.doc(actualSrcPath);
-      await srcRef.update({[`@viewsAlreadyBuilt+${destEntity}`]: true});
+      const srcRef = db.doc(srcPath);
+      await srcRef.update({[flagName]: true});
 
       return {
-        name: `${destEntity} ViewLogic`,
+        name: `${logicName} ViewLogic`,
         status: "finished",
         timeFinished: admin.firestore.Timestamp.now(),
         documents: [],
       } as LogicResult;
     }
 
-    async function populateDestPathsAndBuildViewsCollection() {
+    async function populateViewDstPathsAndBuildViewsCollection() {
       const destDocPath = docPaths[destEntity];
-      const docId = actualSrcPath.split("/").slice(-1)[0];
-      const dehydratedPath = `${destDocPath.split("/").slice(0, -1).join("/")}/${docId}`;
-      destPaths = await hydrateDocPath(dehydratedPath, {});
+      const srcDocId = srcPath.split("/").slice(-1)[0];
+      let dehydratedPath: string;
+      const entityCondition: EntityCondition = {};
+      if (!destProp) {
+        dehydratedPath = `${destDocPath.split("/").slice(0, -1).join("/")}/${srcDocId}`;
+      } else {
+        dehydratedPath = destDocPath;
+        if (destProp.type === "array-map") {
+          entityCondition[destEntity] = {
+            fieldName: `${destProp.name}.${srcDocId}`,
+            operator: "!=",
+            value: null,
+          };
+        } else {
+          entityCondition[destEntity] = {
+            fieldName: `${destProp.name}.@id`,
+            operator: "==",
+            value: srcDocId,
+          };
+        }
+      }
+      viewDstPaths = await hydrateDocPath(dehydratedPath, entityCondition);
+      if (destProp) {
+        if (destProp.type === "array-map") {
+          viewDstPaths = viewDstPaths.map((path) => `${path}#${destProp.name}[${srcDocId}]`);
+        } else {
+          viewDstPaths = viewDstPaths.map((path) => `${path}#${destProp.name}`);
+        }
+      }
 
-      if (action === "delete") return;
+      if (action === "delete") {
+        console.log("No need to create @views collection since it will be deleted anyways");
+        return;
+      }
 
-      for (const path of destPaths) {
-        const srcViewsPath = formViewsPath(path);
-        await db.doc(srcViewsPath).set({
-          path,
+      for (const viewDstPath of viewDstPaths) {
+        const srcAtViewsPath = formAtViewsPath(viewDstPath, srcPath);
+        await db.doc(srcAtViewsPath).set({
+          path: viewDstPath,
           srcProps: srcProps.sort(),
           destEntity,
+          ...(destProp ? {destProp: destProp.name} : {}),
         });
       }
     }
 
-    function syncDeleteToDestPaths() {
-      const documents: LogicResultDoc[] = destPaths.map((destPath) => {
+    function syncDeleteToViewDstPaths() {
+      const documents: LogicResultDoc[] = viewDstPaths.map((viewDstPath) => {
         return {
           action: "delete",
-          dstPath: destPath,
-          priority: "normal",
+          dstPath: viewDstPath,
           skipRunViewLogics: true,
         };
       });
       return {
-        name: `${destEntity} ViewLogic`,
+        name: `${logicName} ViewLogic`,
         status: "finished",
         timeFinished: admin.firestore.Timestamp.now(),
         documents,
@@ -94,7 +126,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     function syncMergeToDestPaths() {
       const now = admin.firestore.Timestamp.now();
       const viewDoc: Record<string, any> = {
-        "updatedByViewDefinitionAt": now,
+        "@updatedByViewDefinitionAt": now,
       };
       const viewInstructions: Record<string, string> = {};
       for (const srcProp of srcProps) {
@@ -105,47 +137,47 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
           viewInstructions[srcProp] = instructions[srcProp];
         }
       }
-      const documents: LogicResultDoc[] = destPaths.map((destPath) => {
+      const documents: LogicResultDoc[] = viewDstPaths.map((viewDstPath) => {
         return {
           action: "merge",
-          dstPath: destPath,
+          dstPath: viewDstPath,
           doc: viewDoc,
           instructions: viewInstructions,
-          priority: "low",
           skipRunViewLogics: true,
         };
       });
 
       return {
-        name: `${destEntity} ViewLogic`,
+        name: `${logicName} ViewLogic`,
         status: "finished",
         timeFinished: now,
         documents,
       } as LogicResult;
     }
 
-    async function syncViewSrcPropsIfDifferentFromViewDefinition() {
-      for (const doc of viewPathDocs) {
-        const {srcProps: viewPathSrcProps, path} = doc.data();
-        const viewDocId = formViewDocId(path);
-        const srcViewsPath = formViewsPath(path);
+    async function syncAtViewsSrcPropsIfDifferentFromViewDefinition() {
+      for (const doc of viewDstPathDocs) {
+        const {srcProps: atViewsSrcProps, path: atViewsDstPath} = doc.data();
+        const viewDocId = formViewDocId(atViewsDstPath);
+        const srcAtViewsPath = doc.ref.path;
         const sortedSrcProps = srcProps.sort();
 
         if (viewDocId !== doc.id) {
           await doc.ref.delete();
-          await db.doc(srcViewsPath).set({
-            path,
+          await db.doc(srcAtViewsPath).set({
+            path: atViewsDstPath,
             srcProps: sortedSrcProps,
             destEntity,
+            ...(destProp ? {destProp: destProp.name} : {}),
           });
           continue;
         }
 
-        if (viewPathSrcProps.join(",") === sortedSrcProps.join(",")) {
+        if (atViewsSrcProps.join(",") === sortedSrcProps.join(",")) {
           continue;
         }
 
-        await db.doc(srcViewsPath).update({srcProps: sortedSrcProps});
+        await db.doc(srcAtViewsPath).update({srcProps: sortedSrcProps});
       }
     }
 
@@ -154,46 +186,50 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       ...Object.keys(instructions || {}),
     ];
 
-    let query;
+    let query = db.doc(srcPath)
+      .collection("@views")
+      .where("destEntity", "==", destEntity);
     if (action === "delete") {
       console.debug("action === delete");
-      query = db.doc(actualSrcPath)
-        .collection("@views")
-        .where("destEntity", "==", destEntity);
     } else {
-      query = db.doc(actualSrcPath)
-        .collection("@views")
-        .where("srcProps", "array-contains-any", modifiedFields)
-        .where("destEntity", "==", destEntity);
+      query = query.where("srcProps", "array-contains-any", modifiedFields);
     }
-    const viewPathDocs = (await query.get()).docs;
+    if (destProp) {
+      query = query.where("destProp", "==", destProp.name);
+    }
+    const viewDstPathDocs = (await query.get()).docs;
 
-    let destPaths = viewPathDocs.map((doc) => doc.data().path);
+    let viewDstPaths = viewDstPathDocs.map((doc) => doc.data().path);
 
-    if (viewPathDocs.length === 0) {
-      console.debug("viewPathDocs.length === 0");
+    if (viewDstPathDocs.length === 0) {
+      console.debug("viewDstPathDocs.length === 0");
       // Check if the src doc has "@viewsAlreadyBuilt" field
-      const srcRef = db.doc(actualSrcPath);
+      const srcRef = db.doc(srcPath);
       let isViewsAlreadyBuilt;
+      let dateCreated;
       if (action === "delete") {
         console.debug("action === delete", "doc", doc);
-        isViewsAlreadyBuilt = doc?.[`@viewsAlreadyBuilt+${destEntity}`];
+        isViewsAlreadyBuilt = doc?.[flagName];
+        dateCreated = doc?.["@dateCreated"];
       } else {
-        isViewsAlreadyBuilt = (await srcRef.get()).data()?.[`@viewsAlreadyBuilt+${destEntity}`];
+        const data = (await srcRef.get()).data();
+        isViewsAlreadyBuilt = data?.[flagName];
+        dateCreated = data?.["@dateCreated"];
       }
       console.debug("isViewsAlreadyBuilt", isViewsAlreadyBuilt);
-      if (!isViewsAlreadyBuilt) {
-        await populateDestPathsAndBuildViewsCollection();
-        if (action === "merge") {
-          await srcRef.update({[`@viewsAlreadyBuilt+${destEntity}`]: true});
-        }
+      console.debug("dateCreated", dateCreated);
+      if (!isViewsAlreadyBuilt && !dateCreated) {
+        console.log("This means that the src doc has not been built yet and that doc is not newly created since " +
+            "it doesn't have a dateCreated attribute yet");
+        await populateViewDstPathsAndBuildViewsCollection();
+        await srcRef.update({[flagName]: true});
       }
     }
 
-    await syncViewSrcPropsIfDifferentFromViewDefinition();
+    await syncAtViewsSrcPropsIfDifferentFromViewDefinition();
 
     if (action === "delete") {
-      return syncDeleteToDestPaths();
+      return syncDeleteToViewDstPaths();
     } else {
       return syncMergeToDestPaths();
     }
@@ -201,36 +237,86 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
 
   const dstToSrcLogicFn: ViewLogicFn = async (logicResultDoc: LogicResultDoc) => {
     const logicResult: LogicResult = {
-      name: "ViewLogic Dst to Src",
+      name: `${logicName} Dst-to-Src`,
       status: "finished",
       documents: [],
     };
-    const srcViewsPath = formViewsPath(logicResultDoc.dstPath);
-    if (srcViewsPath.includes("{")) {
-      console.error("Cannot run Dst to Src ViewLogic on a path with a placeholder");
+    const {
+      dstPath,
+      action,
+      doc,
+    } = logicResultDoc;
+    const srcDocId = doc?.["@id"];
+    if (!srcDocId) {
+      console.error("Document does not have an @id attribute");
+      logicResult.status = "error";
+      logicResult.message = "Document does not have an @id attribute";
       return logicResult;
     }
 
-    if (logicResultDoc.action === "delete") {
-      const viewResultDoc: LogicResultDoc = {
+    const srcDocPath = docPaths[srcEntity];
+    const srcPath = srcDocPath.split("/").slice(0, -1).join("/") + "/" + srcDocId;
+    if (srcPath.includes("{")) {
+      console.error("srcPath should not have a placeholder");
+      logicResult.status = "error";
+      logicResult.message = "srcPath should not have a placeholder";
+      return logicResult;
+    }
+
+    const srcAtViewsPath = formAtViewsPath(dstPath, srcPath);
+
+    let destProp = "";
+    let isArrayMap = false;
+    if (dstPath.includes("#")) {
+      destProp = dstPath.split("#")[1];
+      if (destProp.includes("[") && destProp.endsWith("]")) {
+        destProp = destProp.split("[")[0];
+        isArrayMap = true;
+      }
+    }
+
+    if (action === "delete") {
+      logicResult.documents.push({
         action: "delete",
-        dstPath: srcViewsPath,
+        dstPath: srcAtViewsPath,
         skipRunViewLogics: true,
-      };
-      logicResult.documents.push(viewResultDoc);
+      });
+      if (destProp && isArrayMap) {
+        const dstBasePath = dstPath.split("#")[0];
+        logicResult.documents.push({
+          action: "merge",
+          dstPath: dstBasePath,
+          instructions: {
+            [`@${destProp}`]: `arr-(${srcDocId})`,
+          },
+          skipRunViewLogics: true,
+        });
+      }
     } else {
-      const viewResultDoc: LogicResultDoc = {
+      logicResult.documents.push({
         action: "create",
-        dstPath: srcViewsPath,
+        dstPath: srcAtViewsPath,
         doc: {
           path: logicResultDoc.dstPath,
           srcProps: srcProps.sort(),
           destEntity,
+          ...(destProp ? {destProp} : {}),
         },
         skipRunViewLogics: true,
-      };
-      logicResult.documents.push(viewResultDoc);
+      });
+      if (destProp && isArrayMap) {
+        const dstBasePath = dstPath.split("#")[0];
+        logicResult.documents.push({
+          action: "merge",
+          dstPath: dstBasePath,
+          instructions: {
+            [`@${destProp}`]: `arr+(${srcDocId})`,
+          },
+          skipRunViewLogics: true,
+        });
+      }
     }
+
     return logicResult;
   };
 

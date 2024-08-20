@@ -1,4 +1,4 @@
-import {ViewDefinition} from "./types";
+import {DestPropType, ViewDefinition} from "./types";
 
 export function traverseBFS(obj: Record<string, object>): string[] {
   const paths: string[] = [];
@@ -18,13 +18,22 @@ export function traverseBFS(obj: Record<string, object>): string[] {
     // Enqueue the child objects with their paths
     for (const key in node) {
       if (typeof node[key] === "object" && node[key] !== null) {
-        if (key.startsWith("View:")) {
-          const viewPath = `${path}=${key}`;
-          paths.push(viewPath);
+        if (Array.isArray(node[key])) {
+          const firstElement = (node[key] as string[])[0];
+          if (firstElement.startsWith("View:")) {
+            const propView = `#${key}=[${firstElement}]`;
+            const viewPath = `${path}${propView}`;
+            paths.push(viewPath);
+          }
         } else {
-          const newPath = path === "" ? key : `${path}/${key}`;
-          paths.push(newPath);
-          queue.push({node: node[key] as Record<string, object>, path: newPath});
+          if (key.startsWith("View:")) {
+            const viewPath = `${path}=${key}`;
+            paths.push(viewPath);
+          } else {
+            const newPath = path === "" ? key : `${path}/${key}`;
+            paths.push(newPath);
+            queue.push({node: node[key] as Record<string, object>, path: newPath});
+          }
         }
       } else if (typeof node[key] === "string") {
         const value = (node[key] as unknown) as string;
@@ -39,7 +48,6 @@ export function traverseBFS(obj: Record<string, object>): string[] {
 
   return paths;
 }
-
 
 export function mapDocPaths(paths: string[], Entity: Record<string, string>): Record<string, string> {
   const docPathsMap: Record<string, string> = {} as Record<string, string>;
@@ -76,17 +84,23 @@ export function mapColPaths(docPathsMap: { [key: string]: string }): { [key: str
 export function mapViewDefinitions(
   paths: string[],
   Entity: Record<string, string>,
-  docPaths: Record<string, string>): ViewDefinition[] {
+): ViewDefinition[] {
   const viewDefs: ViewDefinition[] = [];
 
   for (const path of paths) {
-    const match = path.match(/^([^#]*)(#.+)?=(View:.+)$/);
+    const match = path.match(/^([^#]*)(#.+)?=(\[?View:.+)$/);
 
     if (match) {
       const destPath = match[1];
       // Get the last word of the path
       const destEntity = destPath.split("/").slice(-1)[0];
-      const viewDefinitionStr = match[3];
+      const destProp = match[2];
+      let viewDefinitionStr = match[3];
+      let destType = "map";
+      if (viewDefinitionStr.startsWith("[") && viewDefinitionStr.endsWith("]")) {
+        viewDefinitionStr = viewDefinitionStr.slice(1, -1);
+        destType = "array-map";
+      }
 
       const [_, srcEntity, srcPropsStr] = viewDefinitionStr.split(":");
       const srcProps = srcPropsStr.split(",");
@@ -97,6 +111,13 @@ export function mapViewDefinitions(
           destEntity,
           srcProps,
           srcEntity,
+          ...( destProp ? {
+            destProp: {
+              name: destProp,
+              type: destType as DestPropType,
+            },
+          } :
+            {}),
         });
       }
     }
@@ -112,7 +133,7 @@ export function initDbStructure(
 ) {
   const paths = traverseBFS(dbStructure);
   const docPaths = mapDocPaths(paths, Entity);
-  const viewDefinitions = mapViewDefinitions(paths, Entity, docPaths);
+  const viewDefinitions = mapViewDefinitions(paths, Entity);
   const docPathsRegex: Record<string, RegExp> = {} as Record<string, RegExp>;
   for (const [key, value] of Object.entries(docPaths)) {
     const regexPattern = value.replace(/{([^/]+)Id}/g, "([^/]+)");

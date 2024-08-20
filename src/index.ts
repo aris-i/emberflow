@@ -134,22 +134,23 @@ export function initializeEmberFlow(
   docPathsRegex = dbr;
 
   viewLogicConfigs = vd.map((viewDef: ViewDefinition): ViewLogicConfig[] => {
-    const [srcToDestViewLogicFn, dstToSrcViewLogicFn] = createViewLogicFn(viewDef);
-    const srcToDestLogicConfig = {
+    const [srcToDstViewLogicFn, dstToSrcViewLogicFn] = createViewLogicFn(viewDef);
+    const srcToDstLogicConfig = {
       name: `${viewDef.destEntity} ViewLogic`,
       entity: viewDef.srcEntity,
       actionTypes: ["create", "merge", "delete"] as LogicResultDocAction[],
       modifiedFields: viewDef.srcProps,
-      viewLogicFn: srcToDestViewLogicFn,
+      viewLogicFn: srcToDstViewLogicFn,
     };
     const dstToSrcLogicConfig = {
       name: `${viewDef.destEntity} Reverse ViewLogic`,
       entity: viewDef.destEntity,
       actionTypes: ["create", "delete"] as LogicResultDocAction[],
       modifiedFields: "all" as LogicConfigModifiedFieldsType,
+      ...(viewDef.destProp ? {destProp: viewDef.destProp} : {}),
       viewLogicFn: dstToSrcViewLogicFn,
-    };
-    return [srcToDestLogicConfig, dstToSrcLogicConfig];
+    } as ViewLogicConfig;
+    return [srcToDstLogicConfig, dstToSrcLogicConfig];
   }).flat();
 
   const logicNames = logicConfigs.map((config) => config.name);

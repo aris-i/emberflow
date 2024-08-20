@@ -97,6 +97,7 @@ export interface ViewLogicConfig{
     actionTypes: LogicResultDocAction[];
     modifiedFields: LogicConfigModifiedFieldsType;
     entity: string;
+    destProp?: string;
     viewLogicFn: ViewLogicFn;
 }
 
@@ -116,8 +117,13 @@ export type ValidatorFn = (document: DocumentData) => Promise<ValidationResult>;
 export type ValidatorConfig = Record<string, ValidatorFn>;
 export type ValidateFormResult = [hasValidationErrors: boolean, validationResult: ValidationResult];
 
+export type DestPropType = "map"|"array-map";
 export interface ViewDefinition {
     destEntity: string;
+    destProp? : {
+        name: string;
+        type: DestPropType;
+    }
     srcProps: string[];
     srcEntity: string;
 }
@@ -129,6 +135,8 @@ export interface QueryCondition {
     operator: firestore.WhereFilterOp;
     value: any;
 }
+
+export type EntityCondition = Record<string, QueryCondition>;
 
 export type AnyObject = { [key: string]: any };
 

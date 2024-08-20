@@ -29,6 +29,8 @@ import Reference = database.Reference;
 import {FirestoreEvent} from "firebase-functions/lib/v2/providers/firestore";
 import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
 import {queueRunViewLogics} from "./logics/view-logics";
+import FieldValue = firestore.FieldValue;
+import Timestamp = firestore.Timestamp;
 
 export const _mockable = {
   getViewLogicsConfig: () => viewLogicConfigs,
@@ -38,6 +40,30 @@ export const _mockable = {
 };
 
 export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: BatchUtil) {
+  async function _delete(dstDocRef: DocumentReference) {
+    if (batch) {
+      await batch.deleteDoc(dstDocRef);
+    } else {
+      await dstDocRef.delete();
+    }
+  }
+
+  async function _update(dstDocRef: DocumentReference, data: DocumentData) {
+    if (batch) {
+      await batch.update(dstDocRef, data);
+    } else {
+      await dstDocRef.update(data);
+    }
+  }
+
+  async function _set(dstDocRef: DocumentReference, data: DocumentData) {
+    if (batch) {
+      await batch.set(dstDocRef, data);
+    } else {
+      await dstDocRef.set(data);
+    }
+  }
+
   const {
     action,
     doc,
@@ -45,19 +71,39 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
     dstPath,
     skipRunViewLogics,
   } = logicResultDoc;
-  const dstDocRef = db.doc(dstPath);
+  let baseDstPath = dstPath;
+  let destProp = "";
+  let destPropArg = "";
+  let destPropId = "";
+  if (dstPath.includes("#")) {// users/userId1#followers[userId3]
+    [baseDstPath, destProp] = dstPath.split("#");
+    if (destProp.includes("[") && destProp.endsWith("]")) {
+      [destProp, destPropArg] = destProp.split("[");
+      destPropId = destPropArg.slice(0, -1);
+      if (!destPropId) {
+        console.error("destPropId should not be blank for array map");
+        return;
+      }
+      destProp = `${destProp}.${destPropId}`;
+    }
+  }
+
+  if (!skipRunViewLogics && ["create", "merge", "delete"].includes(action)) {
+    await queueRunViewLogics(logicResultDoc);
+  }
+
   console.debug(`Distributing doc with Action: ${action}`);
+  const dstDocRef = db.doc(baseDstPath);
   if (action === "delete") {
     if (!skipRunViewLogics) {
-      const doc = (await dstDocRef.get()).data();
-      logicResultDoc.doc = doc;
+      logicResultDoc.doc = (await dstDocRef.get()).data();
     }
 
     // Delete document at dstPath
-    if (batch) {
-      await batch.deleteDoc(dstDocRef);
+    if (destProp) {
+      await _update(dstDocRef, {[destProp]: FieldValue.delete()});
     } else {
-      await dstDocRef.delete();
+      await _delete(dstDocRef);
     }
     console.log(`Document deleted at ${dstPath}`);
   } else if (action === "merge" || action === "create") {
@@ -69,18 +115,34 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
       }
     }
 
-    const updateData: { [key: string]: any } = {...doc, "@id": dstDocRef.id};
-    if (batch) {
-      if (action === "merge") {
-        await batch.update(dstDocRef, updateData);
+    if (!doc) {
+      return;
+    }
+
+    let updateData: { [key: string]: any } = {};
+    if (action === "merge") {
+      if (destProp) {
+        for (const key of Object.keys(doc)) {
+          updateData[`${destProp}.${key}`] = doc[key];
+        }
       } else {
-        await batch.set(dstDocRef, updateData);
+        updateData = {
+          ...doc,
+          "@id": dstDocRef.id,
+        };
       }
+      await _update(dstDocRef, updateData);
     } else {
-      if (action === "merge") {
-        await dstDocRef.update(updateData);
+      if (destProp) {
+        updateData[destProp] = doc;
+        await _update(dstDocRef, updateData);
       } else {
-        await dstDocRef.set(updateData);
+        updateData = {
+          ...doc,
+          "@id": dstDocRef.id,
+          "@dateCreated": Timestamp.now(),
+        };
+        await _set(dstDocRef, updateData);
       }
     }
     console.log(`Document merged to ${dstPath}`);
@@ -94,10 +156,6 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
     await queueSubmitForm(formData);
   } else if (action === "simulate-submit-form") {
     console.debug("Not distributing doc for action simulate-submit-form");
-  }
-
-  if (!skipRunViewLogics && ["create", "merge", "delete"].includes(action)) {
-    await queueRunViewLogics(logicResultDoc);
   }
 }
 
@@ -567,21 +625,26 @@ export async function runViewLogics(logicResultDoc: LogicResultDoc): Promise<Log
     console.error("Entity should not be blank");
     return [];
   }
-  const matchingLogics = _mockable.getViewLogicsConfig().filter((logic) => {
-    return (
-      (
-        logic.actionTypes.includes(action) &&
+
+  let destProp = "";
+  if (dstPath.includes("#")) {
+    destProp = dstPath.split(("#"))[1];
+    if (destProp.includes("[") && destProp.endsWith("]")) {
+      destProp = destProp.split("[")[0];
+    }
+  }
+
+  const matchingLogics = _mockable.getViewLogicsConfig().filter((viewLogicConfig) => {
+    if (action === "delete") {
+      return viewLogicConfig.entity === entity && (destProp ? viewLogicConfig.destProp === destProp : true);
+    }
+
+    return viewLogicConfig.actionTypes.includes(action) &&
         (
-          logic.modifiedFields === "all" ||
-            logic.modifiedFields.some((field) => modifiedFields.includes(field))
-        ) &&
-                logic.entity === entity
-      ) ||
-            (
-              action === "delete" &&
-                logic.entity === entity
-            )
-    );
+          viewLogicConfig.modifiedFields === "all" ||
+            viewLogicConfig.modifiedFields.some((field) => modifiedFields.includes(field))
+        ) && viewLogicConfig.entity === entity && (destProp ? viewLogicConfig.destProp === destProp : true)
+    ;
   });
   // TODO: Handle errors
 

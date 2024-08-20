@@ -61,12 +61,20 @@ const vd2: ViewDefinition = {
   srcEntity: "user",
   srcProps: ["name", "avatar"],
   destEntity: "post",
+  destProp: {
+    name: "followers",
+    type: "array-map",
+  },
 };
 
 const vd3: ViewDefinition = {
   srcEntity: "user",
-  srcProps: ["username", "avatarUrl"],
+  srcProps: ["name", "avatarUrl"],
   destEntity: "server",
+  destProp: {
+    name: "createdBy",
+    type: "map",
+  },
 };
 
 const vd4: ViewDefinition = {
@@ -79,8 +87,9 @@ const createLogicResultDoc: LogicResultDoc = {
   action: "create",
   dstPath: "users/1234",
   doc: {
-    name: "John Doe",
-    age: "26",
+    "@id": "1234",
+    "name": "John Doe",
+    "age": "26",
   },
   priority: "normal",
 };
@@ -89,7 +98,8 @@ const mergeLogicResultDoc: LogicResultDoc = {
   action: "merge",
   dstPath: "users/1234",
   doc: {
-    name: "John Doe",
+    "@id": "1234",
+    "name": "John Doe",
   },
   instructions: {
     age: "++",
@@ -101,6 +111,9 @@ const deleteLogicResultDoc: LogicResultDoc = {
   action: "delete",
   dstPath: "users/1234",
   priority: "normal",
+  doc: {
+    "@id": "1234",
+  },
 };
 
 const userLogicResultDoc: LogicResultDoc = {
@@ -108,7 +121,7 @@ const userLogicResultDoc: LogicResultDoc = {
   dstPath: "users/123",
   priority: "normal",
   doc: {
-    username: "new_username",
+    name: "new_name",
   },
 };
 
@@ -139,6 +152,9 @@ describe("createViewLogicFn", () => {
             get: colGetMock,
             where: jest.fn().mockReturnValue({
               get: colGetMock,
+              where: jest.fn().mockReturnValue({
+                get: colGetMock,
+              }),
             }),
           }),
         }),
@@ -146,7 +162,7 @@ describe("createViewLogicFn", () => {
     });
   });
 
-  it("should log error when path includes {", async () => {
+  it("should log error document does not have @id", async () => {
     jest.spyOn(console, "error").mockImplementation();
     const logicFn = viewLogics.createViewLogicFn(vd4);
 
@@ -160,30 +176,114 @@ describe("createViewLogicFn", () => {
     };
     const result = await logicFn[1](logicResultDoc);
     expect(result.documents.length).toEqual(0);
-    expect(console.error).toHaveBeenCalledWith("Cannot run Dst to Src ViewLogic on a path with a placeholder");
+    expect(console.error).toHaveBeenCalledWith("Document does not have an @id attribute");
+  });
+
+  it("should log error when srcPath includes placeholder", async () => {
+    jest.spyOn(console, "error").mockImplementation();
+    const logicFn = viewLogics.createViewLogicFn(vd4);
+
+    const logicResultDoc: LogicResultDoc = {
+      action: "create",
+      dstPath: "users/5678/friends/1234",
+      doc: {
+        "@id": "1234",
+        "name": "John Doe",
+      },
+      priority: "normal",
+    };
+    const result = await logicFn[1](logicResultDoc);
+    expect(result.documents.length).toEqual(0);
+    expect(console.error).toHaveBeenCalledWith("srcPath should not have a placeholder");
   });
 
   it("should create @views doc", async () => {
-    const logicFn = viewLogics.createViewLogicFn(vd1);
+    let logicFn = viewLogics.createViewLogicFn(vd1);
 
-    const result = await logicFn[1](createLogicResultDoc);
-    const document = result.documents[0];
-    expect(document).toHaveProperty("action", "create");
-    expect(document).toHaveProperty("dstPath", "users/1234/@views/users+1234");
-    expect(document.doc).toEqual({
+    let result = await logicFn[1](createLogicResultDoc);
+    expect(result.documents.length).toEqual(1);
+    expect(result.documents[0]).toHaveProperty("action", "create");
+    expect(result.documents[0]).toHaveProperty("dstPath", "users/1234/@views/users+1234");
+    expect(result.documents[0].doc).toEqual({
       "path": "users/1234",
       "srcProps": ["age", "avatar", "name"],
       "destEntity": "friend",
     });
+
+    logicFn = viewLogics.createViewLogicFn(vd2);
+
+    result = await logicFn[1]({
+      ...createLogicResultDoc,
+      dstPath: "users/1234/posts/987#followers[1234]",
+    });
+    expect(result.documents.length).toEqual(2);
+    expect(result.documents[0]).toHaveProperty("action", "create");
+    expect(result.documents[0])
+      .toHaveProperty("dstPath", "users/1234/@views/users+1234+posts+987#followers[1234]");
+    expect(result.documents[0].doc).toEqual({
+      path: "users/1234/posts/987#followers[1234]",
+      srcProps: ["avatar", "name"],
+      destEntity: "post",
+      destProp: "followers",
+    });
+    expect(result.documents[1]).toHaveProperty("action", "merge");
+    expect(result.documents[1]).toHaveProperty("dstPath", "users/1234/posts/987");
+    expect(result.documents[1].instructions).toEqual({
+      "@followers": "arr+(1234)",
+    });
+
+    logicFn = viewLogics.createViewLogicFn(vd3);
+
+    result = await logicFn[1]({
+      ...createLogicResultDoc,
+      dstPath: "servers/123#createdBy",
+    });
+    expect(result.documents.length).toEqual(1);
+    expect(result.documents[0]).toHaveProperty("action", "create");
+    expect(result.documents[0])
+      .toHaveProperty("dstPath", "users/1234/@views/servers+123#createdBy");
+    expect(result.documents[0].doc).toEqual({
+      path: "servers/123#createdBy",
+      srcProps: ["avatarUrl", "name"],
+      destEntity: "server",
+      destProp: "createdBy",
+    });
   });
 
   it("should delete @views doc", async () => {
-    const logicFn = viewLogics.createViewLogicFn(vd1);
+    let logicFn = viewLogics.createViewLogicFn(vd1);
 
-    const result = await logicFn[1](deleteLogicResultDoc);
-    const document = result.documents[0];
-    expect(document).toHaveProperty("action", "delete");
-    expect(document).toHaveProperty("dstPath", "users/1234/@views/users+1234");
+    let result = await logicFn[1](deleteLogicResultDoc);
+    expect(result.documents.length).toEqual(1);
+    expect(result.documents[0]).toHaveProperty("action", "delete");
+    expect(result.documents[0]).toHaveProperty("dstPath", "users/1234/@views/users+1234");
+
+    logicFn = viewLogics.createViewLogicFn(vd2);
+
+    result = await logicFn[1]({
+      ...deleteLogicResultDoc,
+      dstPath: "users/1234/posts/987#followers[1234]",
+    });
+    expect(result.documents.length).toEqual(2);
+    expect(result.documents[0]).toHaveProperty("action", "delete");
+    expect(result.documents[0])
+      .toHaveProperty("dstPath", "users/1234/@views/users+1234+posts+987#followers[1234]");
+    expect(result.documents[1]).toHaveProperty("action", "merge");
+    expect(result.documents[1]).toHaveProperty("dstPath", "users/1234/posts/987");
+    expect(result.documents[1].instructions).toEqual({
+      "@followers": "arr-(1234)",
+    });
+
+    logicFn = viewLogics.createViewLogicFn(vd3);
+
+    result = await logicFn[1]({
+      ...deleteLogicResultDoc,
+      dstPath: "servers/123#createdBy",
+    });
+    expect(result.documents.length).toEqual(1);
+    expect(result.documents[0]).toHaveProperty("action", "delete");
+    expect(result.documents[0])
+      .toHaveProperty("dstPath", "users/1234/@views/servers+123#createdBy");
   });
 
   it("should add @viewsAlreadyBuilt when action is create", async () => {
@@ -301,6 +401,9 @@ describe("createViewLogicFn", () => {
     colGetMock.mockResolvedValue({
       docs: [{
         id: "users+456+friends+1234",
+        ref: {
+          path: "users/1234/@views/users+456+friends+1234",
+        },
         data: () => {
           return {
             "path": "users/456/friends/1234",
@@ -309,6 +412,9 @@ describe("createViewLogicFn", () => {
         },
       }, {
         id: "users+789+friends+1234",
+        ref: {
+          path: "users/1234/@views/users+789+friends+1234",
+        },
         data: () => {
           return {
             "path": "users/789/friends/1234",
@@ -344,6 +450,9 @@ describe("createViewLogicFn", () => {
     colGetMock.mockResolvedValue({
       docs: [{
         id: "users+456+friends+1234",
+        ref: {
+          path: "users/1234/@views/users+456+friends+1234",
+        },
         data: () => {
           return {
             "path": "users/456/friends/1234",
@@ -397,6 +506,9 @@ describe("createViewLogicFn", () => {
     colGetMock.mockResolvedValueOnce({
       docs: [{
         id: "users+456+friends+1234",
+        ref: {
+          path: "users/1234/@views/users+456+friends+1234",
+        },
         data: () => {
           return {
             "path": "users/456/friends/1234",
@@ -405,6 +517,9 @@ describe("createViewLogicFn", () => {
         },
       }, {
         id: "users+789+friends+1234",
+        ref: {
+          path: "users/1234/@views/users+789+friends+1234",
+        },
         data: () => {
           return {
             "path": "users/789/friends/1234",
@@ -415,34 +530,46 @@ describe("createViewLogicFn", () => {
     })
       .mockResolvedValueOnce({
         docs: [{
-          id: "users+1234+posts+987",
+          id: "users+1234+posts+987#followers[1234]",
+          ref: {
+            path: "users/1234/@views/users+1234+posts+987#followers",
+          },
           data: () => {
             return {
-              "path": "users/1234/posts/987",
+              "path": "users/1234/posts/987#followers[1234]",
               "srcProps": ["name", "avatar"],
             };
           },
         }, {
-          id: "users+1234+posts+654",
+          id: "users+1234+posts+654#followers[1234]",
+          ref: {
+            path: "users/1234/@views/users+1234+posts+654#followers[1234]",
+          },
           data: () => {
             return {
-              "path": "users/1234/posts/654",
+              "path": "users/1234/posts/654#followers[1234]",
               "srcProps": ["name", "avatar"],
             };
           },
         }, {
-          id: "users+890+posts+987",
+          id: "users+890+posts+987#followers[1234]",
+          ref: {
+            path: "users/1234/@views/users+890+posts+987#followers[1234]",
+          },
           data: () => {
             return {
-              "path": "users/890/posts/987",
+              "path": "users/890/posts/987#followers[1234]",
               "srcProps": ["name", "avatar"],
             };
           },
         }, {
-          id: "users+890+posts+654",
+          id: "users+890+posts+654#followers[1234]",
+          ref: {
+            path: "users/1234/@views/users+890+posts+654#followers[1234]",
+          },
           data: () => {
             return {
-              "path": "users/890/posts/654",
+              "path": "users/890/posts/654#followers[1234]",
               "srcProps": ["name", "avatar"],
             };
           },
@@ -451,37 +578,49 @@ describe("createViewLogicFn", () => {
       .mockResolvedValueOnce({
         docs: [{
           id: "users+456+friends+1234",
+          ref: {
+            path: "users/1234/@views/users+456+friends+1234",
+          },
           data: () => {
             return {
               "path": "users/456/friends/1234",
-              "srcProps": ["username", "avatarUrl"],
+              "srcProps": ["name", "avatarUrl"],
             };
           },
         }, {
           id: "users+789+friends+1234",
+          ref: {
+            path: "users/1234/@views/users+789+friends+1234",
+          },
           data: () => {
             return {
               "path": "users/789/friends/1234",
-              "srcProps": ["username", "avatarUrl"],
+              "srcProps": ["name", "avatarUrl"],
             };
           },
         }],
       })
       .mockResolvedValueOnce({
         docs: [{
-          id: "servers+123",
+          id: "servers+123#createdBy",
+          ref: {
+            path: "users/123/@views/servers+123#createdBy",
+          },
           data: () => {
             return {
-              "path": "servers/123",
-              "srcProps": ["username", "avatarUrl"],
+              "path": "servers/123#createdBy",
+              "srcProps": ["name", "avatarUrl"],
             };
           },
         }, {
-          id: "servers+456",
+          id: "servers+456#createdBy",
+          ref: {
+            path: "users/123/@views/servers+456#createdBy",
+          },
           data: () => {
             return {
-              "path": "servers/456",
-              "srcProps": ["username", "avatarUrl"],
+              "path": "servers/456#createdBy",
+              "srcProps": ["name", "avatarUrl"],
             };
           },
         }],
@@ -500,13 +639,13 @@ describe("createViewLogicFn", () => {
     let document = result.documents[0];
     expect(document).toHaveProperty("action", "merge");
     expect(document).toHaveProperty("dstPath", "users/456/friends/1234");
-    expect(document.doc).toEqual({"name": "John Doe", "updatedByViewDefinitionAt": expect.any(Timestamp)});
+    expect(document.doc).toEqual({"name": "John Doe", "@updatedByViewDefinitionAt": expect.any(Timestamp)});
     expect(document.instructions).toEqual({"age": "++"});
 
     document = result.documents[1];
     expect(document).toHaveProperty("action", "merge");
     expect(document).toHaveProperty("dstPath", "users/789/friends/1234");
-    expect(document.doc).toEqual({"name": "John Doe", "updatedByViewDefinitionAt": expect.any(Timestamp)});
+    expect(document.doc).toEqual({"name": "John Doe", "@updatedByViewDefinitionAt": expect.any(Timestamp)});
     expect(document.instructions).toEqual({"age": "++"});
 
     // Create the logic function using the viewDefinition
@@ -522,23 +661,23 @@ describe("createViewLogicFn", () => {
 
     document = result2.documents[0];
     expect(document).toHaveProperty("action", "merge");
-    expect(document).toHaveProperty("dstPath", "users/1234/posts/987");
-    expect(document.doc).toEqual({"name": "John Doe", "updatedByViewDefinitionAt": expect.any(Timestamp)});
+    expect(document).toHaveProperty("dstPath", "users/1234/posts/987#followers[1234]");
+    expect(document.doc).toEqual({"name": "John Doe", "@updatedByViewDefinitionAt": expect.any(Timestamp)});
 
     document = result2.documents[1];
     expect(document).toHaveProperty("action", "merge");
-    expect(document).toHaveProperty("dstPath", "users/1234/posts/654");
-    expect(document.doc).toEqual({"name": "John Doe", "updatedByViewDefinitionAt": expect.any(Timestamp)});
+    expect(document).toHaveProperty("dstPath", "users/1234/posts/654#followers[1234]");
+    expect(document.doc).toEqual({"name": "John Doe", "@updatedByViewDefinitionAt": expect.any(Timestamp)});
 
     document = result2.documents[2];
     expect(document).toHaveProperty("action", "merge");
-    expect(document).toHaveProperty("dstPath", "users/890/posts/987");
-    expect(document.doc).toEqual({"name": "John Doe", "updatedByViewDefinitionAt": expect.any(Timestamp)});
+    expect(document).toHaveProperty("dstPath", "users/890/posts/987#followers[1234]");
+    expect(document.doc).toEqual({"name": "John Doe", "@updatedByViewDefinitionAt": expect.any(Timestamp)});
 
     document = result2.documents[3];
     expect(document).toHaveProperty("action", "merge");
-    expect(document).toHaveProperty("dstPath", "users/890/posts/654");
-    expect(document.doc).toEqual({"name": "John Doe", "updatedByViewDefinitionAt": expect.any(Timestamp)});
+    expect(document).toHaveProperty("dstPath", "users/890/posts/654#followers[1234]");
+    expect(document.doc).toEqual({"name": "John Doe", "@updatedByViewDefinitionAt": expect.any(Timestamp)});
 
     const resultDelete = await logicFn[0](deleteLogicResultDoc);
 
@@ -566,13 +705,13 @@ describe("createViewLogicFn", () => {
 
     document = result3.documents[0];
     expect(document).toHaveProperty("action", "merge");
-    expect(document).toHaveProperty("dstPath", "servers/123");
-    expect(document.doc).toEqual({"username": "new_username", "updatedByViewDefinitionAt": expect.any(Timestamp)});
+    expect(document).toHaveProperty("dstPath", "servers/123#createdBy");
+    expect(document.doc).toEqual({"name": "new_name", "@updatedByViewDefinitionAt": expect.any(Timestamp)});
 
     document = result3.documents[1];
     expect(document).toHaveProperty("action", "merge");
-    expect(document).toHaveProperty("dstPath", "servers/456");
-    expect(document.doc).toEqual({"username": "new_username", "updatedByViewDefinitionAt": expect.any(Timestamp)});
+    expect(document).toHaveProperty("dstPath", "servers/456#createdBy");
+    expect(document.doc).toEqual({"name": "new_name", "@updatedByViewDefinitionAt": expect.any(Timestamp)});
   });
 });
 
