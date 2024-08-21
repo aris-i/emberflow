@@ -15,8 +15,6 @@ import * as admin from "firebase-admin";
 import {dbStructure, Entity} from "../../sample-custom/db-structure";
 import {securityConfig} from "../../sample-custom/security";
 import {validatorConfig} from "../../sample-custom/validators";
-import {firestore} from "firebase-admin";
-import Timestamp = firestore.Timestamp;
 
 jest.mock("../../utils/pubsub", () => {
   return {
@@ -191,7 +189,10 @@ describe("queueInstructions", () => {
 });
 
 describe("convertInstructionsToDbValues", () => {
-  it("should convert instructions to db values correctly", async () => {
+  const transactionUpdateMock = jest.fn();
+  const transactionSetMock = jest.fn();
+
+  beforeEach(() => {
     const queueNumberCounterDoc = {
       "id": "queueNumber",
       "data": () => {
@@ -201,8 +202,6 @@ describe("convertInstructionsToDbValues", () => {
         };
       },
     };
-    const transactionUpdateMock = jest.fn();
-    const transactionSetMock = jest.fn();
     jest.spyOn(admin.firestore(), "runTransaction").mockImplementation(async (transactionFn) => {
       const transaction = {
         get: jest.fn().mockImplementation((docRef) => {
@@ -218,12 +217,161 @@ describe("convertInstructionsToDbValues", () => {
 
       return transactionFn(transaction);
     });
-    const instructions = {
-      "queueNumber": "globalCounter(queueNumber,20)",
-    };
-    const result = await distribution.convertInstructionsToDbValues(instructions);
+  });
 
-    console.log(result);
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  describe("Global counter instruction", () => {
+    it("should convert global counter instructions to db values correctly", async () => {
+      const instructions = {
+        "queueNumber": "globalCounter(queueNumber,20)",
+      };
+      const result = await distribution.convertInstructionsToDbValues(instructions);
+
+      expect(transactionUpdateMock).toHaveBeenCalledTimes(1);
+      expect(result.updateData).toStrictEqual({
+        "queueNumber": 11,
+      });
+    });
+
+    it("should initiate and create the counter document if it is not existing", async () => {
+      jest.spyOn(admin.firestore(), "runTransaction").mockImplementation(async (transactionFn) => {
+        const transaction = {
+          get: jest.fn().mockImplementation((docRef) => {
+            if (docRef.id === "queueNumber") {
+              return Promise.resolve({
+                "id": "queueNumber",
+                "data": () => {
+                  return {
+                    "count": 20,
+                    "lastUpdatedAt": admin.firestore.Timestamp.now(),
+                  };
+                },
+              });
+            } else {
+              return Promise.resolve(undefined);
+            }
+          }),
+          update: transactionUpdateMock,
+          set: transactionSetMock,
+        } as unknown as admin.firestore.Transaction;
+
+        return transactionFn(transaction);
+      });
+      const instructions = {
+        "newCounter": "globalCounter(newCounter,20)",
+      };
+      const result = await distribution.convertInstructionsToDbValues(instructions);
+
+      expect(transactionSetMock).toHaveBeenCalledTimes(1);
+      expect(result.updateData).toStrictEqual({
+        "newCounter": 1,
+      });
+    });
+
+    it("should reset the counter to 1 if max value has been reached", async () => {
+      jest.spyOn(admin.firestore(), "runTransaction").mockImplementation(async (transactionFn) => {
+        const transaction = {
+          get: jest.fn().mockImplementation((docRef) => {
+            if (docRef.id === "queueNumber") {
+              return Promise.resolve({
+                "id": "queueNumber",
+                "data": () => {
+                  return {
+                    "count": 20,
+                    "lastUpdatedAt": admin.firestore.Timestamp.now(),
+                  };
+                },
+              });
+            } else {
+              return Promise.resolve(undefined);
+            }
+          }),
+          update: transactionUpdateMock,
+          set: transactionSetMock,
+        } as unknown as admin.firestore.Transaction;
+
+        return transactionFn(transaction);
+      });
+      const instructions = {
+        "queueNumber": "globalCounter(queueNumber,20)",
+      };
+      const result = await distribution.convertInstructionsToDbValues(instructions);
+
+      expect(result.updateData).toStrictEqual({
+        "queueNumber": 1,
+      });
+    });
+
+    it("should be able to reset daily", async () => {
+      jest.spyOn(admin.firestore(), "runTransaction").mockImplementation(async (transactionFn) => {
+        const transaction = {
+          get: jest.fn().mockImplementation((docRef) => {
+            if (docRef.id === "queueNumber") {
+              return Promise.resolve({
+                "id": "queueNumber",
+                "data": () => {
+                  return {
+                    "count": 10,
+                    "lastUpdatedAt": new admin.firestore.Timestamp(1627753600, 0),
+                  };
+                },
+              });
+            } else {
+              return Promise.resolve(undefined);
+            }
+          }),
+          update: transactionUpdateMock,
+          set: transactionSetMock,
+        } as unknown as admin.firestore.Transaction;
+
+        return transactionFn(transaction);
+      });
+      const instructions = {
+        "queueNumber": "globalCounter(queueNumber,20)",
+      };
+      const result = await distribution.convertInstructionsToDbValues(instructions);
+
+      expect(result.updateData).toStrictEqual({
+        "queueNumber": 1,
+      });
+    });
+
+    it("should convert global counter instructions to db values correctly even without max value provided", async () => {
+      jest.spyOn(admin.firestore(), "runTransaction").mockImplementation(async (transactionFn) => {
+        const transaction = {
+          get: jest.fn().mockImplementation((docRef) => {
+            if (docRef.id === "queueNumber") {
+              return Promise.resolve({
+                "id": "queueNumber",
+                "data": () => {
+                  return {
+                    "count": 10,
+                    "lastUpdatedAt": admin.firestore.Timestamp.now(),
+                  };
+                },
+              });
+            } else {
+              return Promise.resolve(undefined);
+            }
+          }),
+          update: transactionUpdateMock,
+          set: transactionSetMock,
+        } as unknown as admin.firestore.Transaction;
+
+        return transactionFn(transaction);
+      });
+      const instructions = {
+        "queueNumber": "globalCounter(queueNumber)",
+      };
+      const result = await distribution.convertInstructionsToDbValues(instructions);
+
+      expect(result.updateData).toStrictEqual({
+        "queueNumber": 11,
+      });
+    });
   });
 });
 
@@ -237,7 +385,17 @@ describe("onMessageInstructionsQueue", () => {
       update: docUpdateMock,
       id: "test-doc-id",
     } as unknown) as admin.firestore.DocumentReference<admin.firestore.DocumentData>;
-    dbSpy = jest.spyOn(admin.firestore(), "doc").mockReturnValue(dbDoc);
+    const queueDocRef = ({
+      id: "queueNumber",
+    } as unknown) as admin.firestore.DocumentReference<admin.firestore.DocumentData>;
+    dbSpy = jest.spyOn(admin.firestore(), "doc").mockImplementation((docPath)=> {
+      const docId = docPath.split("/").pop();
+      if (docId === "queueNumber") {
+        return queueDocRef;
+      } else {
+        return dbDoc;
+      }
+    });
     jest.spyOn(console, "log").mockImplementation();
   });
 
@@ -347,8 +505,7 @@ describe("onMessageInstructionsQueue", () => {
   it("should convert global counter instruction correctly", async () => {
     isProcessedMock.mockResolvedValueOnce(false);
     const expectedData = {
-      "lastUpdatedAt": expect.any(Timestamp),
-      "queueNumber": 1,
+      "queueNumber": 11,
     };
     const queueNumberCounterDoc = {
       "id": "queueNumber",

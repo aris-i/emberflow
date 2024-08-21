@@ -140,7 +140,7 @@ export async function convertInstructionsToDbValues(instructions: Instructions) 
     } else if (instruction === "del") {
       updateData[property] = admin.firestore.FieldValue.delete();
     } else if (instruction.startsWith("globalCounter")) {
-      const regex = /globalCounter\(([^,]+),\s*(\d+)\)/;
+      const regex = /globalCounter\(([^,]+)(?:,\s*(\d+))?\)/;
       const match = instruction.match(regex);
 
       if (!match) {
@@ -156,7 +156,6 @@ export async function convertInstructionsToDbValues(instructions: Instructions) 
         let newCount: number;
         const counterRef = db.doc(`@counters/${counterName}`);
         const counterDoc = await transaction.get(counterRef);
-        console.log(counterDoc);
         const counterData = counterDoc?.data();
         if (!counterData) {
           newCount = 1;
@@ -168,24 +167,23 @@ export async function convertInstructionsToDbValues(instructions: Instructions) 
           transaction.set(counterRef, newDocument);
         } else {
           const {count, lastUpdatedAt} = counterData;
-          const lastUpdatedDate = lastUpdatedAt.toDate();
-          const lastUpdatedString = lastUpdatedDate.toISOString().split("T")[0];
-          const todayString = new Date().toISOString().split("T")[0];
 
-          const isDifferentDate = lastUpdatedString != todayString;
-          const maxValueReached = count >= maxValue;
-          if (maxValueReached || isDifferentDate) newCount = 1;
-          else newCount = count + 1;
+          const dateNow = new Date();
+          dateNow.setHours(0, 0, 0, 0);
 
-          updateData[property] = newCount;
-          updateData["lastUpdatedAt"] = now;
+          const lastUpdatedAtDate = lastUpdatedAt.toDate();
+
+          const isDifferentDate = lastUpdatedAtDate < dateNow;
+          const maxValueReached = maxValue && count >= maxValue;
+
+          newCount = maxValueReached || isDifferentDate ? 1 : count + 1;
+
           transaction.update(counterRef, {
             "count": newCount,
             "lastUpdatedAt": now,
           });
         }
         updateData[property] = newCount;
-        updateData["lastUpdatedAt"] = now;
       });
     } else {
       console.log(`Invalid instruction ${instruction} for property ${property}`);
