@@ -153,13 +153,16 @@ export async function convertInstructionsToDbValues(instructions: Instructions) 
       const now = admin.firestore.Timestamp.now();
 
       await db.runTransaction(async (transaction) => {
+        let newCount: number;
         const counterRef = db.doc(`@counters/${counterName}`);
         const counterDoc = await transaction.get(counterRef);
-        const counterData = counterDoc.data();
+        console.log(counterDoc);
+        const counterData = counterDoc?.data();
         if (!counterData) {
+          newCount = 1;
           const newDocument = {
             "@id": counterName,
-            "count": 1,
+            "count": newCount,
             "lastUpdatedAt": now,
           };
           transaction.set(counterRef, newDocument);
@@ -171,8 +174,6 @@ export async function convertInstructionsToDbValues(instructions: Instructions) 
 
           const isDifferentDate = lastUpdatedString != todayString;
           const maxValueReached = count >= maxValue;
-
-          let newCount: number;
           if (maxValueReached || isDifferentDate) newCount = 1;
           else newCount = count + 1;
 
@@ -183,6 +184,8 @@ export async function convertInstructionsToDbValues(instructions: Instructions) 
             "lastUpdatedAt": now,
           });
         }
+        updateData[property] = newCount;
+        updateData["lastUpdatedAt"] = now;
       });
     } else {
       console.log(`Invalid instruction ${instruction} for property ${property}`);
