@@ -1034,7 +1034,7 @@ describe("onFormSubmit", () => {
     jest.spyOn(indexutils, "distribute").mockResolvedValue();
     jest.spyOn(indexutils, "distributeLater").mockResolvedValue();
     jest.spyOn(viewLogics, "queueRunViewLogics").mockResolvedValue();
-    jest.spyOn(distribution, "convertInstructionsToDbValues").mockReturnValue({
+    jest.spyOn(distribution, "convertInstructionsToDbValues").mockResolvedValue({
       updateData: {
         transactions: FieldValue.increment(-1),
       },

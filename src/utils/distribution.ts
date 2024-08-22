@@ -78,8 +78,8 @@ export const queueInstructions = async (dstPath: string, instructions: { [p: str
   }
 };
 
-export function convertInstructionsToDbValues(instructions: Instructions) {
-  const updateData: { [key: string]: FieldValue } = {};
+export async function convertInstructionsToDbValues(instructions: Instructions) {
+  const updateData: { [key: string ]: FieldValue | number } = {};
   const removeData: { [key: string]: FieldValue } = {};
 
   for (const [property, instruction] of Object.entries(instructions)) {
@@ -139,6 +139,45 @@ export function convertInstructionsToDbValues(instructions: Instructions) {
       }
     } else if (instruction === "del") {
       updateData[property] = admin.firestore.FieldValue.delete();
+    } else if (instruction.startsWith("globalCounter")) {
+      const regex = /globalCounter\(([^,]+)(?:,\s*(\d+))?\)/;
+      const match = instruction.match(regex);
+
+      if (!match) {
+        console.log(`Invalid global instruction ${instruction} for property ${property}`);
+        continue;
+      }
+
+      const counterName = match[1];
+      const maxValue = parseInt(match[2], 10);
+      const now = admin.firestore.Timestamp.now();
+
+      await db.runTransaction(async (transaction) => {
+        let newCount: number;
+        const counterRef = db.doc(`@counters/${counterName}`);
+        const counterDoc = await transaction.get(counterRef);
+        const counterData = counterDoc?.data();
+        if (!counterData) {
+          newCount = 1;
+          const newDocument = {
+            "@id": counterName,
+            "count": newCount,
+            "lastUpdatedAt": now,
+          };
+          transaction.set(counterRef, newDocument);
+        } else {
+          const {count} = counterData;
+          const maxValueReached = maxValue && count >= maxValue;
+
+          newCount = maxValueReached ? 1 : count + 1;
+
+          transaction.update(counterRef, {
+            "count": newCount,
+            "lastUpdatedAt": now,
+          });
+        }
+        updateData[property] = newCount;
+      });
     } else {
       console.log(`Invalid instruction ${instruction} for property ${property}`);
     }
@@ -148,7 +187,7 @@ export function convertInstructionsToDbValues(instructions: Instructions) {
 
 export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublishedData> | Map<string, Instructions>) {
   async function applyInstructions(instructions: Instructions, dstPath: string) {
-    const {updateData, removeData} = convertInstructionsToDbValues(instructions);
+    const {updateData, removeData} = await convertInstructionsToDbValues(instructions);
     const dstDocRef = db.doc(dstPath);
     if (Object.keys(updateData).length > 0) {
       await dstDocRef.update(updateData);

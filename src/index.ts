@@ -483,7 +483,7 @@ export async function onFormSubmit(
 
                   let instructionsDbValues;
                   if (instructions) {
-                    instructionsDbValues = convertInstructionsToDbValues(instructions);
+                    instructionsDbValues = await convertInstructionsToDbValues(instructions);
                   }
 
                   const finalDoc: DocumentData = {
@@ -578,7 +578,7 @@ export async function onFormSubmit(
             for (const [dstPath, logicDocs] of transactionalDstPathLogicDocsMap) {
               for (const logicDoc of logicDocs) {
                 const docRef = db.doc(dstPath);
-                const action = logicDoc.action;
+                const {action} = logicDoc;
                 if (action === "create") {
                   transaction.set(docRef, logicDoc.doc);
                 } else if (action === "merge") {
@@ -588,7 +588,7 @@ export async function onFormSubmit(
                 }
 
                 if (logicDoc.instructions) {
-                  const {updateData, removeData} = convertInstructionsToDbValues(logicDoc.instructions);
+                  const {updateData, removeData} = await convertInstructionsToDbValues(logicDoc.instructions);
                   if (Object.keys(updateData).length > 0) {
                     transaction.update(docRef, updateData);
                   }
