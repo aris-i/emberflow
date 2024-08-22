@@ -305,40 +305,6 @@ describe("convertInstructionsToDbValues", () => {
       });
     });
 
-    it("should be able to reset daily", async () => {
-      jest.spyOn(admin.firestore(), "runTransaction").mockImplementation(async (transactionFn) => {
-        const transaction = {
-          get: jest.fn().mockImplementation((docRef) => {
-            if (docRef.id === "queueNumber") {
-              return Promise.resolve({
-                "id": "queueNumber",
-                "data": () => {
-                  return {
-                    "count": 10,
-                    "lastUpdatedAt": new admin.firestore.Timestamp(1627753600, 0),
-                  };
-                },
-              });
-            } else {
-              return Promise.resolve(undefined);
-            }
-          }),
-          update: transactionUpdateMock,
-          set: transactionSetMock,
-        } as unknown as admin.firestore.Transaction;
-
-        return transactionFn(transaction);
-      });
-      const instructions = {
-        "queueNumber": "globalCounter(queueNumber,20)",
-      };
-      const result = await distribution.convertInstructionsToDbValues(instructions);
-
-      expect(result.updateData).toStrictEqual({
-        "queueNumber": 1,
-      });
-    });
-
     it("should convert global counter instructions to db values correctly even without max value provided", async () => {
       jest.spyOn(admin.firestore(), "runTransaction").mockImplementation(async (transactionFn) => {
         const transaction = {

@@ -166,17 +166,10 @@ export async function convertInstructionsToDbValues(instructions: Instructions) 
           };
           transaction.set(counterRef, newDocument);
         } else {
-          const {count, lastUpdatedAt} = counterData;
-
-          const dateNow = new Date();
-          dateNow.setHours(0, 0, 0, 0);
-
-          const lastUpdatedAtDate = lastUpdatedAt.toDate();
-
-          const isDifferentDate = lastUpdatedAtDate < dateNow;
+          const {count} = counterData;
           const maxValueReached = maxValue && count >= maxValue;
 
-          newCount = maxValueReached || isDifferentDate ? 1 : count + 1;
+          newCount = maxValueReached ? 1 : count + 1;
 
           transaction.update(counterRef, {
             "count": newCount,
