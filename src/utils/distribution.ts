@@ -152,32 +152,39 @@ export async function convertInstructionsToDbValues(instructions: Instructions) 
       const maxValue = parseInt(match[2], 10);
       const now = admin.firestore.Timestamp.now();
 
-      await db.runTransaction(async (transaction) => {
-        let newCount: number;
-        const counterRef = db.doc(`@counters/${counterName}`);
-        const counterDoc = await transaction.get(counterRef);
-        const counterData = counterDoc?.data();
-        if (!counterData) {
-          newCount = 1;
-          const newDocument = {
-            "@id": counterName,
-            "count": newCount,
-            "lastUpdatedAt": now,
-          };
-          transaction.set(counterRef, newDocument);
-        } else {
-          const {count} = counterData;
-          const maxValueReached = maxValue && count >= maxValue;
+      try {
+        await db.runTransaction(async (transaction) => {
+          console.debug("Start global counter transaction");
+          let newCount: number;
+          const counterRef = db.doc(`@counters/${counterName}`);
+          const counterDoc = await transaction.get(counterRef);
+          const counterData = counterDoc?.data();
+          if (!counterData) {
+            newCount = 1;
+            const newDocument = {
+              "@id": counterName,
+              "count": newCount,
+              "lastUpdatedAt": now,
+            };
+            transaction.set(counterRef, newDocument);
+          } else {
+            const {count} = counterData;
+            const maxValueReached = maxValue && count >= maxValue;
 
-          newCount = maxValueReached ? 1 : count + 1;
+            newCount = maxValueReached ? 1 : count + 1;
 
-          transaction.update(counterRef, {
-            "count": newCount,
-            "lastUpdatedAt": now,
-          });
-        }
-        updateData[property] = newCount;
-      });
+            transaction.update(counterRef, {
+              "count": newCount,
+              "lastUpdatedAt": now,
+            });
+          }
+          updateData[property] = newCount;
+          console.debug("End global counter transaction");
+        });
+        console.debug("Committed global counter transaction");
+      } catch (error) {
+        console.error(error);
+      }
     } else {
       console.log(`Invalid instruction ${instruction} for property ${property}`);
     }
