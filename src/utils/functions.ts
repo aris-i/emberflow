@@ -11,6 +11,7 @@ export function debounce<T extends any[], A extends object|any[]>(
   let prevAccumulatedResult: A|undefined; // Generate a fresh initial value
   let timeoutId: NodeJS.Timeout | undefined;
   let firstTimeCalled: number | null = null;
+  let lastTimeCalled: number | null = null;
 
   const queue: T[] = [];
   let processing = false;
@@ -46,6 +47,7 @@ export function debounce<T extends any[], A extends object|any[]>(
 
   return function(...args: T) {
     const now = new Date().getTime();
+    lastTimeCalled = now;
     if (!firstTimeCalled) {
       firstTimeCalled = now;
     }
@@ -61,14 +63,22 @@ export function debounce<T extends any[], A extends object|any[]>(
     }
 
     if (maxWait && timeSinceFirstCalled >= maxWait) {
-      // Ensure maxWait is respected
+      console.debug("debounce maxWait is reached");
       prevAccumulatedResult = accumulatedResult;
       accumulatedResult = reducer?.initialValueFactory(); // Reset to a new initial value after executing
       firstTimeCalled = null; // Reset timing
       invokeFunction(...args);
     } else {
-      // Standard debounce behavior
+      console.debug("debouncing");
       timeoutId = setTimeout(() => {
+        if (lastTimeCalled) {
+          const timeSinceLastCalled = Date.now() - lastTimeCalled;
+          if (timeSinceLastCalled < wait) {
+            console.debug("timeSinceLastWait is less than configured wait time. Skipping invoking function");
+            return;
+          }
+        }
+        console.debug("debounce timeout is reached");
         prevAccumulatedResult = accumulatedResult;
         accumulatedResult = reducer?.initialValueFactory(); // Reset to a new initial value after executing
         firstTimeCalled = null; // Reset timing

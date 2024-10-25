@@ -197,7 +197,7 @@ export function initializeEmberFlow(
     topic: INSTRUCTIONS_TOPIC_NAME,
     region: projectConfig.region,
     maxInstances: 1,
-    concurrency: 5,
+    concurrency: 1,
     timeoutSeconds: 540,
   }, debounce(
     onMessageInstructionsQueue,

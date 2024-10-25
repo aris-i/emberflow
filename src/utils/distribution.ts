@@ -140,6 +140,7 @@ export async function convertInstructionsToDbValues(instructions: Instructions) 
     } else if (instruction === "del") {
       updateData[property] = admin.firestore.FieldValue.delete();
     } else if (instruction.startsWith("globalCounter")) {
+      console.debug("Start global counter");
       const regex = /globalCounter\(([^,]+)(?:,\s*(\d+))?\)/;
       const match = instruction.match(regex);
 
@@ -153,8 +154,9 @@ export async function convertInstructionsToDbValues(instructions: Instructions) 
       const now = admin.firestore.Timestamp.now();
 
       try {
+        console.debug("Initiate global counter transaction");
         await db.runTransaction(async (transaction) => {
-          console.debug("Start global counter transaction");
+          console.debug("Start of global counter transaction");
           let newCount: number;
           const counterRef = db.doc(`@counters/${counterName}`);
           const counterDoc = await transaction.get(counterRef);
@@ -179,7 +181,7 @@ export async function convertInstructionsToDbValues(instructions: Instructions) 
             });
           }
           updateData[property] = newCount;
-          console.debug("End global counter transaction");
+          console.debug("End of global counter transaction");
         });
         console.debug("Committed global counter transaction");
       } catch (error) {
@@ -206,6 +208,7 @@ export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublis
 
   if (event instanceof Map) {
     // Process the reduced instructions here
+    console.debug("Reduced instructions received: ", event);
     for (const [dstPath, instructions] of event.entries()) {
       await applyInstructions(instructions, dstPath);
     }
@@ -216,9 +219,9 @@ export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublis
     }
     try {
       const instructionsMessage: InstructionsMessage = event.data.message.json;
-      console.log("Received user logic result doc:", instructionsMessage);
+      console.debug("Received event with the following instruction:", instructionsMessage);
 
-      console.info("Applying Instructions");
+      console.debug("Applying Instructions");
       const {dstPath, instructions} = instructionsMessage;
       await applyInstructions(instructions, dstPath);
 
@@ -323,15 +326,17 @@ export const instructionsReducer = async (reducedInstructions: Map<string, Instr
   }
   try {
     const instructionsMessage: InstructionsMessage = event.data.message.json;
-    console.log("Received user logic result doc:", instructionsMessage);
+    console.log("Instructions reducer: Received user logic result doc:", instructionsMessage);
 
     const {dstPath, instructions} = instructionsMessage;
     const existingInstructions = reducedInstructions.get(dstPath);
+    console.debug("Instructions reducer: Existing instructions", existingInstructions);
     if (!existingInstructions) {
       reducedInstructions.set(dstPath, instructions);
     } else {
       mergeInstructions(existingInstructions, instructions);
     }
+    console.debug("Instructions reducer: Reduced instructions", reducedInstructions);
 
     await pubsubUtils.trackProcessedIds(INSTRUCTIONS_TOPIC_NAME, event.id);
   } catch (e) {
