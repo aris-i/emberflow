@@ -109,7 +109,7 @@ describe("distributeDoc", () => {
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
     expect(dbDoc.set).toHaveBeenCalledTimes(1);
-    expect(dbDoc.set).toHaveBeenCalledWith(expectedData, {merge: true});
+    expect(dbDoc.set).toHaveBeenCalledWith(expectedData);
     expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
     expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
   });

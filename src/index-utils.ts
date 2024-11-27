@@ -48,11 +48,19 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
     }
   }
 
-  async function _set(dstDocRef: DocumentReference, data: DocumentData) {
+  async function _update(dstDocRef: DocumentReference, data: DocumentData) {
     if (batch) {
       await batch.set(dstDocRef, data);
     } else {
       await dstDocRef.set(data, {merge: true});
+    }
+  }
+
+  async function _set(dstDocRef: DocumentReference, data: DocumentData) {
+    if (batch) {
+      await batch.set(dstDocRef, data);
+    } else {
+      await dstDocRef.set(data);
     }
   }
 
@@ -91,7 +99,7 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
   console.debug(`Distributing doc with Action: ${action}`);
   if (action === "delete") {
     if (destProp) {
-      await _set(dstDocRef, {[destProp]: FieldValue.delete()});
+      await _update(dstDocRef, {[destProp]: FieldValue.delete()});
     } else {
       await _delete(dstDocRef);
     }
@@ -118,18 +126,20 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
             "@id": dstDocRef.id,
           };
         }
+        await _update(dstDocRef, updateData);
       } else {
         if (destProp) {
           updateData[destProp] = doc;
+          await _update(dstDocRef, updateData);
         } else {
           updateData = {
             ...doc,
             "@id": dstDocRef.id,
             "@dateCreated": Timestamp.now(),
           };
+          await _set(dstDocRef, updateData);
         }
       }
-      await _set(dstDocRef, updateData);
       console.log(`Document merged to ${dstPath}`);
     }
   } else if (action === "submit-form") {
