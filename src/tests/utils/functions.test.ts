@@ -78,7 +78,7 @@ describe("debounce", () => {
     await jest.advanceTimersByTimeAsync(200);
 
     expect(clearTimeoutSpy).toHaveBeenCalledTimes(0);
-    expect(setTimeoutSpy).toHaveBeenCalledTimes(1);
+    expect(setTimeoutSpy).toHaveBeenCalledTimes(2);
     expect(func).toHaveBeenCalledTimes(1);
     expect(func).toHaveBeenCalledWith(reducedInstructions);
   });
@@ -100,7 +100,7 @@ describe("debounce", () => {
     await jest.advanceTimersByTimeAsync(200);
 
     expect(clearTimeoutSpy).toHaveBeenCalledTimes(2);
-    expect(setTimeoutSpy).toHaveBeenCalledTimes(3);
+    expect(setTimeoutSpy).toHaveBeenCalledTimes(6);
     expect(func).toHaveBeenCalledTimes(1);
     expect(func).toHaveBeenCalledWith(reducedInstructions);
   });
@@ -139,7 +139,7 @@ describe("debounce", () => {
     debouncedFunc(createEvent());
 
     expect(clearTimeoutSpy).toHaveBeenCalledTimes(10);
-    expect(setTimeoutSpy).toHaveBeenCalledTimes(10);
+    expect(setTimeoutSpy).toHaveBeenCalledTimes(21);
     expect(func).toHaveBeenCalledTimes(1);
     expect(func).toHaveBeenCalledWith(reducedInstructions);
   });

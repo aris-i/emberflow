@@ -7,8 +7,11 @@ export function debounce<T extends any[], A extends object|any[]>(
     initialValueFactory: () => A,
   }
 ): (...args: T) => void {
-  let accumulatedResult = reducer?.initialValueFactory(); // Generate a fresh initial value
-  let prevAccumulatedResult: A|undefined; // Generate a fresh initial value
+  const accumulatedResultQueue: A[] = [];
+  if (reducer) {
+    accumulatedResultQueue.push(reducer.initialValueFactory());
+  }
+
   let timeoutId: NodeJS.Timeout | undefined;
   let firstTimeCalled: number | null = null;
   let lastTimeCalled: number | null = null;
@@ -20,12 +23,22 @@ export function debounce<T extends any[], A extends object|any[]>(
     if (processing) return;
     processing = true;
 
-    setImmediate(() => {
+    console.debug("Schedule processing queue using setTimeout");
+    setTimeout(() => {
+      console.debug("Now processing queue using setTimeout");
       try {
         const args = queue.shift();
-        if (reducer && accumulatedResult !== undefined && args !== undefined) {
-          reducer.reducerFn(accumulatedResult, ...args);
+        if (!args) {
+          console.error("No args in queue.  This should not happen");
+          return;
         }
+        if (!reducer) {
+          console.error("Reducer is not defined.  This should not happen");
+          return;
+        }
+
+        const accumulatedResult = accumulatedResultQueue[accumulatedResultQueue.length-1];
+        reducer.reducerFn(accumulatedResult, ...args);
       } catch (error) {
         console.error("Error processing queue:", error);
       } finally {
@@ -37,13 +50,6 @@ export function debounce<T extends any[], A extends object|any[]>(
     });
   }
 
-  const invokeFunction = (...args: T) => {
-    if (reducer && prevAccumulatedResult !== undefined) {
-      (func as ((accumulator: A) => void))(prevAccumulatedResult);
-    } else {
-      (func as ((...args: T) => void))(...args);
-    }
-  };
 
   return function(...args: T) {
     const now = new Date().getTime();
@@ -62,13 +68,22 @@ export function debounce<T extends any[], A extends object|any[]>(
       processQueue();
     }
 
-    if (maxWait && timeSinceFirstCalled >= maxWait) {
-      console.debug("debounce maxWait is reached");
-      prevAccumulatedResult = accumulatedResult;
-      accumulatedResult = reducer?.initialValueFactory(); // Reset to a new initial value after executing
-      firstTimeCalled = null; // Reset timing
-      invokeFunction(...args);
-    } else {
+    const invokeFunction = (...args: T) => {
+      if (reducer) {
+        while (accumulatedResultQueue.length > 1) {
+          const accumulatedResult = accumulatedResultQueue.shift();
+          if (!accumulatedResult) {
+            console.error("accumulatedResult is undefined.  This should not happen");
+            continue;
+          }
+          (func as ((accumulator: A) => void))(accumulatedResult);
+        }
+      } else {
+        (func as ((...args: T) => void))(...args);
+      }
+    };
+
+    function initiateDebounce() {
       console.debug("debouncing");
       timeoutId = setTimeout(() => {
         if (lastTimeCalled) {
@@ -79,11 +94,27 @@ export function debounce<T extends any[], A extends object|any[]>(
           }
         }
         console.debug("debounce timeout is reached");
-        prevAccumulatedResult = accumulatedResult;
-        accumulatedResult = reducer?.initialValueFactory(); // Reset to a new initial value after executing
+        if (reducer) {
+          accumulatedResultQueue.push(reducer.initialValueFactory());
+        }
         firstTimeCalled = null; // Reset timing
         invokeFunction(...args);
       }, wait);
+    }
+
+    function initiateMaxWaitReachedSequence() {
+      console.debug("debounce maxWait is reached");
+      if (reducer) {
+        accumulatedResultQueue.push(reducer.initialValueFactory());
+      }
+      firstTimeCalled = null; // Reset timing
+      invokeFunction(...args);
+    }
+
+    if (maxWait && timeSinceFirstCalled >= maxWait) {
+      initiateMaxWaitReachedSequence();
+    } else {
+      initiateDebounce();
     }
   };
 }
