@@ -49,7 +49,7 @@ describe("Batch", () => {
         expect(batch.writeCount).toBe(0);
         await batch.set(documentRef, documentData);
 
-        expect(db.batch().set).toHaveBeenCalledWith(documentRef, documentData, {merge: true});
+        expect(db.batch().set).toHaveBeenCalledWith(documentRef, documentData);
         expect(batch._batch).not.toBe(1);
         expect(batch.writeCount).toBe(1);
       } finally {
