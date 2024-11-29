@@ -3,6 +3,7 @@ import {db} from "../index";
 import {firestore} from "firebase-admin";
 import WriteBatch = firestore.WriteBatch;
 import UpdateData = firestore.UpdateData;
+import SetOptions = firestore.SetOptions;
 
 
 export class BatchUtil {
@@ -35,8 +36,14 @@ export class BatchUtil {
   async set<T extends DocumentData>(
     docRef: DocumentReference<T>,
     document: T,
+    options?: SetOptions
   ): Promise<void> {
-    (await this.getBatch()).set(docRef, document, {merge: true});
+    const batch = await this.getBatch();
+    if (options) {
+      batch.set(docRef, document, options);
+    } else {
+      batch.set(docRef, document);
+    }
     this.writeCount++;
 
     if (this.writeCount >= this.BATCH_SIZE) {
