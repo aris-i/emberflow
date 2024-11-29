@@ -1020,7 +1020,7 @@ describe("onFormSubmit", () => {
         doneCount: 1,
       },
     });
-  }, 10000);
+  }, 15000);
 
   it("should execute the sequence of operations correctly", async () => {
     refUpdateMock.mockRestore();

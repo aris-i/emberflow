@@ -29,11 +29,11 @@ export function debounce<T extends any[], A extends object|any[]>(
       try {
         const args = queue.shift();
         if (!args) {
-          console.error("No args in queue.  This should not happen");
+          console.error("No args in queue. This should not happen");
           return;
         }
         if (!reducer) {
-          console.error("Reducer is not defined.  This should not happen");
+          console.error("Reducer is not defined. This should not happen");
           return;
         }
 
@@ -49,7 +49,6 @@ export function debounce<T extends any[], A extends object|any[]>(
       }
     });
   }
-
 
   return function(...args: T) {
     const now = new Date().getTime();
