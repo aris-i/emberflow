@@ -1,4 +1,4 @@
-export function debounce<T extends any[], A extends object|any[]>(
+export function debounce<T extends any[], A extends object|any[]|Map<string, any>>(
   func: ((...args: T) => void) | ((accumulator: A) => void),
   wait: number,
   maxWait?: number,
@@ -68,14 +68,27 @@ export function debounce<T extends any[], A extends object|any[]>(
     }
 
     const invokeFunction = (...args: T) => {
+      console.info("Invoking function");
       if (reducer) {
-        while (accumulatedResultQueue.length > 1) {
-          const accumulatedResult = accumulatedResultQueue.shift();
-          if (!accumulatedResult) {
-            console.error("accumulatedResult is undefined.  This should not happen");
+        console.debug("accumulatedResultQueue.length:", accumulatedResultQueue.length);
+        for (let i = 0; i < accumulatedResultQueue.length-1; i++) {
+          const accumulatedResult = accumulatedResultQueue[i];
+          let isEmpty = false;
+          if (Array.isArray(accumulatedResult)) {
+            isEmpty = accumulatedResult.length === 0;
+          } else if (accumulatedResult instanceof Map) {
+            isEmpty = accumulatedResult.size === 0;
+          } else {
+            isEmpty = Object.keys(accumulatedResult).length === 0;
+          }
+          if (isEmpty) {
+            console.debug("accumulatedResult is empty. Skipping");
             continue;
           }
+
           (func as ((accumulator: A) => void))(accumulatedResult);
+          accumulatedResultQueue.splice(i, 1);
+          i--;
         }
       } else {
         (func as ((...args: T) => void))(...args);
