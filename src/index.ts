@@ -604,7 +604,7 @@ export async function onFormSubmit(
 
         async function distributeNonTransactionalLogicResults() {
           const nonTransactionalResults = logicResults.filter((result) => !result.transactional);
-          console.info("Group logic docs by priority");
+          console.info(`Group logic docs by priority: ${nonTransactionalResults.length}`);
           const {highPriorityDocs, normalPriorityDocs, lowPriorityDocs} = nonTransactionalResults
             .map((result) => result.documents)
             .flat()
@@ -624,7 +624,7 @@ export async function onFormSubmit(
               lowPriorityDocs: [] as LogicResultDoc[],
             });
 
-          console.info("Consolidating and Distributing High Priority Logic Results");
+          console.info(`Consolidating and Distributing High Priority Logic Results: ${highPriorityDocs.length}`);
           const highPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
               await expandConsolidateAndGroupByDstPath(highPriorityDocs);
           const {
@@ -638,7 +638,7 @@ export async function onFormSubmit(
             await formRef.update({"@status": "finished"});
           }
 
-          console.info("Consolidating and Distributing Normal Priority Logic Results");
+          console.info(`Consolidating and Distributing Normal Priority Logic Results: ${normalPriorityDocs.length}`);
           const normalPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
               await expandConsolidateAndGroupByDstPath(normalPriorityDocs);
           const {
@@ -648,7 +648,7 @@ export async function onFormSubmit(
           await distribute(normalPriorityDocsByDocPath);
           await distributeLater(normalPriorityOtherDocsByDocPath);
 
-          console.info("Consolidating and Distributing Low Priority Logic Results");
+          console.info(`Consolidating and Distributing Low Priority Logic Results: ${lowPriorityDocs.length}`);
           const lowPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
               await expandConsolidateAndGroupByDstPath(lowPriorityDocs);
           const {
