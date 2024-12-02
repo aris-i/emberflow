@@ -326,7 +326,8 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
 export async function queueRunViewLogics(logicResultDoc: LogicResultDoc) {
   try {
     const messageId = await VIEW_LOGICS_TOPIC.publishMessage({json: logicResultDoc});
-    console.log(`Message ${messageId} published.`);
+    console.log(`queueRunViewLogics: Message ${messageId} published.`);
+    console.debug(`queueRunViewLogics: ${logicResultDoc}`);
   } catch (error: unknown) {
     if (error instanceof Error) {
       console.error(`Received error while publishing: ${error.message}`);
