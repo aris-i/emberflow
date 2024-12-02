@@ -129,8 +129,8 @@ describe("distributeDoc", () => {
     await indexUtils.distributeDoc(logicResultDoc);
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
-    expect(dbDoc.set).toHaveBeenCalledTimes(1);
-    expect(dbDoc.set).toHaveBeenCalledWith(expectedData, {merge: true});
+    expect(dbDoc.update).toHaveBeenCalledTimes(1);
+    expect(dbDoc.update).toHaveBeenCalledWith(expectedData);
     expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
     expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
   });
@@ -158,8 +158,8 @@ describe("distributeDoc", () => {
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
     expect(queueInstructionsSpy).toHaveBeenCalledTimes(1);
     expect(queueInstructionsSpy).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id", logicResultDoc.instructions);
-    expect(dbDoc.set).toHaveBeenCalledTimes(1);
-    expect(dbDoc.set).toHaveBeenCalledWith(expectedData, {merge: true});
+    expect(dbDoc.update).toHaveBeenCalledTimes(1);
+    expect(dbDoc.update).toHaveBeenCalledWith(expectedData);
     expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
     expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
   });
@@ -248,7 +248,7 @@ describe("distributeDoc", () => {
     });
 
     it("should merge a document to dstPath", async () => {
-      const batchSetSpy = jest.spyOn(batch, "set").mockResolvedValue(undefined);
+      const batchSetSpy = jest.spyOn(batch, "update").mockResolvedValue(undefined);
       const logicResultDoc: LogicResultDoc = {
         action: "merge",
         priority: "normal",
@@ -306,8 +306,8 @@ describe("distributeDoc", () => {
       await indexUtils.distributeDoc(logicResultDoc);
       expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
       expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
-      expect(dbDoc.set).toHaveBeenCalledTimes(1);
-      expect(dbDoc.set).toHaveBeenCalledWith(expectedData, {merge: true});
+      expect(dbDoc.update).toHaveBeenCalledTimes(1);
+      expect(dbDoc.update).toHaveBeenCalledWith(expectedData);
       expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
       expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
     });
@@ -326,8 +326,8 @@ describe("distributeDoc", () => {
       await indexUtils.distributeDoc(logicResultDoc);
       expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
       expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
-      expect(dbDoc.set).toHaveBeenCalledTimes(1);
-      expect(dbDoc.set).toHaveBeenCalledWith(expectedData, {merge: true});
+      expect(dbDoc.update).toHaveBeenCalledTimes(1);
+      expect(dbDoc.update).toHaveBeenCalledWith(expectedData);
       expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
       expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
     });
@@ -346,8 +346,8 @@ describe("distributeDoc", () => {
       expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
       expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
       expect(dbDoc.get).toHaveBeenCalledTimes(1);
-      expect(dbDoc.set).toHaveBeenCalledTimes(1);
-      expect(dbDoc.set).toHaveBeenCalledWith(expectedData, {merge: true});
+      expect(dbDoc.update).toHaveBeenCalledTimes(1);
+      expect(dbDoc.update).toHaveBeenCalledWith(expectedData);
       expect(dbDoc.delete).not.toHaveBeenCalled();
       expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
       expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
@@ -385,8 +385,8 @@ describe("distributeDoc", () => {
       await indexUtils.distributeDoc(logicResultDoc);
       expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
       expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
-      expect(dbDoc.set).toHaveBeenCalledTimes(1);
-      expect(dbDoc.set).toHaveBeenCalledWith(expectedData, {merge: true});
+      expect(dbDoc.update).toHaveBeenCalledTimes(1);
+      expect(dbDoc.update).toHaveBeenCalledWith(expectedData);
       expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
       expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
     });
@@ -405,8 +405,8 @@ describe("distributeDoc", () => {
       await indexUtils.distributeDoc(logicResultDoc);
       expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
       expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
-      expect(dbDoc.set).toHaveBeenCalledTimes(1);
-      expect(dbDoc.set).toHaveBeenCalledWith(expectedData, {merge: true});
+      expect(dbDoc.update).toHaveBeenCalledTimes(1);
+      expect(dbDoc.update).toHaveBeenCalledWith(expectedData);
       expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
       expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
     });
@@ -425,8 +425,8 @@ describe("distributeDoc", () => {
       expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
       expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
       expect(dbDoc.get).toHaveBeenCalledTimes(1);
-      expect(dbDoc.set).toHaveBeenCalledTimes(1);
-      expect(dbDoc.set).toHaveBeenCalledWith(expectedData, {merge: true});
+      expect(dbDoc.update).toHaveBeenCalledTimes(1);
+      expect(dbDoc.update).toHaveBeenCalledWith(expectedData);
       expect(dbDoc.delete).not.toHaveBeenCalled();
       expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
       expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
@@ -466,7 +466,7 @@ describe("distribute", () => {
   });
 
   it("should merge a document to dstPath and queue instructions", async () => {
-    const batchSetSpy = jest.spyOn(batch, "set").mockResolvedValue(undefined);
+    const batchSetSpy = jest.spyOn(batch, "update").mockResolvedValue(undefined);
 
     const userDocsByDstPath = new Map([[
       "/users/test-user-id/documents/test-doc-id",

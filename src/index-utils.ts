@@ -50,9 +50,9 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
 
   async function _update(dstDocRef: DocumentReference, data: DocumentData) {
     if (batch) {
-      await batch.set(dstDocRef, data, {merge: true});
+      await batch.update(dstDocRef, data);
     } else {
-      await dstDocRef.set(data, {merge: true});
+      await dstDocRef.update(data);
     }
   }
 
