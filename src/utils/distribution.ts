@@ -23,7 +23,8 @@ export const queueForDistributionLater = async (...logicResultDocs: LogicResultD
   try {
     for (const logicResultDoc of logicResultDocs) {
       const forDistributionMessageId = await FOR_DISTRIBUTION_TOPIC.publishMessage({json: logicResultDoc});
-      console.log(`Message ${forDistributionMessageId} published.`);
+      console.log(`queueForDistributionLater: Message ${forDistributionMessageId} published.`);
+      console.debug(`queueForDistributionLater: ${logicResultDoc}`);
     }
   } catch (error: unknown) {
     if (error instanceof Error) {
@@ -67,7 +68,9 @@ export async function onMessageForDistributionQueue(event: CloudEvent<MessagePub
 export const queueInstructions = async (dstPath: string, instructions: { [p: string]: string }) => {
   try {
     const messageId = await INSTRUCTIONS_TOPIC.publishMessage({json: {dstPath, instructions}});
-    console.log(`Message ${messageId} published.`);
+    console.log(`queueInstructions: Message ${messageId} published.`);
+    console.debug(`queueInstructions: ${dstPath}`);
+    console.debug(`queueInstructions: ${instructions}`);
   } catch (error: unknown) {
     if (error instanceof Error) {
       console.error(`Received error while publishing: ${error.message}`);

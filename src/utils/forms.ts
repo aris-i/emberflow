@@ -10,7 +10,8 @@ import {deleteCollection} from "./misc";
 export async function queueSubmitForm(formData: FormData) {
   try {
     const messageId = await SUBMIT_FORM_TOPIC.publishMessage({json: formData});
-    console.log(`Message ${messageId} published.`);
+    console.log(`queueSubmitForm: Message ${messageId} published.`);
+    console.debug(`queueSubmitForm: ${formData}`);
     return messageId;
   } catch (error: unknown) {
     if (error instanceof Error) {
