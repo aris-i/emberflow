@@ -632,14 +632,14 @@ export async function runViewLogics(logicResultDoc: LogicResultDoc): Promise<Log
 
   const matchingLogics = _mockable.getViewLogicsConfig().filter((viewLogicConfig) => {
     if (action === "delete") {
-      return viewLogicConfig.entity === entity && (destProp ? viewLogicConfig.destProp === destProp : true);
+      return viewLogicConfig.entity === entity && (destProp ? viewLogicConfig.destProp === `#${destProp}` : true);
     }
 
     return viewLogicConfig.actionTypes.includes(action) &&
         (
           viewLogicConfig.modifiedFields === "all" ||
             viewLogicConfig.modifiedFields.some((field) => modifiedFields.includes(field))
-        ) && viewLogicConfig.entity === entity && (destProp ? viewLogicConfig.destProp === destProp : true)
+        ) && viewLogicConfig.entity === entity && (destProp ? viewLogicConfig.destProp === `#${destProp}` : true)
     ;
   });
   // TODO: Handle errors
