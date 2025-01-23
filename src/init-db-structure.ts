@@ -94,7 +94,7 @@ export function mapViewDefinitions(
       const destPath = match[1];
       // Get the last word of the path
       const destEntity = destPath.split("/").slice(-1)[0];
-      const destProp = match[2];
+      const destProp = match[2]?.substring(1);
       let viewDefinitionStr = match[3];
       let destType = "map";
       if (viewDefinitionStr.startsWith("[") && viewDefinitionStr.endsWith("]")) {

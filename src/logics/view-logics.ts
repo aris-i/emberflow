@@ -22,7 +22,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     destProp,
   } = viewDefinition;
 
-  const logicName = `${destEntity}${destProp ? `${destProp.name}` : ""}`;
+  const logicName = `${destEntity}${destProp ? `#${destProp.name}` : ""}`;
   const flagName = `@viewsAlreadyBuilt+${logicName}`;
 
   function formViewDocId(viewDstPath: string) {

@@ -90,7 +90,7 @@ describe("mapViewDefinitions", () => {
       {
         destEntity: "b",
         destProp: {
-          name: "#f",
+          name: "f",
           type: "map",
         },
         srcProps: ["prop1", "prop2"],
@@ -104,7 +104,7 @@ describe("mapViewDefinitions", () => {
       {
         destEntity: "d",
         destProp: {
-          name: "#g",
+          name: "g",
           type: "array-map",
         },
         srcProps: ["prop1", "prop2"],
