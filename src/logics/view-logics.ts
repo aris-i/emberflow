@@ -26,7 +26,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
   const flagName = `@viewsAlreadyBuilt+${logicName}`;
 
   function formViewDocId(viewDstPath: string) {
-    let viewDocId = viewDstPath.replace(/\//g, "+");
+    let viewDocId = viewDstPath.replace(/[\/#]/g, "+");
     if (viewDocId.startsWith("+")) {
       viewDocId = viewDocId.slice(1);
     }
