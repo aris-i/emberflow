@@ -147,7 +147,7 @@ export function initializeEmberFlow(
       entity: viewDef.destEntity,
       actionTypes: ["create", "delete"] as LogicResultDocAction[],
       modifiedFields: "all" as LogicConfigModifiedFieldsType,
-      ...(viewDef.destProp ? {destProp: viewDef.destProp} : {}),
+      ...(viewDef.destProp ? {destProp: viewDef.destProp.name} : {}),
       viewLogicFn: dstToSrcViewLogicFn,
     } as ViewLogicConfig;
     return [srcToDstLogicConfig, dstToSrcLogicConfig];
