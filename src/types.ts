@@ -3,6 +3,9 @@ import {firestore} from "firebase-admin";
 import Timestamp = firestore.Timestamp;
 import DocumentData = firestore.DocumentData;
 import {DocumentReference} from "firebase-admin/lib/firestore";
+import Query = firestore.Query;
+import QuerySnapshot = firestore.QuerySnapshot;
+import DocumentSnapshot = firestore.DocumentSnapshot;
 
 export type FirebaseAdmin = typeof admin;
 
@@ -25,6 +28,10 @@ export interface Action{
     timeCreated: Timestamp;
     message?: string
 }
+
+type txn1 = <T>(query: Query<T>)=> Promise<QuerySnapshot<T>>;
+type txn2 = <T>(documentRef: DocumentReference<T>)=> Promise<DocumentSnapshot<T>>;
+export type TxnGet = txn1 | txn2;
 
 export type LogicResultDocAction = "create" | "merge" | "delete" | "copy" | "recursive-copy" | "recursive-delete"
     | "submit-form" | "simulate-submit-form";
@@ -71,7 +78,7 @@ export interface LogicResult{
     documents: LogicResultDoc[];
     transactional?: boolean;
 }
-export type LogicFn = (action: Action, sharedMap: Map<string, any>, nextPage?: AnyObject) => Promise<LogicResult>;
+export type LogicFn = (txnGet: TxnGet, action: Action, sharedMap: Map<string, any>, nextPage?: AnyObject) => Promise<LogicResult>;
 export type LogicActionType = "create" | "update" | "delete";
 export type LogicConfigActionTypes = LogicActionType[] | "all";
 export type LogicConfigEntities = string[] | "all";

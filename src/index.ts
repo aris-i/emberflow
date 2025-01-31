@@ -303,183 +303,184 @@ export async function onFormSubmit(
       return;
     }
 
-    const document = (await db.doc(docPath).get()).data() || {};
-    const formModifiedFields = getFormModifiedFields(form, document);
-    let user;
-    if (!isServiceAccount) {
-      user = (await db.doc(`users/${userId}`).get()).data();
-      if (!user) {
-        const message = "No user data found";
-        console.warn(message);
-        await formRef.update({"@status": "error", "@messages": message});
-        return;
+    await db.runTransaction(async (txn) => {
+      const docRef = db.doc(docPath);
+      const document = (await txn.get(docRef)).data() || {};
+      const formModifiedFields = getFormModifiedFields(form, document);
+      let user;
+      if (!isServiceAccount) {
+        const userRef = db.doc(`users/${userId}`);
+        user = (await txn.get(userRef)).data();
+        if (!user) {
+          const message = "No user data found";
+          console.warn(message);
+          await formRef.update({"@status": "error", "@messages": message});
+          return;
+        }
+      } else {
+        user = {"@id": userId};
       }
-    } else {
-      user = {"@id": userId};
-    }
 
-    console.info("Validating Security");
-    const securityFn = getSecurityFn(entity);
-    if (securityFn) {
-      const securityResult = await securityFn(entity, docPath, document,
-        actionType, formModifiedFields, user);
-      if (securityResult.status === "rejected") {
-        console.log(`Security check failed: ${securityResult.message}`);
-        await formRef.update({"@status": "security-error", "@messages": securityResult.message});
-        return;
+      console.info("Validating Security");
+      const securityFn = getSecurityFn(entity);
+      if (securityFn) {
+        const securityResult = await securityFn(entity, docPath, document,
+          actionType, formModifiedFields, user);
+        if (securityResult.status === "rejected") {
+          console.log(`Security check failed: ${securityResult.message}`);
+          await formRef.update({"@status": "security-error", "@messages": securityResult.message});
+          return;
+        }
       }
-    }
 
-    // Check for delay
-    console.info("Checking for delay");
-    const delay = form["@delay"];
-    if (delay) {
-      if (await delayFormSubmissionAndCheckIfCancelled(delay, formRef)) {
-        await formRef.update({"@status": "cancelled"});
-        return;
+      // Check for delay
+      console.info("Checking for delay");
+      const delay = form["@delay"];
+      if (delay) {
+        if (await delayFormSubmissionAndCheckIfCancelled(delay, formRef)) {
+          await formRef.update({"@status": "cancelled"});
+          return;
+        }
       }
-    }
 
-    await formRef.update({"@status": "processing"});
+      await formRef.update({"@status": "processing"});
 
-    const status = "processing";
-    const timeCreated = _mockable.createNowTimestamp();
+      const status = "processing";
+      const timeCreated = _mockable.createNowTimestamp();
 
-    console.info("Creating Action");
-    const eventContext: EventContext = {
-      id: event.id,
-      uid: userId,
-      formId,
-      docId: entityId,
-      docPath,
-      entity,
-    };
+      console.info("Creating Action");
+      const eventContext: EventContext = {
+        id: event.id,
+        uid: userId,
+        formId,
+        docId: entityId,
+        docPath,
+        entity,
+      };
 
-    const action: Action = {
-      eventContext,
-      actionType,
-      document,
-      status,
-      timeCreated,
-      modifiedFields: formModifiedFields,
-      user,
-    };
-    const actionRef = _mockable.initActionRef(formId);
-    await actionRef.set(action);
+      const action: Action = {
+        eventContext,
+        actionType,
+        document,
+        status,
+        timeCreated,
+        modifiedFields: formModifiedFields,
+        user,
+      };
+      const actionRef = _mockable.initActionRef(formId);
+      await actionRef.set(action);
 
-    await formRef.update({"@status": "submitted"});
-
-    console.info("Running Business Logics");
-    let errorMessage = "";
-    const runStatus = await runBusinessLogics(actionRef, action,
-      async (actionRef, logicResults, page) => {
-        async function saveLogicResults() {
-          for (let i = 0; i < logicResults.length; i++) {
-            const {documents, ...logicResult} = logicResults[i];
-            const logicResultsRef = actionRef.collection("logicResults")
-              .doc(`${actionRef.id}-${page}-${i}`);
-            await logicResultsRef.set(logicResult);
-            const documentsRef = logicResultsRef.collection("documents");
-            for (let j = 0; j < documents.length; j++) {
-              await documentsRef.doc(`${logicResultsRef.id}-${j}`).set(documents[j]);
+      await formRef.update({"@status": "submitted"});
+      console.info("Running Business Logics");
+      let errorMessage = "";
+      const runStatus = await runBusinessLogics(txn.get, actionRef, action,
+        async (actionRef, logicResults, page) => {
+          async function saveLogicResults() {
+            for (let i = 0; i < logicResults.length; i++) {
+              const {documents, ...logicResult} = logicResults[i];
+              const logicResultsRef = actionRef.collection("logicResults")
+                .doc(`${actionRef.id}-${page}-${i}`);
+              await logicResultsRef.set(logicResult);
+              const documentsRef = logicResultsRef.collection("documents");
+              for (let j = 0; j < documents.length; j++) {
+                await documentsRef.doc(`${logicResultsRef.id}-${j}`).set(documents[j]);
+              }
             }
           }
-        }
-        await saveLogicResults();
+          await saveLogicResults();
 
-        function updateErrorMessage() {
-          const errorLogicResults = logicResults.filter((result) => result.status === "error");
-          if (errorLogicResults.length > 0) {
-            errorMessage = errorMessage + errorLogicResults.map((result) => result.message).join("\n");
+          function updateErrorMessage() {
+            const errorLogicResults = logicResults.filter((result) => result.status === "error");
+            if (errorLogicResults.length > 0) {
+              errorMessage = errorMessage + errorLogicResults.map((result) => result.message).join("\n");
+            }
           }
-        }
-        updateErrorMessage();
+          updateErrorMessage();
 
-        async function writeJournalEntriesFirst() {
-          // Gather all logicResultDoc with journalEntries
-          const logicResultDocsWithJournalEntries = logicResults
-            .map((result) => result.documents).flat()
-            .filter((logicResultDoc) => logicResultDoc.journalEntries &&
-              logicResultDoc.action !== "delete");
-          if (logicResultDocsWithJournalEntries.length === 0) {
-            console.info("No journal entries to write");
-            return;
-          }
-
-          const dstPathLogicDocsWithJournalEntriesMap =
-              await expandConsolidateAndGroupByDstPath(logicResultDocsWithJournalEntries);
-          for (const [dstPath, logicDocs] of dstPathLogicDocsWithJournalEntriesMap) {
-            const docId = dstPath.split("/").pop();
-            if (!docId) {
-              console.error("Dst path has no docId");
-              continue;
+          async function writeJournalEntriesFirst() {
+            // Gather all logicResultDoc with journalEntries
+            const logicResultDocsWithJournalEntries = logicResults
+              .map((result) => result.documents).flat()
+              .filter((logicResultDoc) => logicResultDoc.journalEntries &&
+                      logicResultDoc.action !== "delete");
+            if (logicResultDocsWithJournalEntries.length === 0) {
+              console.info("No journal entries to write");
+              return;
             }
 
-            for (const logicDoc of logicDocs) {
-              const {
-                doc,
-                instructions,
-                journalEntries,
-                action,
-                skipRunViewLogics,
-              } = logicDoc;
-
-              if (!journalEntries) {
+            const dstPathLogicDocsWithJournalEntriesMap =
+                  await expandConsolidateAndGroupByDstPath(logicResultDocsWithJournalEntries);
+            for (const [dstPath, logicDocs] of dstPathLogicDocsWithJournalEntriesMap) {
+              const docId = dstPath.split("/").pop();
+              if (!docId) {
+                console.error("Dst path has no docId");
                 continue;
               }
 
-              const accounts = new Set(
-                journalEntries.map((entry) => entry.ledgerEntries).flat()
-                  .map((entry) => entry.account)
-              );
-              if (Object.keys(doc || {}).some((key) => accounts.has(key))) {
-                console.error("Doc cannot have keys that are the same as account names");
-                continue;
-              }
-              if (Object.keys(instructions || {}).some((key) => accounts.has(key))) {
-                console.error("Instructions cannot have keys that are the same as account names");
-                continue;
-              }
-
-              for (let i= 0; i < journalEntries.length; i++) {
+              for (const logicDoc of logicDocs) {
                 const {
-                  ledgerEntries,
-                  recordEntry,
-                  equation,
-                  date,
-                } = journalEntries[i];
+                  doc,
+                  instructions,
+                  journalEntries,
+                  action,
+                  skipRunViewLogics,
+                } = logicDoc;
 
-                const consolidatedPerAccount = ledgerEntries
-                  .reduce((acc, entry) => {
-                    const {account} = entry;
-                    if (acc[account]) {
-                      acc[account].debit += entry.debit;
-                      acc[account].credit += entry.credit;
-                    } else {
-                      acc[account] = {
-                        debit: entry.debit,
-                        credit: entry.credit,
-                      };
-                    }
-                    return acc;
-                  }, {} as {[key: string]: {debit: number, credit: number}});
-
-                // loop through keys of consolidatedPerAccount
-                const totalCreditDebit = Object.entries(consolidatedPerAccount)
-                  .reduce((acc, [account, {debit, credit}]) => {
-                    return {
-                      debit: acc.debit + debit,
-                      credit: acc.credit + credit,
-                    };
-                  }, {debit: 0, credit: 0});
-                if (totalCreditDebit.debit !== totalCreditDebit.credit) {
-                  console.error("Debit and credit should be equal");
+                if (!journalEntries) {
                   continue;
                 }
 
-                await db.runTransaction(async (transaction) => {
+                const accounts = new Set(
+                  journalEntries.map((entry) => entry.ledgerEntries).flat()
+                    .map((entry) => entry.account)
+                );
+                if (Object.keys(doc || {}).some((key) => accounts.has(key))) {
+                  console.error("Doc cannot have keys that are the same as account names");
+                  continue;
+                }
+                if (Object.keys(instructions || {}).some((key) => accounts.has(key))) {
+                  console.error("Instructions cannot have keys that are the same as account names");
+                  continue;
+                }
+
+                for (let i= 0; i < journalEntries.length; i++) {
+                  const {
+                    ledgerEntries,
+                    recordEntry,
+                    equation,
+                    date,
+                  } = journalEntries[i];
+
+                  const consolidatedPerAccount = ledgerEntries
+                    .reduce((acc, entry) => {
+                      const {account} = entry;
+                      if (acc[account]) {
+                        acc[account].debit += entry.debit;
+                        acc[account].credit += entry.credit;
+                      } else {
+                        acc[account] = {
+                          debit: entry.debit,
+                          credit: entry.credit,
+                        };
+                      }
+                      return acc;
+                    }, {} as {[key: string]: {debit: number, credit: number}});
+
+                  // loop through keys of consolidatedPerAccount
+                  const totalCreditDebit = Object.entries(consolidatedPerAccount)
+                    .reduce((acc, [account, {debit, credit}]) => {
+                      return {
+                        debit: acc.debit + debit,
+                        credit: acc.credit + credit,
+                      };
+                    }, {debit: 0, credit: 0});
+                  if (totalCreditDebit.debit !== totalCreditDebit.credit) {
+                    console.error("Debit and credit should be equal");
+                    continue;
+                  }
+
                   const docRef = db.doc(dstPath);
-                  const currData = (await transaction.get(docRef)).data();
+                  const currData = (await txn.get(docRef)).data();
 
                   let instructionsDbValues;
                   if (instructions) {
@@ -491,12 +492,12 @@ export async function onFormSubmit(
                     ...(instructionsDbValues ? instructionsDbValues : {}),
                   };
                   if (currData) {
-                    transaction.update(docRef, {
+                    txn.update(docRef, {
                       ...finalDoc,
                       "@forDeletionLater": true,
                     });
                   } else {
-                    transaction.set(docRef, {
+                    txn.set(docRef, {
                       ...finalDoc,
                       "@forDeletionLater": true,
                     });
@@ -507,7 +508,7 @@ export async function onFormSubmit(
                   Object.entries(consolidatedPerAccount).forEach(([account, {debit, credit}]) => {
                     const increment = leftSide.includes(account) ? debit - credit : credit - debit;
                     if (increment === 0) {
-                      transaction.update(
+                      txn.update(
                         docRef,
                         {
                           "@forDeletionLater": FieldValue.delete(),
@@ -520,7 +521,7 @@ export async function onFormSubmit(
                     }
 
                     finalDoc[account] = accountVal;
-                    transaction.update(
+                    txn.update(
                       docRef,
                       {
                         [account]: accountVal,
@@ -529,7 +530,7 @@ export async function onFormSubmit(
                   });
 
                   if (Object.keys(finalDoc).length > 0 && !skipRunViewLogics &&
-                    ["create", "merge"].includes(action)) {
+                          ["create", "merge"].includes(action)) {
                     logicDoc.doc = finalDoc;
                     await queueRunViewLogics(logicDoc);
                   }
@@ -549,130 +550,129 @@ export async function onFormSubmit(
                         ...(description && {description}),
                       };
                       const entryRef = docRef.collection("@ledgers").doc(ledgerEntryId);
-                      transaction.set(
+                      txn.set(
                         entryRef,
                         ledgerEntryDoc,
                       );
                     }
                   }
-                });
+                }
               }
             }
           }
-        }
-        await writeJournalEntriesFirst();
+          await writeJournalEntriesFirst();
 
-        async function distributeTransactionalLogicResults() {
-          const transactionalResults = logicResults.filter((result) => result.transactional);
-          if (transactionalResults.length === 0) {
-            console.info("No transactional logic results to distribute");
-            return;
-          }
-          // We always distribute transactional results first
-          const transactionalDstPathLogicDocsMap =
-              await expandConsolidateAndGroupByDstPath(transactionalResults.map(
-                (result) => result.documents).flat().filter((doc) =>
-                !doc.journalEntries || doc.journalEntries && doc.action === "delete"));
-          // Write to firestore in one transaction
-          await db.runTransaction(async (transaction) => {
+          async function distributeTransactionalLogicResults() {
+            const transactionalResults = logicResults.filter((result) => result.transactional);
+            if (transactionalResults.length === 0) {
+              console.info("No transactional logic results to distribute");
+              return;
+            }
+            // We always distribute transactional results first
+            const transactionalDstPathLogicDocsMap =
+                  await expandConsolidateAndGroupByDstPath(transactionalResults.map(
+                    (result) => result.documents).flat().filter((doc) =>
+                    !doc.journalEntries || doc.journalEntries && doc.action === "delete"));
+              // Write to firestore in one transaction
             for (const [dstPath, logicDocs] of transactionalDstPathLogicDocsMap) {
               for (const logicDoc of logicDocs) {
                 const docRef = db.doc(dstPath);
                 const {action} = logicDoc;
                 if (action === "create") {
-                  transaction.set(docRef, logicDoc.doc);
+                  txn.set(docRef, logicDoc.doc);
                 } else if (action === "merge") {
-                  transaction.update(docRef, logicDoc.doc);
+                  txn.update(docRef, logicDoc.doc);
                 } else if (action === "delete") {
-                  transaction.delete(docRef);
+                  txn.delete(docRef);
                 }
 
                 if (logicDoc.instructions) {
                   const {updateData, removeData} = await convertInstructionsToDbValues(logicDoc.instructions);
                   if (Object.keys(updateData).length > 0) {
-                    transaction.update(docRef, updateData);
+                    txn.update(docRef, updateData);
                   }
                   if (Object.keys(removeData).length > 0) {
-                    transaction.update(docRef, removeData);
+                    txn.update(docRef, removeData);
                   }
                 }
               }
             }
-          });
-        }
-        await distributeTransactionalLogicResults();
-
-        async function distributeNonTransactionalLogicResults() {
-          const nonTransactionalResults = logicResults.filter((result) => !result.transactional);
-          console.info(`Group logic docs by priority: ${nonTransactionalResults.length}`);
-          const {highPriorityDocs, normalPriorityDocs, lowPriorityDocs} = nonTransactionalResults
-            .map((result) => result.documents)
-            .flat()
-            .filter((doc) => !doc.journalEntries || doc.journalEntries && doc.action === "delete")
-            .reduce((acc, doc) => {
-              if (doc.priority === "high") {
-                acc.highPriorityDocs.push(doc);
-              } else if (!doc.priority || doc.priority === "normal") {
-                acc.normalPriorityDocs.push(doc);
-              } else {
-                acc.lowPriorityDocs.push(doc);
-              }
-              return acc;
-            }, {
-              highPriorityDocs: [] as LogicResultDoc[],
-              normalPriorityDocs: [] as LogicResultDoc[],
-              lowPriorityDocs: [] as LogicResultDoc[],
-            });
-
-          console.info(`Consolidating and Distributing High Priority Logic Results: ${highPriorityDocs.length}`);
-          const highPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
-              await expandConsolidateAndGroupByDstPath(highPriorityDocs);
-          const {
-            docsByDocPath: highPriorityDocsByDocPath,
-            otherDocsByDocPath: highPriorityOtherDocsByDocPath,
-          } = groupDocsByTargetDocPath(highPriorityDstPathLogicDocsMap, docPath);
-          await distribute(highPriorityDocsByDocPath);
-          await distribute(highPriorityOtherDocsByDocPath);
-
-          if (page === 0) {
-            await formRef.update({"@status": "finished"});
           }
+          await distributeTransactionalLogicResults();
 
-          console.info(`Consolidating and Distributing Normal Priority Logic Results: ${normalPriorityDocs.length}`);
-          const normalPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
-              await expandConsolidateAndGroupByDstPath(normalPriorityDocs);
-          const {
-            docsByDocPath: normalPriorityDocsByDocPath,
-            otherDocsByDocPath: normalPriorityOtherDocsByDocPath,
-          } = groupDocsByTargetDocPath(normalPriorityDstPathLogicDocsMap, docPath);
-          await distribute(normalPriorityDocsByDocPath);
-          await distributeLater(normalPriorityOtherDocsByDocPath);
+          async function distributeNonTransactionalLogicResults() {
+            const nonTransactionalResults = logicResults.filter((result) => !result.transactional);
+            console.info(`Group logic docs by priority: ${nonTransactionalResults.length}`);
+            const {highPriorityDocs, normalPriorityDocs, lowPriorityDocs} = nonTransactionalResults
+              .map((result) => result.documents)
+              .flat()
+              .filter((doc) => !doc.journalEntries || doc.journalEntries && doc.action === "delete")
+              .reduce((acc, doc) => {
+                if (doc.priority === "high") {
+                  acc.highPriorityDocs.push(doc);
+                } else if (!doc.priority || doc.priority === "normal") {
+                  acc.normalPriorityDocs.push(doc);
+                } else {
+                  acc.lowPriorityDocs.push(doc);
+                }
+                return acc;
+              }, {
+                highPriorityDocs: [] as LogicResultDoc[],
+                normalPriorityDocs: [] as LogicResultDoc[],
+                lowPriorityDocs: [] as LogicResultDoc[],
+              });
 
-          console.info(`Consolidating and Distributing Low Priority Logic Results: ${lowPriorityDocs.length}`);
-          const lowPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
-              await expandConsolidateAndGroupByDstPath(lowPriorityDocs);
-          const {
-            docsByDocPath: lowPriorityDocsByDocPath,
-            otherDocsByDocPath: lowPriorityOtherDocsByDocPath,
-          } = groupDocsByTargetDocPath(lowPriorityDstPathLogicDocsMap, docPath);
-          await distributeLater(lowPriorityDocsByDocPath);
-          await distributeLater(lowPriorityOtherDocsByDocPath);
+            console.info(`Consolidating and Distributing High Priority Logic Results: ${highPriorityDocs.length}`);
+            const highPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
+                  await expandConsolidateAndGroupByDstPath(highPriorityDocs);
+            const {
+              docsByDocPath: highPriorityDocsByDocPath,
+              otherDocsByDocPath: highPriorityOtherDocsByDocPath,
+            } = groupDocsByTargetDocPath(highPriorityDstPathLogicDocsMap, docPath);
+            await distribute(highPriorityDocsByDocPath);
+            await distribute(highPriorityOtherDocsByDocPath);
+
+            if (page === 0) {
+              await formRef.update({"@status": "finished"});
+            }
+
+            console.info(`Consolidating and Distributing Normal Priority Logic Results: ${normalPriorityDocs.length}`);
+            const normalPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
+                  await expandConsolidateAndGroupByDstPath(normalPriorityDocs);
+            const {
+              docsByDocPath: normalPriorityDocsByDocPath,
+              otherDocsByDocPath: normalPriorityOtherDocsByDocPath,
+            } = groupDocsByTargetDocPath(normalPriorityDstPathLogicDocsMap, docPath);
+            await distribute(normalPriorityDocsByDocPath);
+            await distributeLater(normalPriorityOtherDocsByDocPath);
+
+            console.info(`Consolidating and Distributing Low Priority Logic Results: ${lowPriorityDocs.length}`);
+            const lowPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
+                  await expandConsolidateAndGroupByDstPath(lowPriorityDocs);
+            const {
+              docsByDocPath: lowPriorityDocsByDocPath,
+              otherDocsByDocPath: lowPriorityOtherDocsByDocPath,
+            } = groupDocsByTargetDocPath(lowPriorityDstPathLogicDocsMap, docPath);
+            await distributeLater(lowPriorityDocsByDocPath);
+            await distributeLater(lowPriorityOtherDocsByDocPath);
+          }
+          await distributeNonTransactionalLogicResults();
         }
-        await distributeNonTransactionalLogicResults();
-      }
-    );
+      );
 
-    if (runStatus === "cancel-then-retry") {
-      await formRef.update({"@status": "cancelled", "@messages": "cancel-then-retry received " +
+      if (runStatus === "cancel-then-retry") {
+        await formRef.update({"@status": "cancelled", "@messages": "cancel-then-retry received " +
               "from business logic"});
-      return;
-    }
+        return;
+      }
 
-    if (errorMessage) {
-      await actionRef.update({status: "finished-with-error", message: errorMessage});
-    } else {
-      await actionRef.update({status: "finished"});
-    }
+      if (errorMessage) {
+        await actionRef.update({status: "finished-with-error", message: errorMessage});
+      } else {
+        await actionRef.update({status: "finished"});
+      }
+    });
+
     console.info("Finished");
   } catch (error) {
     console.error("Error in onFormSubmit", error);
