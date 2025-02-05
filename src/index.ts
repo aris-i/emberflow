@@ -484,7 +484,7 @@ export async function onFormSubmit(
 
                   let instructionsDbValues;
                   if (instructions) {
-                    instructionsDbValues = await convertInstructionsToDbValues(instructions);
+                    instructionsDbValues = await convertInstructionsToDbValues(txn, instructions);
                   }
 
                   const finalDoc: DocumentData = {
@@ -587,7 +587,7 @@ export async function onFormSubmit(
                 }
 
                 if (logicDoc.instructions) {
-                  const {updateData, removeData} = await convertInstructionsToDbValues(logicDoc.instructions);
+                  const {updateData, removeData} = await convertInstructionsToDbValues(txn, logicDoc.instructions);
                   if (Object.keys(updateData).length > 0) {
                     txn.update(docRef, updateData);
                   }
