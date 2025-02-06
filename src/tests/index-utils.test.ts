@@ -56,6 +56,7 @@ admin.initializeApp({
   databaseURL: "https://test-project.firebaseio.com",
 });
 
+const txnGet = jest.fn();
 jest.mock("../utils/paths", () => {
   const originalModule = jest.requireActual("../utils/paths");
 
@@ -788,10 +789,10 @@ describe("runBusinessLogics", () => {
       },
     ];
     initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
-    const runStatus = await indexUtils.runBusinessLogics(actionRef, action, distributeFn);
+    const runStatus = await indexUtils.runBusinessLogics(txnGet, actionRef, action, distributeFn);
 
-    expect(logicFn1).toHaveBeenCalledWith(action, new Map(), undefined);
-    expect(logicFn2).toHaveBeenCalledWith(action, new Map(), undefined);
+    expect(logicFn1).toHaveBeenCalledWith(txnGet, action, new Map(), undefined);
+    expect(logicFn2).toHaveBeenCalledWith(txnGet, action, new Map(), undefined);
     expect(logicFn3).not.toHaveBeenCalled();
     expect(logicFn4).not.toHaveBeenCalled();
     expect(logicFn5).not.toHaveBeenCalled();
@@ -832,10 +833,10 @@ describe("runBusinessLogics", () => {
       },
     ];
     initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
-    const runStatus = await indexUtils.runBusinessLogics(actionRef, action, distributeFn);
+    const runStatus = await indexUtils.runBusinessLogics(txnGet, actionRef, action, distributeFn);
 
-    expect(logicFn1).toHaveBeenCalledWith(action, new Map(), undefined);
-    expect(logicFn2).toHaveBeenCalledWith(action, new Map(), undefined);
+    expect(logicFn1).toHaveBeenCalledWith(txnGet, action, new Map(), undefined);
+    expect(logicFn2).toHaveBeenCalledWith(txnGet, action, new Map(), undefined);
     expect(distributeFn).toHaveBeenCalledTimes(2);
     expect(distributeFn.mock.calls[0]).toEqual([actionRef,
       [expect.objectContaining({
@@ -850,7 +851,7 @@ describe("runBusinessLogics", () => {
         timeFinished: expect.any(Timestamp),
       })], 0]);
 
-    expect(logicFn2).toHaveBeenCalledWith(action, new Map(), {});
+    expect(logicFn2).toHaveBeenCalledWith(txnGet, action, new Map(), {});
     expect(distributeFn.mock.calls[1]).toEqual([actionRef,
       [expect.objectContaining({
         status: "finished",
@@ -886,7 +887,7 @@ describe("runBusinessLogics", () => {
       },
     ];
     initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
-    const runStatus = await indexUtils.runBusinessLogics(actionRef, action, distributeFn);
+    const runStatus = await indexUtils.runBusinessLogics(txnGet, actionRef, action, distributeFn);
 
     expect(logicFn1).not.toHaveBeenCalled();
     expect(logicFn2).not.toHaveBeenCalled();
@@ -916,10 +917,10 @@ describe("runBusinessLogics", () => {
         },
       ];
       initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
-      const runStatus = await indexUtils.runBusinessLogics(actionRef, action, distributeFn);
+      const runStatus = await indexUtils.runBusinessLogics(txnGet, actionRef, action, distributeFn);
 
-      expect(logicFn1).toHaveBeenCalledWith(action, new Map(), undefined);
-      expect(logicFn2).toHaveBeenCalledWith(action, new Map(), undefined);
+      expect(logicFn1).toHaveBeenCalledWith(txnGet, action, new Map(), undefined);
+      expect(logicFn2).toHaveBeenCalledWith(txnGet, action, new Map(), undefined);
       expect(logicFn1).toHaveBeenCalledTimes(1);
       expect(logicFn2).toHaveBeenCalledTimes(10);
       expect(distributeFn).toHaveBeenCalledTimes(10);
@@ -953,12 +954,12 @@ describe("runBusinessLogics", () => {
       },
     ];
     initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
-    const runStatus = await indexUtils.runBusinessLogics(actionRef, action, distributeFn);
+    const runStatus = await indexUtils.runBusinessLogics(txnGet, actionRef, action, distributeFn);
 
     expect(logicFn1).toHaveBeenCalledTimes(1);
-    expect(logicFn1).toHaveBeenCalledWith(action, new Map(), undefined);
+    expect(logicFn1).toHaveBeenCalledWith(txnGet, action, new Map(), undefined);
     expect(logicFn2).toHaveBeenCalledTimes(1);
-    expect(logicFn2).toHaveBeenCalledWith(action, new Map(), undefined);
+    expect(logicFn2).toHaveBeenCalledWith(txnGet, action, new Map(), undefined);
     expect(logicFn3).not.toHaveBeenCalled();
     expect(distributeFn).not.toHaveBeenCalled();
     expect(runStatus).toEqual("cancel-then-retry");
@@ -975,11 +976,11 @@ describe("runBusinessLogics", () => {
         "@id": "test-document-id",
         "title": "Test Document Title",
       });
-      logicFn2.mockImplementation((action, sharedMap) => {
+      logicFn2.mockImplementation((txnGet, action, sharedMap) => {
         sharedMap.set("another-document-id", expectedSharedMap.get("another-document-id"));
         return {status: "finished"};
       });
-      logicFn3.mockImplementation((action, sharedMap) => {
+      logicFn3.mockImplementation((txnGet, action, sharedMap) => {
         sharedMap.set("test-document-id", expectedSharedMap.get("test-document-id"));
         return {status: "finished"};
       });
@@ -1007,11 +1008,11 @@ describe("runBusinessLogics", () => {
         },
       ];
       initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
-      const runStatus = await indexUtils.runBusinessLogics(actionRef, action, distributeFn);
+      const runStatus = await indexUtils.runBusinessLogics(txnGet, actionRef, action, distributeFn);
 
-      expect(logicFn1).toHaveBeenCalledWith(action, expectedSharedMap, undefined);
-      expect(logicFn2).toHaveBeenCalledWith(action, expectedSharedMap, undefined);
-      expect(logicFn3).toHaveBeenCalledWith(action, expectedSharedMap, undefined);
+      expect(logicFn1).toHaveBeenCalledWith(txnGet, action, expectedSharedMap, undefined);
+      expect(logicFn2).toHaveBeenCalledWith(txnGet, action, expectedSharedMap, undefined);
+      expect(logicFn3).toHaveBeenCalledWith(txnGet, action, expectedSharedMap, undefined);
       expect(runStatus).toEqual("done");
     });
 });
@@ -1083,7 +1084,7 @@ describe("simulateSubmitForm", () => {
   });
 
   it("should skip when there is no logic result doc with 'simulate-submit-form' action", async () => {
-    await indexUtils._mockable.simulateSubmitForm([], action, distributeFn);
+    await indexUtils._mockable.simulateSubmitForm(txnGet, [], action, distributeFn);
     expect(console.debug).toHaveBeenCalledTimes(1);
     expect(console.debug).toHaveBeenCalledWith("Simulating submit form: ", 0);
     expect(runBusinessLogicsSpy).not.toHaveBeenCalled();
@@ -1105,7 +1106,7 @@ describe("simulateSubmitForm", () => {
     };
     logicResults.push(logicResult);
 
-    await indexUtils._mockable.simulateSubmitForm(logicResults, action, distributeFn);
+    await indexUtils._mockable.simulateSubmitForm(txnGet, logicResults, action, distributeFn);
     expect(console.warn).toHaveBeenCalledTimes(1);
     expect(console.warn).toHaveBeenCalledWith("No matching entity found for logic no-entity/sample-doc-id. Skipping");
     expect(runBusinessLogicsSpy).not.toHaveBeenCalled();
@@ -1124,7 +1125,7 @@ describe("simulateSubmitForm", () => {
     };
     logicResults.push(logicResult);
 
-    await indexUtils._mockable.simulateSubmitForm(logicResults, action, distributeFn);
+    await indexUtils._mockable.simulateSubmitForm(txnGet, logicResults, action, distributeFn);
     expect(console.warn).toHaveBeenCalledTimes(1);
     expect(console.warn).toHaveBeenCalledWith("LogicResultDoc.doc should not be undefined. Skipping");
     expect(runBusinessLogicsSpy).not.toHaveBeenCalled();
@@ -1144,7 +1145,7 @@ describe("simulateSubmitForm", () => {
     };
     logicResults.push(logicResult);
 
-    await indexUtils._mockable.simulateSubmitForm(logicResults, action, distributeFn);
+    await indexUtils._mockable.simulateSubmitForm(txnGet, logicResults, action, distributeFn);
     expect(console.warn).toHaveBeenCalledTimes(1);
     expect(console.warn).toHaveBeenCalledWith("No @actionType found. Skipping");
     expect(runBusinessLogicsSpy).not.toHaveBeenCalled();
@@ -1168,7 +1169,7 @@ describe("simulateSubmitForm", () => {
     };
     logicResults.push(logicResult);
 
-    await indexUtils._mockable.simulateSubmitForm(logicResults, action, distributeFn);
+    await indexUtils._mockable.simulateSubmitForm(txnGet, logicResults, action, distributeFn);
     expect(console.warn).toHaveBeenCalledTimes(1);
     expect(console.warn).toHaveBeenCalledWith("User test-user-id not found. Skipping");
     expect(runBusinessLogicsSpy).not.toHaveBeenCalled();
@@ -1215,11 +1216,11 @@ describe("simulateSubmitForm", () => {
       timeCreated: now,
     };
 
-    await indexUtils._mockable.simulateSubmitForm(logicResults, action, distributeFn);
+    await indexUtils._mockable.simulateSubmitForm(txnGet, logicResults, action, distributeFn);
     expect(docMock.set).toHaveBeenCalledTimes(1);
     expect(docMock.set).toHaveBeenCalledWith(expectedAction);
     expect(runBusinessLogicsSpy).toHaveBeenCalledTimes(1);
-    expect(runBusinessLogicsSpy).toHaveBeenCalledWith(docMock, expectedAction, distributeFn);
+    expect(runBusinessLogicsSpy).toHaveBeenCalledWith(txnGet, docMock, expectedAction, distributeFn);
   });
 
   it("should simulate submit form correctly when submitFormAs is undefined", async () => {
@@ -1261,11 +1262,11 @@ describe("simulateSubmitForm", () => {
       timeCreated: now,
     };
 
-    await indexUtils._mockable.simulateSubmitForm(logicResults, action, distributeFn);
+    await indexUtils._mockable.simulateSubmitForm(txnGet, logicResults, action, distributeFn);
     expect(docMock.set).toHaveBeenCalledTimes(1);
     expect(docMock.set).toHaveBeenCalledWith(expectedAction);
     expect(runBusinessLogicsSpy).toHaveBeenCalledTimes(1);
-    expect(runBusinessLogicsSpy).toHaveBeenCalledWith(docMock, expectedAction, distributeFn);
+    expect(runBusinessLogicsSpy).toHaveBeenCalledWith(txnGet, docMock, expectedAction, distributeFn);
   });
 
   it("should simulate submit form correctly with multiple logic result docs", async () => {
@@ -1349,13 +1350,13 @@ describe("simulateSubmitForm", () => {
       timeCreated: now,
     };
 
-    await indexUtils._mockable.simulateSubmitForm(logicResults, action, distributeFn);
+    await indexUtils._mockable.simulateSubmitForm(txnGet, logicResults, action, distributeFn);
     expect(docMock.set).toHaveBeenCalledTimes(2);
     expect(docMock.set).toHaveBeenNthCalledWith(1, expectedServerAction);
     expect(docMock.set).toHaveBeenNthCalledWith(2, expectedUserAction);
     expect(runBusinessLogicsSpy).toHaveBeenCalledTimes(2);
-    expect(runBusinessLogicsSpy).toHaveBeenNthCalledWith(1, docMock, expectedServerAction, distributeFn);
-    expect(runBusinessLogicsSpy).toHaveBeenNthCalledWith(2, docMock, expectedUserAction, distributeFn);
+    expect(runBusinessLogicsSpy).toHaveBeenNthCalledWith(1, txnGet, docMock, expectedServerAction, distributeFn);
+    expect(runBusinessLogicsSpy).toHaveBeenNthCalledWith(2, txnGet, docMock, expectedUserAction, distributeFn);
   });
 
   it("should skip when maximum retry count is reached", async () => {
@@ -1392,7 +1393,7 @@ describe("simulateSubmitForm", () => {
       .mockReturnValueOnce(now.toMillis() + 16000)
       .mockReturnValueOnce(now.toMillis())
       .mockReturnValueOnce(now.toMillis() + 32000);
-    await indexUtils._mockable.simulateSubmitForm(logicResults, action, distributeFn);
+    await indexUtils._mockable.simulateSubmitForm(txnGet, logicResults, action, distributeFn);
     expect(console.warn).toHaveBeenCalledTimes(1);
     expect(console.warn).toHaveBeenCalledWith("Maximum retry count reached for logic servers/sample-server-id");
   });

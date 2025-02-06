@@ -24,6 +24,14 @@ jest.mock("../../utils/pubsub", () => {
     },
   };
 });
+const transactionUpdateMock = jest.fn();
+const transactionSetMock = jest.fn();
+const transactionGetMock = jest.fn();
+const transactionMock = {
+  get: transactionGetMock,
+  update: transactionUpdateMock,
+  set: transactionSetMock,
+} as unknown as admin.firestore.Transaction;
 
 const projectConfig: ProjectConfig = {
   projectId: "your-project-id",
@@ -189,10 +197,6 @@ describe("queueInstructions", () => {
 });
 
 describe("convertInstructionsToDbValues", () => {
-  const transactionUpdateMock = jest.fn();
-  const transactionSetMock = jest.fn();
-  const transactionGetMock = jest.fn();
-
   beforeEach(() => {
     const queueNumberCounterDoc = {
       "id": "queueNumber",
@@ -205,13 +209,7 @@ describe("convertInstructionsToDbValues", () => {
     };
     transactionGetMock.mockResolvedValue(queueNumberCounterDoc);
     jest.spyOn(admin.firestore(), "runTransaction").mockImplementation(async (transactionFn) => {
-      const transaction = {
-        get: transactionGetMock,
-        update: transactionUpdateMock,
-        set: transactionSetMock,
-      } as unknown as admin.firestore.Transaction;
-
-      return transactionFn(transaction);
+      return transactionFn(transactionMock);
     });
   });
 
@@ -224,7 +222,7 @@ describe("convertInstructionsToDbValues", () => {
       const instructions = {
         "queueNumber": "globalCounter(queueNumber,20)",
       };
-      const result = await distribution.convertInstructionsToDbValues(instructions);
+      const result = await distribution.convertInstructionsToDbValues(transactionMock, instructions);
 
       expect(transactionUpdateMock).toHaveBeenCalledTimes(1);
       expect(result.updateData).toStrictEqual({
@@ -237,7 +235,7 @@ describe("convertInstructionsToDbValues", () => {
       const instructions = {
         "newCounter": "globalCounter(newCounter,20)",
       };
-      const result = await distribution.convertInstructionsToDbValues(instructions);
+      const result = await distribution.convertInstructionsToDbValues(transactionMock, instructions);
 
       expect(transactionSetMock).toHaveBeenCalledTimes(1);
       expect(result.updateData).toStrictEqual({
@@ -258,7 +256,7 @@ describe("convertInstructionsToDbValues", () => {
       const instructions = {
         "queueNumber": "globalCounter(queueNumber,20)",
       };
-      const result = await distribution.convertInstructionsToDbValues(instructions);
+      const result = await distribution.convertInstructionsToDbValues(transactionMock, instructions);
 
       expect(result.updateData).toStrictEqual({
         "queueNumber": 1,
@@ -278,7 +276,7 @@ describe("convertInstructionsToDbValues", () => {
       const instructions = {
         "queueNumber": "globalCounter(queueNumber)",
       };
-      const result = await distribution.convertInstructionsToDbValues(instructions);
+      const result = await distribution.convertInstructionsToDbValues(transactionMock, instructions);
 
       expect(result.updateData).toStrictEqual({
         "queueNumber": 11,

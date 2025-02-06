@@ -3,6 +3,7 @@ import {
   LogicResult,
   LogicResultDoc,
   SecurityFn,
+  TxnGet,
   ValidateFormResult,
 } from "./types";
 import {database, firestore} from "firebase-admin";
@@ -229,7 +230,7 @@ export async function delayFormSubmissionAndCheckIfCancelled(delay: number, form
   return cancelFormSubmission;
 }
 
-async function simulateSubmitForm(logicResults: LogicResult[], action: Action,
+async function simulateSubmitForm(txnGet: TxnGet, logicResults: LogicResult[], action: Action,
   distributeFn: DistributeFn) {
   const forSimulateSubmitForm = logicResults
     .map((result: LogicResult) => result.documents)
@@ -300,7 +301,7 @@ async function simulateSubmitForm(logicResults: LogicResult[], action: Action,
       const _actionRef = db.collection("@actions").doc(eventContext.formId);
       await _actionRef.set(_action);
 
-      const status = await runBusinessLogics(_actionRef, _action, distributeFn);
+      const status = await runBusinessLogics(txnGet, _actionRef, _action, distributeFn);
       if (status === "cancel-then-retry") {
         if (retryCount + 1 > maxRetryCount) {
           console.warn(`Maximum retry count reached for logic ${logicResultDoc.dstPath}`);
@@ -338,14 +339,14 @@ function getMatchingLogics(actionType: ActionType, modifiedFields: DocumentData,
   });
 }
 
-async function runLogic(action: Action, matchingLogics: LogicConfig[], nextPageMarkers: (object | undefined)[],
+async function runLogic(txnGet: TxnGet, action: Action, matchingLogics: LogicConfig[], nextPageMarkers: (object | undefined)[],
   sharedMap: Map<string, any>, logicResults: LogicResult[]) {
   for (let i = matchingLogics.length - 1; i >= 0; i--) {
     const start = performance.now();
     const logic = matchingLogics[i];
     console.debug("Running logic:", logic.name, "nextPageMarker:", nextPageMarkers[i]);
     try {
-      const result = await logic.logicFn(action, sharedMap, nextPageMarkers[i]);
+      const result = await logic.logicFn(txnGet, action, sharedMap, nextPageMarkers[i]);
       const end = performance.now();
       const execTime = end - start;
       const {status, nextPage} = result;
@@ -393,6 +394,7 @@ async function distributeLogicResults(actionRef: FirebaseFirestore.DocumentRefer
 }
 
 export const runBusinessLogics = async (
+  txnGet: TxnGet,
   actionRef: DocumentReference,
   action: Action,
   distributeFn: DistributeFn): Promise<"done" | "cancel-then-retry" | "no-matching-logics"> => {
@@ -418,7 +420,14 @@ export const runBusinessLogics = async (
       console.debug(`Page ${page} Remaining logics:`, matchingLogics.map((logic) => logic.name));
     }
     const logicResults: LogicResult[] = [];
-    const status = await runLogic(action, matchingLogics, nextPageMarkers, sharedMap, logicResults);
+    const status = await runLogic(
+      txnGet,
+      action,
+      matchingLogics,
+      nextPageMarkers,
+      sharedMap,
+      logicResults
+    );
     if (status === "cancel-then-retry") {
       return "cancel-then-retry";
     }
@@ -429,7 +438,7 @@ export const runBusinessLogics = async (
       break;
     }
 
-    await _mockable.simulateSubmitForm(logicResults, action, distributeFn);
+    await _mockable.simulateSubmitForm(txnGet, logicResults, action, distributeFn);
   }
 
   return "done";

@@ -18,6 +18,7 @@ import {firestore} from "firebase-admin";
 import {pubsubUtils} from "./pubsub";
 import {reviveDateAndTimestamp} from "./misc";
 import FieldValue = firestore.FieldValue;
+import Transaction = firestore.Transaction;
 
 export const queueForDistributionLater = async (...logicResultDocs: LogicResultDoc[]) => {
   try {
@@ -81,7 +82,7 @@ export const queueInstructions = async (dstPath: string, instructions: { [p: str
   }
 };
 
-export async function convertInstructionsToDbValues(instructions: Instructions) {
+export async function convertInstructionsToDbValues(transaction: Transaction, instructions: Instructions) {
   const updateData: { [key: string ]: FieldValue | number } = {};
   const removeData: { [key: string]: FieldValue } = {};
 
@@ -158,34 +159,32 @@ export async function convertInstructionsToDbValues(instructions: Instructions) 
 
       try {
         console.debug("Initiate global counter transaction");
-        await db.runTransaction(async (transaction) => {
-          console.debug("Start of global counter transaction");
-          let newCount: number;
-          const counterRef = db.doc(`@counters/${counterName}`);
-          const counterDoc = await transaction.get(counterRef);
-          const counterData = counterDoc?.data();
-          if (!counterData) {
-            newCount = 1;
-            const newDocument = {
-              "@id": counterName,
-              "count": newCount,
-              "lastUpdatedAt": now,
-            };
-            transaction.set(counterRef, newDocument);
-          } else {
-            const {count} = counterData;
-            const maxValueReached = maxValue && count >= maxValue;
+        console.debug("Start of global counter transaction");
+        let newCount: number;
+        const counterRef = db.doc(`@counters/${counterName}`);
+        const counterDoc = await transaction.get(counterRef);
+        const counterData = counterDoc?.data();
+        if (!counterData) {
+          newCount = 1;
+          const newDocument = {
+            "@id": counterName,
+            "count": newCount,
+            "lastUpdatedAt": now,
+          };
+          transaction.set(counterRef, newDocument);
+        } else {
+          const {count} = counterData;
+          const maxValueReached = maxValue && count >= maxValue;
 
-            newCount = maxValueReached ? 1 : count + 1;
+          newCount = maxValueReached ? 1 : count + 1;
 
-            transaction.update(counterRef, {
-              "count": newCount,
-              "lastUpdatedAt": now,
-            });
-          }
-          updateData[property] = newCount;
-          console.debug("End of global counter transaction");
-        });
+          transaction.update(counterRef, {
+            "count": newCount,
+            "lastUpdatedAt": now,
+          });
+        }
+        updateData[property] = newCount;
+        console.debug("End of global counter transaction");
         console.debug("Committed global counter transaction");
       } catch (error) {
         console.error(error);
@@ -198,8 +197,8 @@ export async function convertInstructionsToDbValues(instructions: Instructions) 
 }
 
 export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublishedData> | Map<string, Instructions>) {
-  async function applyInstructions(instructions: Instructions, dstPath: string) {
-    const {updateData, removeData} = await convertInstructionsToDbValues(instructions);
+  async function applyInstructions(txn: Transaction, instructions: Instructions, dstPath: string) {
+    const {updateData, removeData} = await convertInstructionsToDbValues(txn, instructions);
     const dstDocRef = db.doc(dstPath);
     if (Object.keys(updateData).length > 0) {
       await dstDocRef.update(updateData);
@@ -209,31 +208,33 @@ export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublis
     }
   }
 
-  if (event instanceof Map) {
-    // Process the reduced instructions here
-    console.debug("Reduced instructions received: ", event);
-    for (const [dstPath, instructions] of event.entries()) {
-      await applyInstructions(instructions, dstPath);
-    }
-  } else {
-    if (await pubsubUtils.isProcessed(INSTRUCTIONS_TOPIC_NAME, event.id)) {
-      console.log("Skipping duplicate message");
-      return;
-    }
-    try {
-      const instructionsMessage: InstructionsMessage = event.data.message.json;
-      console.debug("Received event with the following instruction:", instructionsMessage);
+  await db.runTransaction(async (txn) => {
+    if (event instanceof Map) {
+      // Process the reduced instructions here
+      console.debug("Reduced instructions received: ", event);
+      for (const [dstPath, instructions] of event.entries()) {
+        await applyInstructions(txn, instructions, dstPath);
+      }
+    } else {
+      if (await pubsubUtils.isProcessed(INSTRUCTIONS_TOPIC_NAME, event.id)) {
+        console.log("Skipping duplicate message");
+        return;
+      }
+      try {
+        const instructionsMessage: InstructionsMessage = event.data.message.json;
+        console.debug("Received event with the following instruction:", instructionsMessage);
 
-      console.debug("Applying Instructions");
-      const {dstPath, instructions} = instructionsMessage;
-      await applyInstructions(instructions, dstPath);
+        console.debug("Applying Instructions");
+        const {dstPath, instructions} = instructionsMessage;
+        await applyInstructions(txn, instructions, dstPath);
 
-      await pubsubUtils.trackProcessedIds(INSTRUCTIONS_TOPIC_NAME, event.id);
-    } catch (e) {
-      console.error("PubSub message was not JSON", e);
-      throw new Error("No json in message");
+        await pubsubUtils.trackProcessedIds(INSTRUCTIONS_TOPIC_NAME, event.id);
+      } catch (e) {
+        console.error("PubSub message was not JSON", e);
+        throw new Error("No json in message");
+      }
     }
-  }
+  });
 }
 
 export const mergeInstructions = (existingInstructions: Instructions, instructions: Instructions) => {
