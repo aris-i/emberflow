@@ -29,9 +29,9 @@ export interface Action{
     message?: string
 }
 
-type txn1 = <T>(query: Query<T>)=> Promise<QuerySnapshot<T>>;
-type txn2 = <T>(documentRef: DocumentReference<T>)=> Promise<DocumentSnapshot<T>>;
-export type TxnGet = txn1 | txn2;
+type txnGet1 = <T>(query: Query<T>)=> Promise<QuerySnapshot<T>>;
+type txnGet2 = <T>(documentRef: DocumentReference<T>)=> Promise<DocumentSnapshot<T>>;
+export type TxnGet = txnGet1 | txnGet2;
 
 export type LogicResultDocAction = "create" | "merge" | "delete" | "copy" | "recursive-copy" | "recursive-delete"
     | "submit-form" | "simulate-submit-form";
