@@ -5,7 +5,7 @@ import {
   FirebaseAdmin,
   Instructions,
   LogicConfig,
-  LogicConfigModifiedFieldsType,
+  LogicConfigModifiedFieldsType, LogicResult,
   LogicResultDoc,
   LogicResultDocAction,
   ProjectConfig,
@@ -15,6 +15,7 @@ import {
   ViewLogicConfig,
 } from "./types";
 import {
+  _mockable as indexUtilsMockable,
   cleanMetricComputations,
   cleanMetricExecutions,
   createMetricComputation,
@@ -259,6 +260,8 @@ export async function onFormSubmit(
   const {userId, formId} = event.params;
   const formSnapshot = event.data;
   const formRef = formSnapshot.ref;
+  const start = performance.now();
+  const logicResults: LogicResult[] = [];
 
   try {
     const trimmedForm = trimStrings(JSON.parse(formSnapshot.val().formData));
@@ -297,7 +300,16 @@ export async function onFormSubmit(
     }
 
     console.info("Validating form");
+    const validateFormStart = performance.now();
     const [hasValidationError, validationResult] = await validateForm(entity, form);
+    const validateFormEnd = performance.now();
+    const validateFormLogicResult: LogicResult = {
+      name: "validateForm",
+      status: "finished",
+      documents: [],
+      execTime: validateFormEnd - validateFormStart,
+    };
+    logicResults.push(validateFormLogicResult);
     if (hasValidationError) {
       await formRef.update({"@status": "validation-error", "@messages": validationResult});
       return;
@@ -321,8 +333,17 @@ export async function onFormSubmit(
     console.info("Validating Security");
     const securityFn = getSecurityFn(entity);
     if (securityFn) {
+      const securityFnStart = performance.now();
       const securityResult = await securityFn(entity, docPath, document,
         actionType, formModifiedFields, user);
+      const securityFnEnd = performance.now();
+      const securityLogicResult: LogicResult = {
+        name: "securityFn",
+        status: "finished",
+        documents: [],
+        execTime: securityFnEnd - securityFnStart,
+      };
+      logicResults.push(securityLogicResult);
       if (securityResult.status === "rejected") {
         console.log(`Security check failed: ${securityResult.message}`);
         await formRef.update({"@status": "security-error", "@messages": securityResult.message});
@@ -334,7 +355,17 @@ export async function onFormSubmit(
     console.info("Checking for delay");
     const delay = form["@delay"];
     if (delay) {
-      if (await delayFormSubmissionAndCheckIfCancelled(delay, formRef)) {
+      const delayStart = performance.now();
+      const cancelled = await delayFormSubmissionAndCheckIfCancelled(delay, formRef);
+      const delayEnd = performance.now();
+      const delayLogicResult: LogicResult = {
+        name: "delayFormSubmission",
+        status: "finished",
+        documents: [],
+        execTime: delayEnd - delayStart,
+      };
+      logicResults.push(delayLogicResult);
+      if (cancelled) {
         await formRef.update({"@status": "cancelled"});
         return;
       }
@@ -371,6 +402,7 @@ export async function onFormSubmit(
 
     console.info("Running Business Logics");
     let errorMessage = "";
+    const businessLogicStart = performance.now();
     const runStatus = await runBusinessLogics(actionRef, action,
       async (actionRef, logicResults, page) => {
         async function saveLogicResults() {
@@ -661,6 +693,14 @@ export async function onFormSubmit(
         await distributeNonTransactionalLogicResults();
       }
     );
+    const businessLogicEnd = performance.now();
+    const businessLogicLogicResult: LogicResult = {
+      name: "runBusinessLogics",
+      status: "finished",
+      documents: [],
+      execTime: businessLogicEnd - businessLogicStart,
+    };
+    logicResults.push(businessLogicLogicResult);
 
     if (runStatus === "cancel-then-retry") {
       await formRef.update({"@status": "cancelled", "@messages": "cancel-then-retry received " +
@@ -668,16 +708,35 @@ export async function onFormSubmit(
       return;
     }
 
+    const end = performance.now();
+    const execTime = end - start;
+    const onFormSubmitLogicResult: LogicResult = {
+      name: "onFormSubmit",
+      status: "finished",
+      documents: [],
+      execTime,
+    };
+    logicResults.push(onFormSubmitLogicResult);
     if (errorMessage) {
-      await actionRef.update({status: "finished-with-error", message: errorMessage});
+      await actionRef.update({status: "finished-with-error", message: errorMessage, execTime: execTime});
     } else {
-      await actionRef.update({status: "finished"});
+      await actionRef.update({status: "finished", execTime: execTime});
     }
     console.info("Finished");
   } catch (error) {
     console.error("Error in onFormSubmit", error);
-    await formRef.update({"@status": "error", "@messages": error});
+    const end = performance.now();
+    const execTime = end - start;
+    const onFormSubmitLogicResult: LogicResult = {
+      name: "onFormSubmit",
+      status: "finished",
+      documents: [],
+      execTime,
+    };
+    logicResults.push(onFormSubmitLogicResult);
+    await formRef.update({"@status": "error", "@messages": error, "execTime": execTime});
   }
+  await indexUtilsMockable.createMetricExecution(logicResults);
 }
 
 const onUserRegister = async (user: UserRecord) => {
