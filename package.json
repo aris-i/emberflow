@@ -38,6 +38,6 @@
     "@google-cloud/billing": "^3.4.0",
     "@google-cloud/functions": "^2.5.0",
     "@google-cloud/pubsub": "^4.0.7",
-    "emberflow-admin-client": "^1.2.3"
+    "emberflow-admin-client": "^1.2.4"
   }
 }
