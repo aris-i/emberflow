@@ -16,6 +16,7 @@ import {
   ViewLogicConfig,
 } from "./types";
 import {
+  _mockable as indexUtilsMockable,
   cleanMetricComputations,
   cleanMetricExecutions,
   createMetricComputation,
@@ -261,6 +262,8 @@ export async function onFormSubmit(
   const {userId, formId} = event.params;
   const formSnapshot = event.data;
   const formRef = formSnapshot.ref;
+  const start = performance.now();
+  const logicResults: LogicResult[] = [];
 
   try {
     const trimmedForm = trimStrings(JSON.parse(formSnapshot.val().formData));
@@ -299,7 +302,16 @@ export async function onFormSubmit(
     }
 
     console.info("Validating form");
+    const validateFormStart = performance.now();
     const [hasValidationError, validationResult] = await validateForm(entity, form);
+    const validateFormEnd = performance.now();
+    const validateFormLogicResult: LogicResult = {
+      name: "validateForm",
+      status: "finished",
+      documents: [],
+      execTime: validateFormEnd - validateFormStart,
+    };
+    logicResults.push(validateFormLogicResult);
     if (hasValidationError) {
       await formRef.update({"@status": "validation-error", "@messages": validationResult});
       return;
@@ -326,27 +338,46 @@ export async function onFormSubmit(
         user = {"@id": userId};
       }
 
-      console.info("Validating Security");
-      const securityFn = getSecurityFn(entity);
-      if (securityFn) {
-        const securityResult = await securityFn(entity, docPath, document,
-          actionType, formModifiedFields, user);
-        if (securityResult.status === "rejected") {
-          console.log(`Security check failed: ${securityResult.message}`);
-          await formRef.update({"@status": "security-error", "@messages": securityResult.message});
-          return;
-        }
+    console.info("Validating Security");
+    const securityFn = getSecurityFn(entity);
+    if (securityFn) {
+      const securityFnStart = performance.now();
+      const securityResult = await securityFn(entity, docPath, document,
+        actionType, formModifiedFields, user);
+      const securityFnEnd = performance.now();
+      const securityLogicResult: LogicResult = {
+        name: "securityFn",
+        status: "finished",
+        documents: [],
+        execTime: securityFnEnd - securityFnStart,
+      };
+      logicResults.push(securityLogicResult);
+      if (securityResult.status === "rejected") {
+        console.log(`Security check failed: ${securityResult.message}`);
+        await formRef.update({"@status": "security-error", "@messages": securityResult.message});
+        return;
       }
+    }
 
-      // Check for delay
-      console.info("Checking for delay");
-      const delay = form["@delay"];
-      if (delay) {
-        if (await delayFormSubmissionAndCheckIfCancelled(delay, formRef)) {
-          await formRef.update({"@status": "cancelled"});
-          return;
-        }
+    // Check for delay
+    console.info("Checking for delay");
+    const delay = form["@delay"];
+    if (delay) {
+      const delayStart = performance.now();
+      const cancelled = await delayFormSubmissionAndCheckIfCancelled(delay, formRef);
+      const delayEnd = performance.now();
+      const delayLogicResult: LogicResult = {
+        name: "delayFormSubmission",
+        status: "finished",
+        documents: [],
+        execTime: delayEnd - delayStart,
+      };
+      logicResults.push(delayLogicResult);
+      if (cancelled) {
+        await formRef.update({"@status": "cancelled"});
+        return;
       }
+    }
 
       await formRef.update({"@status": "processing"});
 
@@ -375,6 +406,7 @@ export async function onFormSubmit(
 
       await formRef.update({"@status": "submitted"});
       console.info("Running Business Logics");
+      const businessLogicStart = performance.now();
       runStatus = await runBusinessLogics(txn.get, actionRef, action);
     });
 
@@ -712,9 +744,9 @@ async function distributeFn(
     }
     await distributeNonTransactionalLogicResults();
     if (errorMessage) {
-      await actionRef.update({status: "finished-with-error", message: errorMessage});
+      await actionRef.update({status: "finished-with-error", message: errorMessage, execTime: execTime});
     } else {
-      await actionRef.update({status: "finished"});
+      await actionRef.update({status: "finished", execTime: execTime});
     }
   });
 }

@@ -187,6 +187,7 @@ describe("onFormSubmit", () => {
   beforeEach(() => {
     jest.spyOn(indexUtils._mockable, "createMetricExecution").mockResolvedValue();
     jest.spyOn(_mockable, "createNowTimestamp").mockReturnValue(Timestamp.now());
+    jest.spyOn(indexutils._mockable, "createMetricExecution").mockResolvedValue();
     jest.spyOn(console, "log").mockImplementation();
     jest.spyOn(console, "warn").mockImplementation();
     parseEntityMock = jest.spyOn(paths, "parseEntity").mockReturnValue({
@@ -268,7 +269,10 @@ describe("onFormSubmit", () => {
 
     const event = createEvent(form, "service");
     await onFormSubmit(event);
-    expect(updateMock.mock.calls[0][0]).toEqual({status: "finished"});
+    expect(updateMock.mock.calls[0][0]).toEqual({
+      status: "finished",
+      execTime: expect.any(Number),
+    });
   });
 
   it("should return when there's no provided @actionType", async () => {
@@ -662,6 +666,7 @@ describe("onFormSubmit", () => {
     expect((docMock.update as jest.Mock).mock.calls[0][0]).toEqual({
       status: "finished-with-error",
       message: errorMessage,
+      execTime: expect.any(Number),
     });
 
     validateFormMock.mockReset();
@@ -1381,6 +1386,9 @@ describe("onFormSubmit", () => {
 
     expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenCalledTimes(5);
     expect(updateMock).toHaveBeenCalledTimes(1);
-    expect(updateMock.mock.calls[0][0]).toEqual({status: "finished"});
+    expect(updateMock.mock.calls[0][0]).toEqual({
+      status: "finished",
+      execTime: expect.any(Number),
+    });
   });
 });
