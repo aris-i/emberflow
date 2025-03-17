@@ -11,7 +11,7 @@ import {
   LogicResultDoc,
   ProjectConfig,
   SecurityResult,
-  ValidateFormResult, JournalEntry,
+  ValidateFormResult, JournalEntry, Action, RunBusinessLogicResult,
 } from "../types";
 import * as functions from "firebase-functions";
 import {dbStructure, Entity} from "../sample-custom/db-structure";
@@ -24,8 +24,9 @@ import CollectionReference = firestore.CollectionReference;
 import Timestamp = firestore.Timestamp;
 import Database = database.Database;
 import {expandConsolidateAndGroupByDstPath, groupDocsByTargetDocPath} from "../index-utils";
-import * as distribution from "../utils/distribution";
 import FieldValue = firestore.FieldValue;
+import * as indexUtils from "../index-utils";
+import * as distribution from "../utils/distribution";
 
 const projectConfig: ProjectConfig = {
   projectId: "your-project-id",
@@ -73,6 +74,9 @@ const transactionMock = {
   update: transactionUpdateMock,
   delete: jest.fn(),
 };
+
+let actionMock: Action;
+let actionRefMock: DocumentReference;
 
 jest.spyOn(admin, "firestore")
   .mockImplementation(() => {
@@ -181,6 +185,7 @@ describe("onFormSubmit", () => {
   };
 
   beforeEach(() => {
+    jest.spyOn(indexUtils._mockable, "createMetricExecution").mockResolvedValue();
     jest.spyOn(_mockable, "createNowTimestamp").mockReturnValue(Timestamp.now());
     jest.spyOn(console, "log").mockImplementation();
     jest.spyOn(console, "warn").mockImplementation();
@@ -514,7 +519,11 @@ describe("onFormSubmit", () => {
     } as any as DocumentReference);
 
     const runBusinessLogicsSpy =
-      jest.spyOn(indexutils, "runBusinessLogics").mockResolvedValue("cancel-then-retry");
+      jest.spyOn(indexutils, "runBusinessLogics").mockResolvedValue({
+        action: actionMock,
+        actionRef: actionRefMock,
+        result: "cancel-then-retry",
+      });
 
     const form = {
       "formData": JSON.stringify({
@@ -557,7 +566,7 @@ describe("onFormSubmit", () => {
 
     const errorMessage = "logic error message";
     const runBusinessLogicsMock = jest.spyOn(indexutils, "runBusinessLogics").mockImplementation(
-      async (txnGet, actionRef, action, distributeFn) => {
+      async (txnGet, actionRef, action) => {
         const logicResults: LogicResult[] = [
           {
             name: "testLogic",
@@ -567,8 +576,16 @@ describe("onFormSubmit", () => {
             documents: [],
           },
         ];
-        await distributeFn(actionRef, logicResults, 0);
-        return "done";
+        const result: RunBusinessLogicResult= {
+          result: "done",
+          action,
+          actionRef,
+          distributeFnParams: [{
+            logicResults,
+            page: 0,
+          }],
+        };
+        return result;
       },
     );
 
@@ -626,7 +643,6 @@ describe("onFormSubmit", () => {
       transactionGetMock,
       docMock,
       expectedAction,
-      expect.any(Function),
     );
 
     // form should still finish successfully
@@ -663,11 +679,21 @@ describe("onFormSubmit", () => {
     const consoleInfoSpy = jest.spyOn(console, "info").mockImplementation();
     const queueRunViewLogicsSpy = jest.spyOn(viewLogics, "queueRunViewLogics").mockResolvedValue();
     jest.spyOn(indexutils, "runBusinessLogics").mockImplementation(
-      async (txnGet, actionRef, action, distributeFn) => {
-        await distributeFn(actionRef, logicResults, 0);
-        return "done";
+      async (txnGet, actionRef, action) => {
+        return {
+          result: "done",
+          action,
+          actionRef,
+          distributeFnParams: [{
+            logicResults,
+            page: 0,
+          }],
+        };
       },
     );
+    const distributionMock = jest.spyOn(distribution, "queueForDistributionLater").mockImplementation(async ()=>{
+      console.log("distribute");
+    });
     let logicResults: LogicResult[] = [
       {
         name: "logic 1",
@@ -687,7 +713,6 @@ describe("onFormSubmit", () => {
       }),
       "@status": "submit",
     };
-
     const event = createEvent(form);
     await onFormSubmit(event);
     expect(consoleInfoSpy).toHaveBeenCalledWith("No journal entries to write");
@@ -938,8 +963,8 @@ describe("onFormSubmit", () => {
     expect(transactionUpdateMock).toHaveBeenNthCalledWith(2, docRef, {"@forDeletionLater": FieldValue.delete()});
     expect(transactionUpdateMock).toHaveBeenNthCalledWith(3, docRef, {"@forDeletionLater": FieldValue.delete()});
 
-    const errorMock = jest.spyOn(global, "Error")
-      .mockImplementation();
+    distributionMock.mockRestore();
+    const errorMock = jest.spyOn(global, "Error").mockImplementation();
     transactionGetMock.mockRestore();
     transactionSetMock.mockRestore();
     transactionUpdateMock.mockRestore();
@@ -981,7 +1006,11 @@ describe("onFormSubmit", () => {
         ],
       },
     ];
-    await onFormSubmit(event);
+    try {
+      await onFormSubmit(event);
+    } catch (e) {
+      console.log("Expect this error");
+    }
     expect(transactionGetMock).toHaveBeenCalledTimes(3);
     expect(transactionGetMock).toHaveBeenCalledWith(docRef);
     expect(transactionSetMock).not.toHaveBeenCalled();
@@ -989,7 +1018,7 @@ describe("onFormSubmit", () => {
     expect(transactionUpdateMock).toHaveBeenCalledWith(docRef, {"@forDeletionLater": true});
     expect(errorMock).toHaveBeenCalledTimes(1);
     expect(errorMock).toHaveBeenCalledWith("Account value cannot be negative");
-
+    errorMock.mockRestore();
     transactionGetMock.mockRestore();
     transactionSetMock.mockRestore();
     transactionUpdateMock.mockRestore();
@@ -1232,9 +1261,16 @@ describe("onFormSubmit", () => {
 
     const runBusinessLogicsSpy =
       jest.spyOn(indexutils, "runBusinessLogics").mockImplementation(
-        async (txnGet, actionRef, action, distributeFn) => {
-          await distributeFn(actionRef, logicResults, 0);
-          return "done";
+        async (txnGet, actionRef, action) => {
+          return {
+            action,
+            actionRef,
+            result: "done",
+            distributeFnParams: [{
+              logicResults: logicResults,
+              page: 0,
+            }],
+          };
         },
       );
 

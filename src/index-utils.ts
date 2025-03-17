@@ -1,7 +1,7 @@
 import {
   Action, ActionType, DistributeFn, LogicActionType, LogicConfig,
   LogicResult,
-  LogicResultDoc,
+  LogicResultDoc, RunBusinessLogicResult,
   SecurityFn,
   TxnGet,
   ValidateFormResult,
@@ -36,7 +36,6 @@ import Timestamp = firestore.Timestamp;
 export const _mockable = {
   getViewLogicsConfig: () => viewLogicConfigs,
   createNowTimestamp: () => admin.firestore.Timestamp.now(),
-  simulateSubmitForm,
   createMetricExecution,
 };
 
@@ -230,102 +229,6 @@ export async function delayFormSubmissionAndCheckIfCancelled(delay: number, form
   return cancelFormSubmission;
 }
 
-async function simulateSubmitForm(txnGet: TxnGet, logicResults: LogicResult[], action: Action,
-  distributeFn: DistributeFn) {
-  const forSimulateSubmitForm = logicResults
-    .map((result: LogicResult) => result.documents)
-    .flat()
-    .filter((doc: LogicResultDoc) => doc.action === "simulate-submit-form")
-    .map((doc: LogicResultDoc) => ({logicResultDoc: doc, retryCount: 0}));
-  console.debug("Simulating submit form: ", forSimulateSubmitForm.length);
-
-  const retryQueue = [];
-  const backoffTime = 1000; // Starting with 1 second
-  const maxRetryCount = 5;
-  let runCount = 1;
-  while (forSimulateSubmitForm.length > 0 || retryQueue.length > 0) {
-    if (forSimulateSubmitForm.length > 0) {
-      const forRunning = forSimulateSubmitForm.shift();
-      if (!forRunning) continue;
-      const {logicResultDoc, retryCount} = forRunning;
-      const {entity} = findMatchingDocPathRegex(logicResultDoc.dstPath);
-      if (!entity) {
-        console.warn(`No matching entity found for logic ${logicResultDoc.dstPath}. Skipping`);
-        continue;
-      }
-      const docId = logicResultDoc.dstPath.split("/").pop();
-      if (!docId) {
-        console.warn("docId should not be blank. Skipping");
-        continue;
-      }
-      if (!logicResultDoc.doc) {
-        console.warn("LogicResultDoc.doc should not be undefined. Skipping");
-        continue;
-      }
-      if (!logicResultDoc.doc["@actionType"]) {
-        console.warn("No @actionType found. Skipping");
-        continue;
-      }
-      const eventContext = {
-        id: action.eventContext.id + `-${runCount}`,
-        uid: action.eventContext.uid,
-        formId: action.eventContext.formId + `-${runCount}`,
-        docId,
-        docPath: logicResultDoc.dstPath,
-        entity,
-      };
-      let user;
-      const submitFormAs = logicResultDoc.doc["@submitFormAs"];
-      if (submitFormAs) {
-        user = (await db.collection("users").doc(submitFormAs).get()).data();
-        if (!user) {
-          console.warn(`User ${submitFormAs} not found. Skipping`);
-          continue;
-        }
-      }
-      const modifiedFields: DocumentData = {};
-      for (const key in logicResultDoc.doc) {
-        if (!key.startsWith("@")) {
-          modifiedFields[key] = logicResultDoc.doc[key];
-        }
-      }
-      const _action: Action = {
-        eventContext,
-        actionType: logicResultDoc.doc["@actionType"],
-        document: (await db.doc(logicResultDoc.dstPath).get()).data() || {},
-        modifiedFields: modifiedFields,
-        user: user || action.user,
-        status: "new",
-        timeCreated: _mockable.createNowTimestamp(),
-      };
-      const _actionRef = db.collection("@actions").doc(eventContext.formId);
-      await _actionRef.set(_action);
-
-      const status = await runBusinessLogics(txnGet, _actionRef, _action, distributeFn);
-      if (status === "cancel-then-retry") {
-        if (retryCount + 1 > maxRetryCount) {
-          console.warn(`Maximum retry count reached for logic ${logicResultDoc.dstPath}`);
-          continue;
-        } else {
-          retryQueue.unshift({logicResultDoc, retryCount: retryCount + 1, timeAdded: Date.now()});
-        }
-      }
-    }
-
-    const currentTime = Date.now();
-    for (let i = retryQueue.length - 1; i >= 0; i--) {
-      if (currentTime >= retryQueue[i].timeAdded + Math.pow(2, retryQueue[i].retryCount) * backoffTime) {
-        const {logicResultDoc, retryCount} = retryQueue.splice(i, 1)[0];
-        forSimulateSubmitForm.push({logicResultDoc, retryCount});
-      }
-    }
-
-    // Avoid tight looping
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    runCount++;
-  }
-}
-
 function getMatchingLogics(actionType: ActionType, modifiedFields: DocumentData,
   document: DocumentData, entity: string) {
   return logicConfigs.filter((logic) => {
@@ -379,9 +282,15 @@ async function runLogic(txnGet: TxnGet, action: Action, matchingLogics: LogicCon
   return "done";
 }
 
-async function distributeLogicResults(actionRef: FirebaseFirestore.DocumentReference<FirebaseFirestore.DocumentData>, distributeFn: (actionRef: FirebaseFirestore.DocumentReference, logicResults: LogicResult[], page: number) => Promise<void>, logicResults: LogicResult[], page: number) {
+export async function distributeLogicResults(
+  actionRef: FirebaseFirestore.DocumentReference<FirebaseFirestore.DocumentData>,
+  distributeFn: DistributeFn,
+  logicResults: LogicResult[],
+  page: number,
+  formRef: Reference,
+  docPath: string) {
   const start = performance.now();
-  await distributeFn(actionRef, logicResults, page);
+  await distributeFn(actionRef, logicResults, page, formRef, docPath);
   const end = performance.now();
   const execTime = end - start;
   const distributeFnLogicResult: LogicResult = {
@@ -397,15 +306,22 @@ export const runBusinessLogics = async (
   txnGet: TxnGet,
   actionRef: DocumentReference,
   action: Action,
-  distributeFn: DistributeFn): Promise<"done" | "cancel-then-retry" | "no-matching-logics"> => {
+): Promise<RunBusinessLogicResult> => {
   const {actionType, modifiedFields, document, eventContext: {entity}} = action;
 
   const matchingLogics = getMatchingLogics(actionType, modifiedFields, document, entity);
   console.debug("Matching logics:", matchingLogics.map((logic) => logic.name));
   if (matchingLogics.length === 0) {
     console.log("No matching logics found");
-    await distributeFn(actionRef, [], 0);
-    return "no-matching-logics";
+    return {
+      action,
+      actionRef,
+      result: "no-matching-logics",
+      distributeFnParams: [{
+        logicResults: [],
+        page: 0,
+      }],
+    };
   }
 
   const config = (await db.doc("@server/config").get()).data();
@@ -415,6 +331,8 @@ export const runBusinessLogics = async (
   const nextPageMarkers: (object|undefined)[] = Array(matchingLogics.length).fill(undefined);
   const sharedMap = new Map<string, any>();
   matchingLogics.reverse();
+
+  const forDistribution:{logicResults:LogicResult[], page:number}[] = [];
   while (matchingLogics.length > 0) {
     if (page > 0) {
       console.debug(`Page ${page} Remaining logics:`, matchingLogics.map((logic) => logic.name));
@@ -429,19 +347,21 @@ export const runBusinessLogics = async (
       logicResults
     );
     if (status === "cancel-then-retry") {
-      return "cancel-then-retry";
+      return {action, actionRef, result: "cancel-then-retry"};
     }
 
-    await distributeLogicResults(actionRef, distributeFn, logicResults, page++);
+    page++;
+    forDistribution.push({
+      logicResults,
+      page,
+    });
     if (page >= maxLogicResultPages) {
       console.warn(`Maximum number of logic result pages (${maxLogicResultPages}) reached`);
       break;
     }
-
-    await _mockable.simulateSubmitForm(txnGet, logicResults, action, distributeFn);
   }
 
-  return "done";
+  return {action, actionRef, result: "done", distributeFnParams: forDistribution};
 };
 
 export function groupDocsByTargetDocPath(docsByDstPath: Map<string, LogicResultDoc[]>, docPath: string) {

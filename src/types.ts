@@ -1,11 +1,12 @@
 import * as admin from "firebase-admin";
-import {firestore} from "firebase-admin";
+import {database, firestore} from "firebase-admin";
 import Timestamp = firestore.Timestamp;
 import DocumentData = firestore.DocumentData;
 import {DocumentReference} from "firebase-admin/lib/firestore";
 import Query = firestore.Query;
 import QuerySnapshot = firestore.QuerySnapshot;
 import DocumentSnapshot = firestore.DocumentSnapshot;
+import Reference = database.Reference;
 
 export type FirebaseAdmin = typeof admin;
 
@@ -156,4 +157,20 @@ export interface EventContext {
     entity: string;
 }
 
-export type DistributeFn = (actionRef: DocumentReference, logicResults: LogicResult[], page: number) => Promise<void>;
+export type DistributeFn = (
+    actionRef: DocumentReference,
+    logicResults: LogicResult[],
+    page: number,
+    formRef: Reference,
+    docPath: string,
+) => Promise<void>;
+
+export type RunBusinessLogicResult = {
+    action: Action,
+    actionRef: DocumentReference
+    result: "done" | "cancel-then-retry" | "no-matching-logics",
+    distributeFnParams?: {
+        logicResults: LogicResult[],
+        page: number,
+    }[],
+};
