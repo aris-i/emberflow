@@ -1,5 +1,5 @@
 import {
-  Action, ActionType, DistributeFn, LogicActionType, LogicConfig,
+  Action, ActionType, LogicActionType, LogicConfig,
   LogicResult,
   LogicResultDoc, RunBusinessLogicResult,
   SecurityFn,
@@ -280,26 +280,6 @@ async function runLogic(txnGet: TxnGet, action: Action, matchingLogics: LogicCon
     }
   }
   return "done";
-}
-
-export async function distributeLogicResults(
-  actionRef: FirebaseFirestore.DocumentReference<FirebaseFirestore.DocumentData>,
-  distributeFn: DistributeFn,
-  logicResults: LogicResult[],
-  page: number,
-  formRef: Reference,
-  docPath: string) {
-  const start = performance.now();
-  await distributeFn(actionRef, logicResults, page, formRef, docPath);
-  const end = performance.now();
-  const execTime = end - start;
-  const distributeFnLogicResult: LogicResult = {
-    name: "distributeFn",
-    status: "finished",
-    documents: [],
-    execTime: execTime,
-  };
-  await _mockable.createMetricExecution([...logicResults, distributeFnLogicResult]);
 }
 
 export const runBusinessLogics = async (

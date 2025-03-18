@@ -23,7 +23,7 @@ import {
   createMetricLogicDoc,
   delayFormSubmissionAndCheckIfCancelled,
   distribute,
-  distributeLater, distributeLogicResults,
+  distributeLater,
   expandConsolidateAndGroupByDstPath,
   getFormModifiedFields,
   getSecurityFn,
@@ -338,46 +338,46 @@ export async function onFormSubmit(
         user = {"@id": userId};
       }
 
-    console.info("Validating Security");
-    const securityFn = getSecurityFn(entity);
-    if (securityFn) {
-      const securityFnStart = performance.now();
-      const securityResult = await securityFn(entity, docPath, document,
-        actionType, formModifiedFields, user);
-      const securityFnEnd = performance.now();
-      const securityLogicResult: LogicResult = {
-        name: "securityFn",
-        status: "finished",
-        documents: [],
-        execTime: securityFnEnd - securityFnStart,
-      };
-      logicResults.push(securityLogicResult);
-      if (securityResult.status === "rejected") {
-        console.log(`Security check failed: ${securityResult.message}`);
-        await formRef.update({"@status": "security-error", "@messages": securityResult.message});
-        return;
+      console.info("Validating Security");
+      const securityFn = getSecurityFn(entity);
+      if (securityFn) {
+        const securityFnStart = performance.now();
+        const securityResult = await securityFn(entity, docPath, document,
+          actionType, formModifiedFields, user);
+        const securityFnEnd = performance.now();
+        const securityLogicResult: LogicResult = {
+          name: "securityFn",
+          status: "finished",
+          documents: [],
+          execTime: securityFnEnd - securityFnStart,
+        };
+        logicResults.push(securityLogicResult);
+        if (securityResult.status === "rejected") {
+          console.log(`Security check failed: ${securityResult.message}`);
+          await formRef.update({"@status": "security-error", "@messages": securityResult.message});
+          return;
+        }
       }
-    }
 
-    // Check for delay
-    console.info("Checking for delay");
-    const delay = form["@delay"];
-    if (delay) {
-      const delayStart = performance.now();
-      const cancelled = await delayFormSubmissionAndCheckIfCancelled(delay, formRef);
-      const delayEnd = performance.now();
-      const delayLogicResult: LogicResult = {
-        name: "delayFormSubmission",
-        status: "finished",
-        documents: [],
-        execTime: delayEnd - delayStart,
-      };
-      logicResults.push(delayLogicResult);
-      if (cancelled) {
-        await formRef.update({"@status": "cancelled"});
-        return;
+      // Check for delay
+      console.info("Checking for delay");
+      const delay = form["@delay"];
+      if (delay) {
+        const delayStart = performance.now();
+        const cancelled = await delayFormSubmissionAndCheckIfCancelled(delay, formRef);
+        const delayEnd = performance.now();
+        const delayLogicResult: LogicResult = {
+          name: "delayFormSubmission",
+          status: "finished",
+          documents: [],
+          execTime: delayEnd - delayStart,
+        };
+        logicResults.push(delayLogicResult);
+        if (cancelled) {
+          await formRef.update({"@status": "cancelled"});
+          return;
+        }
       }
-    }
 
       await formRef.update({"@status": "processing"});
 
@@ -408,10 +408,28 @@ export async function onFormSubmit(
       console.info("Running Business Logics");
       const businessLogicStart = performance.now();
       runStatus = await runBusinessLogics(txn.get, actionRef, action);
+      const businessLogicEnd = performance.now();
+      const businessLogicLogicResult: LogicResult = {
+        name: "runBusinessLogics",
+        status: "finished",
+        documents: [],
+        execTime: businessLogicEnd - businessLogicStart,
+      };
+      logicResults.push(businessLogicLogicResult);
     });
 
     if (!runStatus) {
       await formRef.update({status: "finished-with-error", message: "No result from business logics"});
+      const end = performance.now();
+      const execTime = end - start;
+      const onFormSubmitLogicResult: LogicResult = {
+        name: "onFormSubmit",
+        status: "finished",
+        documents: [],
+        execTime,
+      };
+      logicResults.push(onFormSubmitLogicResult);
+      await indexUtilsMockable.createMetricExecution(logicResults);
       return;
     }
     await actionRef.set(runStatus.action);
@@ -419,38 +437,95 @@ export async function onFormSubmit(
     if (runStatus.result === "cancel-then-retry") {
       await formRef.update({"@status": "cancelled", "@messages": "cancel-then-retry received " +
             "from business logic"});
+      const end = performance.now();
+      const execTime = end - start;
+      const onFormSubmitLogicResult: LogicResult = {
+        name: "onFormSubmit",
+        status: "finished",
+        documents: [],
+        execTime,
+      };
+      logicResults.push(onFormSubmitLogicResult);
+      await indexUtilsMockable.createMetricExecution(logicResults);
       return;
     }
-
 
     if (runStatus.result == "no-matching-logics") {
       await distributeFn(runStatus.actionRef, [], 0, formRef, docPath);
       await actionRef.update({status: "finished"});
       console.info("Finished");
-    }
-
-    if (!runStatus.distributeFnParams) {
+      const end = performance.now();
+      const execTime = end - start;
+      const onFormSubmitLogicResult: LogicResult = {
+        name: "onFormSubmit",
+        status: "finished",
+        documents: [],
+        execTime,
+      };
+      logicResults.push(onFormSubmitLogicResult);
+      await indexUtilsMockable.createMetricExecution(logicResults);
       return;
     }
 
+    if (!runStatus.distributeFnParams) {
+      const end = performance.now();
+      const execTime = end - start;
+      const onFormSubmitLogicResult: LogicResult = {
+        name: "onFormSubmit",
+        status: "finished",
+        documents: [],
+        execTime,
+      };
+      logicResults.push(onFormSubmitLogicResult);
+      await indexUtilsMockable.createMetricExecution(logicResults);
+      return;
+    }
+
+    const distributeLogicResultsStart = performance.now();
     const distributeFnParams: {logicResults: LogicResult[], page: number}[] = runStatus.distributeFnParams;
 
     for (let i = 0; i < distributeFnParams.length; i++) {
-      await distributeLogicResults(
+      await distributeFn(
         actionRef,
-        distributeFn,
         distributeFnParams[i].logicResults,
         distributeFnParams[i].page,
         formRef,
-        docPath,
-      );
+        docPath);
     }
+    const distributeLogicResultsEnd = performance.now();
+    const distributeLogicResultPerf: LogicResult = {
+      name: "distributeLogicResults",
+      status: "finished",
+      documents: [],
+      execTime: distributeLogicResultsEnd - distributeLogicResultsStart,
+    };
+    logicResults.push(distributeLogicResultPerf);
+
+    const end = performance.now();
+    const execTime = end - start;
+    const onFormSubmitLogicResult: LogicResult = {
+      name: "onFormSubmit",
+      status: "finished",
+      documents: [],
+      execTime,
+    };
+    logicResults.push(onFormSubmitLogicResult);
 
     console.info("Finished");
   } catch (error) {
     console.error("Error in onFormSubmit", error);
-    await formRef.update({"@status": "error", "@messages": error});
+    const end = performance.now();
+    const execTime = end - start;
+    const onFormSubmitLogicResult: LogicResult = {
+      name: "onFormSubmit",
+      status: "finished",
+      documents: [],
+      execTime,
+    };
+    logicResults.push(onFormSubmitLogicResult);
+    await formRef.update({"@status": "error", "@messages": error, "execTime": execTime});
   }
+  await indexUtilsMockable.createMetricExecution(logicResults);
 }
 
 async function distributeFn(
@@ -459,6 +534,9 @@ async function distributeFn(
   page: number,
   formRef: Reference,
   docPath: string) {
+  const start = performance.now();
+
+  let errorMessage="";
   await db.runTransaction(async (txn) => {
     async function saveLogicResults() {
       for (let i = 0; i < logicResults.length; i++) {
@@ -474,7 +552,6 @@ async function distributeFn(
     }
     await saveLogicResults();
 
-    let errorMessage = "";
     function updateErrorMessage() {
       const errorLogicResults = logicResults.filter((result) => result.status === "error");
       if (errorLogicResults.length > 0) {
@@ -743,12 +820,15 @@ async function distributeFn(
       await distributeLater(lowPriorityOtherDocsByDocPath);
     }
     await distributeNonTransactionalLogicResults();
-    if (errorMessage) {
-      await actionRef.update({status: "finished-with-error", message: errorMessage, execTime: execTime});
-    } else {
-      await actionRef.update({status: "finished", execTime: execTime});
-    }
   });
+  const end = performance.now();
+  const execTime = end - start;
+
+  if (errorMessage) {
+    await actionRef.update({status: "finished-with-error", message: errorMessage, execTime: execTime});
+  } else {
+    await actionRef.update({status: "finished", execTime: execTime});
+  }
 }
 
 const onUserRegister = async (user: UserRecord) => {
