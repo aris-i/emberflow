@@ -37,10 +37,6 @@ export async function onMessageSubmitFormQueue(event: CloudEvent<MessagePublishe
   const status = formData["@status"];
   const messages = formData["@messages"];
   console.debug("Form submission status:", status, messages);
-  if (status === "cancelled" && messages.startsWith("cancel-then-retry")) {
-    console.log("Throwing error so that the message is retried");
-    throw new Error("cancel-then-retry");
-  }
 
   await pubsubUtils.trackProcessedIds(SUBMIT_FORM_TOPIC_NAME, event.id);
   return "Processed form data";

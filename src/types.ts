@@ -157,6 +157,6 @@ export interface EventContext {
 }
 
 export type RunBusinessLogicStatus = {
-    status: "running" | "done" | "cancel-then-retry" | "no-matching-logics",
+    status: "running" | "done" | "no-matching-logics",
     logicResults: LogicResult[],
 };
