@@ -319,6 +319,7 @@ export async function onFormSubmit(
 
     let runStatus:RunBusinessLogicStatus = {status: "running", logicResults: []};
 
+    let errorMessage= "";
     const actionRef = _mockable.initActionRef(formId);
     await db.runTransaction(async (txn) => {
       const docRef = db.doc(docPath);
@@ -435,22 +436,9 @@ export async function onFormSubmit(
       if (runStatus.status === "cancel-then-retry") {
         await formRef.update({"@status": "cancelled", "@messages": "cancel-then-retry received " +
               "from business logic"});
-        const end = performance.now();
-        const execTime = end - start;
-        const onFormSubmitLogicResult: LogicResult = {
-          name: "onFormSubmit",
-          status: "finished",
-          documents: [],
-          execTime,
-        };
-        logicResults.push(onFormSubmitLogicResult);
-        await indexUtilsMockable.createMetricExecution(logicResults);
         return;
       }
 
-      const distributeLogicResultsStart = performance.now();
-
-      let errorMessage= "";
       function updateErrorMessage() {
         const errorLogicResults = runStatus.logicResults.filter((result) => result.status === "error");
         if (errorLogicResults.length > 0) {
@@ -459,8 +447,8 @@ export async function onFormSubmit(
       }
       updateErrorMessage();
 
+      const distributeLogicResultsStart = performance.now();
       await distributeFnTransactional(txn, runStatus.logicResults);
-      await formRef.update({"@status": "finished"});
       const distributeLogicResultsEnd = performance.now();
       const distributeLogicResultPerf: LogicResult = {
         name: "distributeLogicResults",
@@ -469,16 +457,11 @@ export async function onFormSubmit(
         execTime: distributeLogicResultsEnd - distributeLogicResultsStart,
       };
       logicResults.push(distributeLogicResultPerf);
+    });
 
+    if (runStatus.status === "cancel-then-retry") {
       const end = performance.now();
       const execTime = end - start;
-
-      if (errorMessage) {
-        await actionRef.update({status: "finished-with-error", message: errorMessage, execTime: execTime});
-      } else {
-        await actionRef.update({status: "finished", execTime: execTime});
-      }
-
       const onFormSubmitLogicResult: LogicResult = {
         name: "onFormSubmit",
         status: "finished",
@@ -486,12 +469,32 @@ export async function onFormSubmit(
         execTime,
       };
       logicResults.push(onFormSubmitLogicResult);
-
       await indexUtilsMockable.createMetricExecution(logicResults);
-      console.info("Finished");
-    });
+      return;
+    }
 
     await distributeNonTransactionalLogicResults(runStatus.logicResults, docPath);
+    await formRef.update({"@status": "finished"});
+
+    const end = performance.now();
+    const execTime = end - start;
+
+    if (errorMessage) {
+      await actionRef.update({status: "finished-with-error", message: errorMessage, execTime: execTime});
+    } else {
+      await actionRef.update({status: "finished", execTime: execTime});
+    }
+
+    const onFormSubmitLogicResult: LogicResult = {
+      name: "onFormSubmit",
+      status: "finished",
+      documents: [],
+      execTime,
+    };
+    logicResults.push(onFormSubmitLogicResult);
+
+    await indexUtilsMockable.createMetricExecution(logicResults);
+    console.info("Finished");
   } catch (error) {
     console.error("Error in onFormSubmit", error);
     const end = performance.now();

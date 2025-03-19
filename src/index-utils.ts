@@ -1,5 +1,5 @@
 import {
-  Action, ActionType, LogicActionType, LogicConfig,
+  Action, ActionType, LogicActionType,
   LogicResult,
   LogicResultDoc, RunBusinessLogicStatus,
   SecurityFn,
@@ -242,37 +242,6 @@ function getMatchingLogics(actionType: ActionType, modifiedFields: DocumentData,
   });
 }
 
-async function runLogic(txnGet: TxnGet, action: Action, matchingLogics: LogicConfig[], sharedMap: Map<string, any>,
-  logicResults: LogicResult[]) {
-  for (let i = 0; i < matchingLogics.length; i++) {
-    const start = performance.now();
-    const logic = matchingLogics[i];
-    console.debug("Running logic:", logic.name);
-    try {
-      const result = await logic.logicFn(txnGet, action, sharedMap );
-      const end = performance.now();
-      const execTime = end - start;
-      const {status} = result;
-      logicResults.push({...result, execTime, timeFinished: admin.firestore.Timestamp.now()});
-      if (status === "cancel-then-retry") {
-        return "cancel-then-retry";
-      }
-    } catch (e) {
-      const end = performance.now();
-      const execTime = end - start;
-      logicResults.push({
-        name: logic.name,
-        status: "error",
-        documents: [],
-        execTime,
-        message: (e as Error).message,
-        timeFinished: admin.firestore.Timestamp.now(),
-      });
-    }
-  }
-  return "done";
-}
-
 export const runBusinessLogics = async (
   txnGet: TxnGet,
   action: Action,
@@ -289,15 +258,30 @@ export const runBusinessLogics = async (
   const sharedMap = new Map<string, any>();
 
   const logicResults: LogicResult[] = [];
-  const status = await runLogic(
-    txnGet,
-    action,
-    matchingLogics,
-    sharedMap,
-    logicResults
-  );
-  if (status === "cancel-then-retry") {
-    return {status: "cancel-then-retry", logicResults: []};
+  for (let i = 0; i < matchingLogics.length; i++) {
+    const start = performance.now();
+    const logic = matchingLogics[i];
+    console.debug("Running logic:", logic.name);
+    try {
+      const result = await logic.logicFn(txnGet, action, sharedMap );
+      const end = performance.now();
+      const execTime = end - start;
+      logicResults.push({...result, execTime, timeFinished: admin.firestore.Timestamp.now()});
+      if (result.status === "cancel-then-retry") {
+        return {status: "cancel-then-retry", logicResults: []};
+      }
+    } catch (e) {
+      const end = performance.now();
+      const execTime = end - start;
+      logicResults.push({
+        name: logic.name,
+        status: "error",
+        documents: [],
+        execTime,
+        message: (e as Error).message,
+        timeFinished: admin.firestore.Timestamp.now(),
+      });
+    }
   }
 
   return {status: "done", logicResults};
