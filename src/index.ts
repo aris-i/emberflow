@@ -433,12 +433,6 @@ export async function onFormSubmit(
       }
       await saveLogicResults();
 
-      if (runStatus.status === "cancel-then-retry") {
-        await formRef.update({"@status": "cancelled", "@messages": "cancel-then-retry received " +
-              "from business logic"});
-        return;
-      }
-
       function updateErrorMessage() {
         const errorLogicResults = runStatus.logicResults.filter((result) => result.status === "error");
         if (errorLogicResults.length > 0) {
@@ -447,33 +441,29 @@ export async function onFormSubmit(
       }
       updateErrorMessage();
 
-      const distributeLogicResultsStart = performance.now();
+      const distributeTransactionalLogicResultsStart = performance.now();
       await distributeFnTransactional(txn, runStatus.logicResults);
-      const distributeLogicResultsEnd = performance.now();
-      const distributeLogicResultPerf: LogicResult = {
-        name: "distributeLogicResults",
+      const distributeTransactionalLogicResultsEnd = performance.now();
+      const distributeTransactionalLogicResults: LogicResult = {
+        name: "distributeTransactionalLogicResults",
         status: "finished",
         documents: [],
-        execTime: distributeLogicResultsEnd - distributeLogicResultsStart,
+        execTime: distributeTransactionalLogicResultsEnd - distributeTransactionalLogicResultsStart,
       };
-      logicResults.push(distributeLogicResultPerf);
+      logicResults.push(distributeTransactionalLogicResults);
     });
 
-    if (runStatus.status === "cancel-then-retry") {
-      const end = performance.now();
-      const execTime = end - start;
-      const onFormSubmitLogicResult: LogicResult = {
-        name: "onFormSubmit",
-        status: "finished",
-        documents: [],
-        execTime,
-      };
-      logicResults.push(onFormSubmitLogicResult);
-      await indexUtilsMockable.createMetricExecution(logicResults);
-      return;
-    }
-
+    const distributeNonTransactionalLogicResultsStart = performance.now();
     await distributeNonTransactionalLogicResults(runStatus.logicResults, docPath);
+    const distributeNonTransactionalLogicResultsEnd = performance.now();
+    const distributeNonTransactionalPerfLogicResults: LogicResult = {
+      name: "distributeNonTransactionalLogicResults",
+      status: "finished",
+      documents: [],
+      execTime: distributeNonTransactionalLogicResultsEnd - distributeNonTransactionalLogicResultsStart,
+    };
+    logicResults.push(distributeNonTransactionalPerfLogicResults);
+
     await formRef.update({"@status": "finished"});
 
     const end = performance.now();

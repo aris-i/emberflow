@@ -267,9 +267,6 @@ export const runBusinessLogics = async (
       const end = performance.now();
       const execTime = end - start;
       logicResults.push({...result, execTime, timeFinished: admin.firestore.Timestamp.now()});
-      if (result.status === "cancel-then-retry") {
-        return {status: "cancel-then-retry", logicResults: []};
-      }
     } catch (e) {
       const end = performance.now();
       const execTime = end - start;

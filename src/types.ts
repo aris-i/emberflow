@@ -70,7 +70,7 @@ export interface InstructionsMessage{
 
 export interface LogicResult{
     name: string;
-    status: "finished" | "error" | "cancel-then-retry";
+    status: "finished" | "error";
     nextPage?: AnyObject;
     message?: string;
     execTime?: number;

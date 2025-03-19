@@ -502,58 +502,6 @@ describe("onFormSubmit", () => {
     initActionRefMock.mockReset();
   });
 
-  it("should set form @status to 'cancelled' if there is a cancel-then-retry logic result status", async () => {
-    const delayFormSubmissionAndCheckIfCancelledMock =
-      jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(false);
-
-    const setActionMock = jest.fn().mockResolvedValue({
-      update: jest.fn(),
-    });
-
-    const updateActionMock = jest.fn().mockResolvedValue({
-      update: jest.fn(),
-    });
-
-    const initActionRefMock = jest.spyOn(_mockable, "initActionRef").mockReturnValue({
-      set: setActionMock,
-      update: updateActionMock,
-    } as any as DocumentReference);
-
-    const runBusinessLogicsSpy =
-      jest.spyOn(indexutils, "runBusinessLogics").mockResolvedValue({
-        status: "cancel-then-retry",
-        logicResults: [],
-      });
-
-    const form = {
-      "formData": JSON.stringify({
-        "@actionType": "create",
-        "name": "test",
-        "@docPath": "@internal/forDistribution/distributions/0",
-      }),
-      "@status": "submit",
-    };
-
-    const event = createEvent(form);
-    await onFormSubmit(event);
-
-    expect(refMock.update).toHaveBeenCalledWith({"@status": "processing"});
-    expect(refMock.update).toHaveBeenCalledWith({"@status": "submitted"});
-    expect(refMock.update).toHaveBeenCalledWith({
-      "@status": "cancelled",
-      "@messages": "cancel-then-retry received from business logic",
-    });
-
-    expect(setActionMock).toHaveBeenCalled();
-    expect(updateActionMock).not.toHaveBeenCalled();
-
-    delayFormSubmissionAndCheckIfCancelledMock.mockReset();
-    setActionMock.mockReset();
-    updateActionMock.mockReset();
-    initActionRefMock.mockReset();
-    runBusinessLogicsSpy.mockReset();
-  });
-
   it("should set action-status to 'finished-with-error' if there are logic error results", async () => {
     const validateFormMock = jest.spyOn(indexutils, "validateForm").mockResolvedValue([false, {}]);
     const getFormModifiedFieldsMock =

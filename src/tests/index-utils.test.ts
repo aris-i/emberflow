@@ -843,47 +843,6 @@ describe("runBusinessLogics", () => {
     });
   });
 
-  it("should return when a logic returns a \"cancel-then-retry\" status", async () => {
-    logicFn2.mockResolvedValue({status: "cancel-then-retry"});
-    logicFn3.mockResolvedValue({status: "finished"});
-    const logics: LogicConfig[] = [
-      {
-        name: "Logic 1",
-        actionTypes: ["create"],
-        modifiedFields: ["field1"],
-        entities: ["user"],
-        logicFn: logicFn1,
-      },
-      {
-        name: "Logic 2",
-        actionTypes: "all",
-        modifiedFields: ["field2"],
-        entities: ["user"],
-        logicFn: logicFn2,
-      },
-      {
-        name: "Logic 3",
-        actionTypes: "all",
-        modifiedFields: ["field1"],
-        entities: ["user"],
-        logicFn: logicFn3,
-      },
-    ];
-    initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
-    const runStatus = await indexUtils.runBusinessLogics(txnGet, action);
-
-    expect(logicFn1).toHaveBeenCalledTimes(1);
-    expect(logicFn1).toHaveBeenCalledWith(txnGet, action, new Map());
-    expect(logicFn2).toHaveBeenCalledTimes(1);
-    expect(logicFn2).toHaveBeenCalledWith(txnGet, action, new Map());
-    expect(logicFn3).not.toHaveBeenCalled();
-    expect(distributeFn).not.toHaveBeenCalled();
-    expect(runStatus).toEqual({
-      status: "cancel-then-retry",
-      logicResults: [],
-    });
-  });
-
   it("should pass data from previous logic to the next logic via shared map",
     async () => {
       const expectedSharedMap = new Map<string, any>();
