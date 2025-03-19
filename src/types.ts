@@ -1,12 +1,11 @@
 import * as admin from "firebase-admin";
-import {database, firestore} from "firebase-admin";
+import {firestore} from "firebase-admin";
 import Timestamp = firestore.Timestamp;
 import DocumentData = firestore.DocumentData;
 import {DocumentReference} from "firebase-admin/lib/firestore";
 import Query = firestore.Query;
 import QuerySnapshot = firestore.QuerySnapshot;
 import DocumentSnapshot = firestore.DocumentSnapshot;
-import Reference = database.Reference;
 
 export type FirebaseAdmin = typeof admin;
 
@@ -71,7 +70,7 @@ export interface InstructionsMessage{
 
 export interface LogicResult{
     name: string;
-    status: "finished" | "error" | "partial-result" | "cancel-then-retry";
+    status: "finished" | "error" | "cancel-then-retry";
     nextPage?: AnyObject;
     message?: string;
     execTime?: number;
@@ -79,7 +78,7 @@ export interface LogicResult{
     documents: LogicResultDoc[];
     transactional?: boolean;
 }
-export type LogicFn = (txnGet: TxnGet, action: Action, sharedMap: Map<string, any>, nextPage?: AnyObject) => Promise<LogicResult>;
+export type LogicFn = (txnGet: TxnGet, action: Action, sharedMap: Map<string, any>) => Promise<LogicResult>;
 export type LogicActionType = "create" | "update" | "delete";
 export type LogicConfigActionTypes = LogicActionType[] | "all";
 export type LogicConfigEntities = string[] | "all";
@@ -157,20 +156,7 @@ export interface EventContext {
     entity: string;
 }
 
-export type DistributeFn = (
-    actionRef: DocumentReference,
+export type RunBusinessLogicStatus = {
+    status: "running" | "done" | "cancel-then-retry" | "no-matching-logics",
     logicResults: LogicResult[],
-    page: number,
-    formRef: Reference,
-    docPath: string,
-) => Promise<void>;
-
-export type RunBusinessLogicResult = {
-    action: Action,
-    actionRef: DocumentReference
-    result: "done" | "cancel-then-retry" | "no-matching-logics",
-    distributeFnParams?: {
-        logicResults: LogicResult[],
-        page: number,
-    }[],
 };

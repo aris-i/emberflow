@@ -483,7 +483,7 @@ describe("distribute", () => {
       } as LogicResultDoc],
     ]]);
     initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, []);
-    await indexUtils.distribute(userDocsByDstPath);
+    await indexUtils.distributeFnNonTransactional(userDocsByDstPath);
 
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
@@ -513,7 +513,7 @@ describe("distribute", () => {
         dstPath: "/users/test-user-id/documents/test-doc-id",
       } as LogicResultDoc],
     ]]);
-    await indexUtils.distribute(userDocsByDstPath);
+    await indexUtils.distributeFnNonTransactional(userDocsByDstPath);
 
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
@@ -562,6 +562,10 @@ describe("distributeLater", () => {
 });
 
 describe("validateForm", () => {
+  beforeEach(() => {
+    initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, []);
+  });
+
   it("returns an object with empty validationResult when document is valid", async () => {
     const entity = "user";
     const document = {
@@ -780,84 +784,26 @@ describe("runBusinessLogics", () => {
       },
     ];
     initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
-    const runStatus = await indexUtils.runBusinessLogics(txnGet, actionRef, action);
+    const runStatus = await indexUtils.runBusinessLogics(txnGet, action);
 
-    expect(logicFn1).toHaveBeenCalledWith(txnGet, action, new Map(), undefined);
-    expect(logicFn2).toHaveBeenCalledWith(txnGet, action, new Map(), undefined);
+    expect(logicFn1).toHaveBeenCalledWith(txnGet, action, new Map());
+    expect(logicFn2).toHaveBeenCalledWith(txnGet, action, new Map());
     expect(logicFn3).not.toHaveBeenCalled();
     expect(logicFn4).not.toHaveBeenCalled();
     expect(logicFn5).not.toHaveBeenCalled();
     expect(logicFn6).not.toHaveBeenCalled();
     expect(runStatus).toEqual({
-      action,
-      actionRef,
-      result: "done",
-      distributeFnParams: [{
-        logicResults: [{
-          status: "finished",
-          execTime: expect.any(Number),
-          timeFinished: expect.any(Timestamp),
-        }, {
-          status: "finished",
-          execTime: expect.any(Number),
-          timeFinished: expect.any(Timestamp),
-        }],
-        page: 1,
-      }],
-    });
-  });
-
-  it("should recall logic when it returns \"partial-result\" status", async () => {
-    logicFn2.mockResolvedValueOnce({status: "partial-result", nextPage: {}});
-    const logics: LogicConfig[] = [
-      {
-        name: "Logic 1",
-        actionTypes: ["create"],
-        modifiedFields: ["field1"],
-        entities: ["user"],
-        logicFn: logicFn1,
-      },
-      {
-        name: "Logic 2",
-        actionTypes: "all",
-        modifiedFields: ["field2"],
-        entities: ["user"],
-        logicFn: logicFn2,
-      },
-    ];
-    initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
-    const runStatus = await indexUtils.runBusinessLogics(txnGet, actionRef, action);
-
-    expect(logicFn1).toHaveBeenCalledWith(txnGet, action, new Map(), undefined);
-    expect(logicFn2).toHaveBeenCalledWith(txnGet, action, new Map(), undefined);
-
-    expect(runStatus).toEqual({
-      action,
-      actionRef,
-      result: "done",
-      distributeFnParams: [{
-        logicResults: [{
-          status: "finished",
-          execTime: expect.any(Number),
-          timeFinished: expect.any(Timestamp),
-        }, {
-          status: "partial-result",
-          nextPage: {},
-          execTime: expect.any(Number),
-          timeFinished: expect.any(Timestamp),
-        }],
-        page: 1,
+      status: "done",
+      logicResults: [{
+        status: "finished",
+        execTime: expect.any(Number),
+        timeFinished: expect.any(Timestamp),
       }, {
-        logicResults: [{
-          status: "finished",
-          execTime: expect.any(Number),
-          timeFinished: expect.any(Timestamp),
-        }],
-        page: 2,
+        status: "finished",
+        execTime: expect.any(Number),
+        timeFinished: expect.any(Timestamp),
       }],
     });
-
-    expect(logicFn2).toHaveBeenCalledWith(txnGet, action, new Map(), {});
   });
 
   it("should not call any logic when no matching logics are found but distributeFn should still be " +
@@ -886,86 +832,16 @@ describe("runBusinessLogics", () => {
       },
     ];
     initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
-    const runStatus = await indexUtils.runBusinessLogics(txnGet, actionRef, action);
+    const runStatus = await indexUtils.runBusinessLogics(txnGet, action);
 
     expect(logicFn1).not.toHaveBeenCalled();
     expect(logicFn2).not.toHaveBeenCalled();
     expect(logicFn3).not.toHaveBeenCalled();
     expect(runStatus).toEqual({
-      action,
-      actionRef,
-      result: "no-matching-logics",
-      distributeFnParams: [
-        {
-          logicResults: [],
-          page: 0,
-        },
-      ],
+      status: "no-matching-logics",
+      logicResults: [],
     });
   });
-
-  it("should recall logic when it returns \"partial-result\" status indefinitely up to the config maxLogicResultPages",
-    async () => {
-      logicFn2.mockResolvedValue({status: "partial-result", nextPage: {}});
-      const logics: LogicConfig[] = [
-        {
-          name: "Logic 1",
-          actionTypes: ["create"],
-          modifiedFields: ["field1"],
-          entities: ["user"],
-          logicFn: logicFn1,
-        },
-        {
-          name: "Logic 2",
-          actionTypes: "all",
-          modifiedFields: ["field2"],
-          entities: ["user"],
-          logicFn: logicFn2,
-        },
-      ];
-      initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
-      const runStatus = await indexUtils.runBusinessLogics(txnGet, actionRef, action);
-
-      expect(logicFn1).toHaveBeenCalledWith(txnGet, action, new Map(), undefined);
-      expect(logicFn2).toHaveBeenCalledWith(txnGet, action, new Map(), undefined);
-      expect(logicFn1).toHaveBeenCalledTimes(1);
-      expect(logicFn2).toHaveBeenCalledTimes(10);
-      const distributeFnParams = runStatus.distributeFnParams!;
-      const distributeFnParamsLength = runStatus.distributeFnParams?.length || 0;
-
-      expect(distributeFnParamsLength).toEqual(10);
-
-      expect(distributeFnParams[0].logicResults[0].status).toEqual("finished");
-      expect(distributeFnParams[0].logicResults[1].status).toEqual("partial-result");
-      expect(distributeFnParams[0].page).toEqual(1);
-
-      expect(distributeFnParams[1].logicResults[0].status).toEqual("partial-result");
-      expect(distributeFnParams[1].page).toEqual(2);
-
-      expect(distributeFnParams[2].logicResults[0].status).toEqual("partial-result");
-      expect(distributeFnParams[2].page).toEqual(3);
-
-      expect(distributeFnParams[3].logicResults[0].status).toEqual("partial-result");
-      expect(distributeFnParams[3].page).toEqual(4);
-
-      expect(distributeFnParams[4].logicResults[0].status).toEqual("partial-result");
-      expect(distributeFnParams[4].page).toEqual(5);
-
-      expect(distributeFnParams[5].logicResults[0].status).toEqual("partial-result");
-      expect(distributeFnParams[5].page).toEqual(6);
-
-      expect(distributeFnParams[6].logicResults[0].status).toEqual("partial-result");
-      expect(distributeFnParams[6].page).toEqual(7);
-
-      expect(distributeFnParams[7].logicResults[0].status).toEqual("partial-result");
-      expect(distributeFnParams[7].page).toEqual(8);
-
-      expect(distributeFnParams[8].logicResults[0].status).toEqual("partial-result");
-      expect(distributeFnParams[8].page).toEqual(9);
-
-      expect(distributeFnParams[9].logicResults[0].status).toEqual("partial-result");
-      expect(distributeFnParams[9].page).toEqual(10);
-    });
 
   it("should return when a logic returns a \"cancel-then-retry\" status", async () => {
     logicFn2.mockResolvedValue({status: "cancel-then-retry"});
@@ -994,19 +870,17 @@ describe("runBusinessLogics", () => {
       },
     ];
     initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
-    const runStatus = await indexUtils.runBusinessLogics(txnGet, actionRef, action);
+    const runStatus = await indexUtils.runBusinessLogics(txnGet, action);
 
     expect(logicFn1).toHaveBeenCalledTimes(1);
-    expect(logicFn1).toHaveBeenCalledWith(txnGet, action, new Map(), undefined);
+    expect(logicFn1).toHaveBeenCalledWith(txnGet, action, new Map());
     expect(logicFn2).toHaveBeenCalledTimes(1);
-    expect(logicFn2).toHaveBeenCalledWith(txnGet, action, new Map(), undefined);
+    expect(logicFn2).toHaveBeenCalledWith(txnGet, action, new Map());
     expect(logicFn3).not.toHaveBeenCalled();
     expect(distributeFn).not.toHaveBeenCalled();
-    expect(runStatus.distributeFnParams).toEqual(undefined);
     expect(runStatus).toEqual({
-      action,
-      actionRef,
-      result: "cancel-then-retry",
+      status: "cancel-then-retry",
+      logicResults: [],
     });
   });
 
@@ -1053,21 +927,19 @@ describe("runBusinessLogics", () => {
         },
       ];
       initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
-      const runStatus = await indexUtils.runBusinessLogics(txnGet, actionRef, action);
+      const runStatus = await indexUtils.runBusinessLogics(txnGet, action);
 
-      expect(logicFn1).toHaveBeenCalledWith(txnGet, action, expectedSharedMap, undefined);
-      expect(logicFn2).toHaveBeenCalledWith(txnGet, action, expectedSharedMap, undefined);
-      expect(logicFn3).toHaveBeenCalledWith(txnGet, action, expectedSharedMap, undefined);
+      expect(logicFn1).toHaveBeenCalledWith(txnGet, action, expectedSharedMap);
+      expect(logicFn2).toHaveBeenCalledWith(txnGet, action, expectedSharedMap);
+      expect(logicFn3).toHaveBeenCalledWith(txnGet, action, expectedSharedMap);
 
-      expect(runStatus.result).toEqual("done");
-      expect(runStatus.action).toEqual(action);
-      expect(runStatus.actionRef).toEqual(actionRef);
-      expect(runStatus.distributeFnParams!.length).toEqual(1);
-      expect(runStatus.distributeFnParams![0].logicResults.length).toEqual(3);
-      expect(runStatus.distributeFnParams![0].page).toEqual(1);
-      expect(runStatus.distributeFnParams![0].logicResults[0].status).toEqual("finished");
-      expect(runStatus.distributeFnParams![0].logicResults[1].status).toEqual("finished");
-      expect(runStatus.distributeFnParams![0].logicResults[2].status).toEqual("finished");
+      expect(runStatus.status).toEqual("done");
+
+      const logicResults = runStatus.logicResults;
+      expect(logicResults.length).toEqual(3);
+      expect(logicResults[0].status).toEqual("finished");
+      expect(logicResults[1].status).toEqual("finished");
+      expect(logicResults[2].status).toEqual("finished");
     });
 });
 

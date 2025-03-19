@@ -1,7 +1,7 @@
 import {
   Action, ActionType, LogicActionType, LogicConfig,
   LogicResult,
-  LogicResultDoc, RunBusinessLogicResult,
+  LogicResultDoc, RunBusinessLogicStatus,
   SecurityFn,
   TxnGet,
   ValidateFormResult,
@@ -155,7 +155,7 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
   }
 }
 
-export async function distribute(
+export async function distributeFnNonTransactional(
   docsByDstPath: Map<string, LogicResultDoc[]> ) {
   const batch = BatchUtil.getInstance();
   for (const dstPath of Array.from(docsByDstPath.keys()).sort()) {
@@ -242,24 +242,17 @@ function getMatchingLogics(actionType: ActionType, modifiedFields: DocumentData,
   });
 }
 
-async function runLogic(txnGet: TxnGet, action: Action, matchingLogics: LogicConfig[], nextPageMarkers: (object | undefined)[],
-  sharedMap: Map<string, any>, logicResults: LogicResult[]) {
-  for (let i = matchingLogics.length - 1; i >= 0; i--) {
+async function runLogic(txnGet: TxnGet, action: Action, matchingLogics: LogicConfig[], sharedMap: Map<string, any>,
+  logicResults: LogicResult[]) {
+  for (let i = 0; i < matchingLogics.length; i++) {
     const start = performance.now();
     const logic = matchingLogics[i];
-    console.debug("Running logic:", logic.name, "nextPageMarker:", nextPageMarkers[i]);
+    console.debug("Running logic:", logic.name);
     try {
-      const result = await logic.logicFn(txnGet, action, sharedMap, nextPageMarkers[i]);
+      const result = await logic.logicFn(txnGet, action, sharedMap );
       const end = performance.now();
       const execTime = end - start;
-      const {status, nextPage} = result;
-      if (status === "finished" || status === "error") {
-        matchingLogics.splice(i, 1);
-        nextPageMarkers.splice(i, 1);
-      } else if (status === "partial-result") {
-        nextPageMarkers[i] = nextPage;
-      }
-
+      const {status} = result;
       logicResults.push({...result, execTime, timeFinished: admin.firestore.Timestamp.now()});
       if (status === "cancel-then-retry") {
         return "cancel-then-retry";
@@ -267,8 +260,6 @@ async function runLogic(txnGet: TxnGet, action: Action, matchingLogics: LogicCon
     } catch (e) {
       const end = performance.now();
       const execTime = end - start;
-      matchingLogics.splice(i, 1);
-      nextPageMarkers.splice(i, 1);
       logicResults.push({
         name: logic.name,
         status: "error",
@@ -284,64 +275,32 @@ async function runLogic(txnGet: TxnGet, action: Action, matchingLogics: LogicCon
 
 export const runBusinessLogics = async (
   txnGet: TxnGet,
-  actionRef: DocumentReference,
   action: Action,
-): Promise<RunBusinessLogicResult> => {
+): Promise<RunBusinessLogicStatus> => {
   const {actionType, modifiedFields, document, eventContext: {entity}} = action;
 
   const matchingLogics = getMatchingLogics(actionType, modifiedFields, document, entity);
   console.debug("Matching logics:", matchingLogics.map((logic) => logic.name));
   if (matchingLogics.length === 0) {
     console.log("No matching logics found");
-    return {
-      action,
-      actionRef,
-      result: "no-matching-logics",
-      distributeFnParams: [{
-        logicResults: [],
-        page: 0,
-      }],
-    };
+    return {status: "no-matching-logics", logicResults: []};
   }
 
-  const config = (await db.doc("@server/config").get()).data();
-  const maxLogicResultPages = config?.maxLogicResultPages || 20;
-
-  let page = 0;
-  const nextPageMarkers: (object|undefined)[] = Array(matchingLogics.length).fill(undefined);
   const sharedMap = new Map<string, any>();
-  matchingLogics.reverse();
 
-  const forDistribution:{logicResults:LogicResult[], page:number}[] = [];
-  while (matchingLogics.length > 0) {
-    if (page > 0) {
-      console.debug(`Page ${page} Remaining logics:`, matchingLogics.map((logic) => logic.name));
-    }
-    const logicResults: LogicResult[] = [];
-    const status = await runLogic(
-      txnGet,
-      action,
-      matchingLogics,
-      nextPageMarkers,
-      sharedMap,
-      logicResults
-    );
-    if (status === "cancel-then-retry") {
-      return {action, actionRef, result: "cancel-then-retry"};
-    }
-
-    page++;
-    forDistribution.push({
-      logicResults,
-      page,
-    });
-    if (page >= maxLogicResultPages) {
-      console.warn(`Maximum number of logic result pages (${maxLogicResultPages}) reached`);
-      break;
-    }
+  const logicResults: LogicResult[] = [];
+  const status = await runLogic(
+    txnGet,
+    action,
+    matchingLogics,
+    sharedMap,
+    logicResults
+  );
+  if (status === "cancel-then-retry") {
+    return {status: "cancel-then-retry", logicResults: []};
   }
 
-  return {action, actionRef, result: "done", distributeFnParams: forDistribution};
+  return {status: "done", logicResults};
 };
 
 export function groupDocsByTargetDocPath(docsByDstPath: Map<string, LogicResultDoc[]>, docPath: string) {

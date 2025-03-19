@@ -11,7 +11,7 @@ import {
   LogicResultDoc,
   ProjectConfig,
   SecurityResult,
-  ValidateFormResult, JournalEntry, Action, RunBusinessLogicResult,
+  ValidateFormResult, JournalEntry, RunBusinessLogicStatus,
 } from "../types";
 import * as functions from "firebase-functions";
 import {dbStructure, Entity} from "../sample-custom/db-structure";
@@ -74,9 +74,6 @@ const transactionMock = {
   update: transactionUpdateMock,
   delete: jest.fn(),
 };
-
-let actionMock: Action;
-let actionRefMock: DocumentReference;
 
 jest.spyOn(admin, "firestore")
   .mockImplementation(() => {
@@ -524,9 +521,8 @@ describe("onFormSubmit", () => {
 
     const runBusinessLogicsSpy =
       jest.spyOn(indexutils, "runBusinessLogics").mockResolvedValue({
-        action: actionMock,
-        actionRef: actionRefMock,
-        result: "cancel-then-retry",
+        status: "cancel-then-retry",
+        logicResults: [],
       });
 
     const form = {
@@ -570,7 +566,7 @@ describe("onFormSubmit", () => {
 
     const errorMessage = "logic error message";
     const runBusinessLogicsMock = jest.spyOn(indexutils, "runBusinessLogics").mockImplementation(
-      async (txnGet, actionRef, action) => {
+      async (txnGet, action) => {
         const logicResults: LogicResult[] = [
           {
             name: "testLogic",
@@ -580,14 +576,9 @@ describe("onFormSubmit", () => {
             documents: [],
           },
         ];
-        const result: RunBusinessLogicResult= {
-          result: "done",
-          action,
-          actionRef,
-          distributeFnParams: [{
-            logicResults,
-            page: 0,
-          }],
+        const result: RunBusinessLogicStatus= {
+          status: "done",
+          logicResults,
         };
         return result;
       },
@@ -645,7 +636,6 @@ describe("onFormSubmit", () => {
     // Test that the runBusinessLogics function was called with the correct parameters
     expect(runBusinessLogicsMock).toHaveBeenCalledWith(
       transactionGetMock,
-      docMock,
       expectedAction,
     );
 
@@ -684,15 +674,10 @@ describe("onFormSubmit", () => {
     const consoleInfoSpy = jest.spyOn(console, "info").mockImplementation();
     const queueRunViewLogicsSpy = jest.spyOn(viewLogics, "queueRunViewLogics").mockResolvedValue();
     jest.spyOn(indexutils, "runBusinessLogics").mockImplementation(
-      async (txnGet, actionRef, action) => {
+      async (txnGet, action) => {
         return {
-          result: "done",
-          action,
-          actionRef,
-          distributeFnParams: [{
-            logicResults,
-            page: 0,
-          }],
+          status: "done",
+          logicResults,
         };
       },
     );
@@ -1098,7 +1083,7 @@ describe("onFormSubmit", () => {
     jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue({"field1": "value1", "field2": "value2"});
     jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() => Promise.resolve({status: "allowed"}));
     jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(false);
-    jest.spyOn(indexutils, "distribute").mockResolvedValue();
+    jest.spyOn(indexutils, "distributeFnNonTransactional").mockResolvedValue();
     jest.spyOn(indexutils, "distributeLater").mockResolvedValue();
     jest.spyOn(viewLogics, "queueRunViewLogics").mockResolvedValue();
     jest.spyOn(distribution, "convertInstructionsToDbValues").mockResolvedValue({
@@ -1266,15 +1251,10 @@ describe("onFormSubmit", () => {
 
     const runBusinessLogicsSpy =
       jest.spyOn(indexutils, "runBusinessLogics").mockImplementation(
-        async (txnGet, actionRef, action) => {
+        async (txnGet, action) => {
           return {
-            action,
-            actionRef,
-            result: "done",
-            distributeFnParams: [{
-              logicResults: logicResults,
-              page: 0,
-            }],
+            status: "done",
+            logicResults: logicResults,
           };
         },
       );
@@ -1346,7 +1326,7 @@ describe("onFormSubmit", () => {
         otherDocsByDocPath: lowPriorityOtherDocsByDocPath,
       });
     jest.spyOn(indexutils, "runViewLogics").mockResolvedValue(viewLogicResults);
-    jest.spyOn(indexutils, "distribute");
+    jest.spyOn(indexutils, "distributeFnNonTransactional");
     jest.spyOn(indexutils, "distributeLater");
 
     await onFormSubmit(event);
@@ -1371,12 +1351,12 @@ describe("onFormSubmit", () => {
 
     expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(3, highPriorityDocs);
     expect(indexutils.groupDocsByTargetDocPath).toHaveBeenNthCalledWith(1, highPriorityDstPathLogicDocsMap, docPath);
-    expect(indexutils.distribute).toHaveBeenNthCalledWith(1, highPriorityDocsByDocPath);
-    expect(indexutils.distribute).toHaveBeenNthCalledWith(2, highPriorityOtherDocsByDocPath);
+    expect(indexutils.distributeFnNonTransactional).toHaveBeenNthCalledWith(1, highPriorityDocsByDocPath);
+    expect(indexutils.distributeFnNonTransactional).toHaveBeenNthCalledWith(2, highPriorityOtherDocsByDocPath);
 
     expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(4, [...normalPriorityDocs, ...additionalNormalPriorityDocs]);
     expect(indexutils.groupDocsByTargetDocPath).toHaveBeenNthCalledWith(2, normalPriorityDstPathLogicDocsMap, docPath);
-    expect(indexutils.distribute).toHaveBeenNthCalledWith(3, normalPriorityDocsByDocPath);
+    expect(indexutils.distributeFnNonTransactional).toHaveBeenNthCalledWith(3, normalPriorityDocsByDocPath);
     expect(indexutils.distributeLater).toHaveBeenNthCalledWith(1, normalPriorityOtherDocsByDocPath);
 
     expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(5, lowPriorityDocs);

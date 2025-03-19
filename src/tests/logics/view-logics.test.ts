@@ -820,7 +820,7 @@ describe("onMessageViewLogicsQueue", () => {
     createMetricExecutionSpy = jest.spyOn(indexUtils._mockable, "createMetricExecution").mockResolvedValue();
     runViewLogicsSpy = jest.spyOn(indexUtils, "runViewLogics").mockResolvedValue(viewLogicsResult);
     expandConsolidateAndGroupByDstPathSpy = jest.spyOn(indexUtils, "expandConsolidateAndGroupByDstPath").mockResolvedValue(expandConsolidateResult);
-    distributeSpy = jest.spyOn(indexUtils, "distribute").mockResolvedValue();
+    distributeSpy = jest.spyOn(indexUtils, "distributeFnNonTransactional").mockResolvedValue();
   });
 
   it("should skip duplicate message", async () => {
