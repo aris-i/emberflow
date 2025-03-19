@@ -10,7 +10,7 @@ import * as admin from "firebase-admin";
 import {hydrateDocPath} from "../utils/paths";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
 import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
-import {_mockable, distribute, expandConsolidateAndGroupByDstPath, runViewLogics} from "../index-utils";
+import {_mockable, distributeFnNonTransactional, expandConsolidateAndGroupByDstPath, runViewLogics} from "../index-utils";
 import {pubsubUtils} from "../utils/pubsub";
 import {reviveDateAndTimestamp} from "../utils/misc";
 
@@ -365,7 +365,7 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
     const dstPathViewLogicDocsMap: Map<string, LogicResultDoc[]> = await expandConsolidateAndGroupByDstPath(viewLogicResultDocs);
 
     console.info("Distributing View Logic Results");
-    await distribute(dstPathViewLogicDocsMap);
+    await distributeFnNonTransactional(dstPathViewLogicDocsMap);
 
     await pubsubUtils.trackProcessedIds(VIEW_LOGICS_TOPIC_NAME, event.id);
     return "Processed view logics";

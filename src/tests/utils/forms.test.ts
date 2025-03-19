@@ -117,30 +117,6 @@ describe("onMessageSubmitFormQueue", () => {
     expect(trackProcessedIdsMock).toHaveBeenCalledWith(SUBMIT_FORM_TOPIC_NAME, event.id);
     expect(result).toEqual("Processed form data");
   });
-
-  it("should throw an error for cancel-then-retry", async () => {
-    isProcessedMock.mockResolvedValueOnce(false);
-    const formData: FormData = {
-      "@docPath": "users/test-uid",
-      "@actionType": "create",
-      "@status": "cancelled",
-      "@messages": "cancel-then-retry received from business logic",
-    };
-    const event = {
-      id: "test-event",
-      data: {
-        message: {
-          json: formData,
-        },
-      },
-    } as CloudEvent<MessagePublishedData>;
-
-    try {
-      await forms.onMessageSubmitFormQueue(event);
-    } catch (error) {
-      expect(error).toEqual(new Error("cancel-then-retry"));
-    }
-  });
 });
 
 describe("cleanActionsAndForms", () => {
