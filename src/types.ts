@@ -2,10 +2,6 @@ import * as admin from "firebase-admin";
 import {firestore} from "firebase-admin";
 import Timestamp = firestore.Timestamp;
 import DocumentData = firestore.DocumentData;
-import {DocumentReference} from "firebase-admin/lib/firestore";
-import Query = firestore.Query;
-import QuerySnapshot = firestore.QuerySnapshot;
-import DocumentSnapshot = firestore.DocumentSnapshot;
 
 export type FirebaseAdmin = typeof admin;
 
@@ -29,9 +25,7 @@ export interface Action{
     message?: string
 }
 
-type txnGet1 = <T>(query: Query<T>)=> Promise<QuerySnapshot<T>>;
-type txnGet2 = <T>(documentRef: DocumentReference<T>)=> Promise<DocumentSnapshot<T>>;
-export type TxnGet = txnGet1 | txnGet2;
+export type TxnGet = Readonly<Pick<firestore.Transaction, "get">>;
 
 export type LogicResultDocAction = "create" | "merge" | "delete" | "copy" | "recursive-copy" | "recursive-delete"
     | "submit-form" | "simulate-submit-form";

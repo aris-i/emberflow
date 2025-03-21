@@ -2,7 +2,7 @@ import * as admin from "firebase-admin";
 // You should import from the path to the ember-flow package in your project
 import {LogicConfig, LogicFn} from "../types";
 
-const echoLogic: LogicFn = async (action) => {
+const echoLogic: LogicFn = async (txnGet, action, sharedMap) => {
   const {timeCreated, eventContext: {docPath}, modifiedFields} = action;
   console.log(`Executing EchoLogic on document at ${docPath}...`);
 

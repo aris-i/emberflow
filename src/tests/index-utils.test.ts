@@ -9,7 +9,7 @@ import {
   LogicResultDocAction,
   LogicResultDoc,
   ProjectConfig,
-  ViewLogicConfig,
+  ViewLogicConfig, TxnGet,
 } from "../types";
 import {Entity, dbStructure} from "../sample-custom/db-structure";
 import {securityConfig} from "../sample-custom/security";
@@ -54,7 +54,9 @@ admin.initializeApp({
   databaseURL: "https://test-project.firebaseio.com",
 });
 
-const txnGet = jest.fn();
+const txnGet: TxnGet = {
+  get: jest.fn(),
+};
 jest.mock("../utils/paths", () => {
   const originalModule = jest.requireActual("../utils/paths");
 

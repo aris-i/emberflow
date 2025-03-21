@@ -60,6 +60,7 @@ import {debounce} from "./utils/functions";
 import {DocumentData} from "firebase-admin/lib/firestore";
 import FieldValue = firestore.FieldValue;
 import Transaction = firestore.Transaction;
+import {extractTransactionGetOnly} from "./utils/transaction";
 
 export let admin: FirebaseAdmin;
 export let db: Firestore;
@@ -408,7 +409,7 @@ export async function onFormSubmit(
       await formRef.update({"@status": "submitted"});
       console.info("Running Business Logics");
       const businessLogicStart = performance.now();
-      runStatus = await runBusinessLogics(txn.get, action);
+      runStatus = await runBusinessLogics(extractTransactionGetOnly(txn), action);
       const businessLogicEnd = performance.now();
       const businessLogicLogicResult: LogicResult = {
         name: "runBusinessLogics",
