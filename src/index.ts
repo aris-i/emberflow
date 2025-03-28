@@ -740,17 +740,19 @@ async function distributeFnTransactional(
     for (const [dstPath, logicDocs] of transactionalDstPathLogicDocsMap) {
       for (const logicDoc of logicDocs) {
         const docRef = db.doc(dstPath);
-        const {action} = logicDoc;
-        if (action === "create") {
-          txn.set(docRef, logicDoc.doc);
-        } else if (action === "merge") {
-          txn.update(docRef, logicDoc.doc);
-        } else if (action === "delete") {
-          txn.delete(docRef);
+        const {action, doc, instructions} = logicDoc;
+        if (doc) {
+          if (action === "create") {
+            txn.set(docRef, doc);
+          } else if (action === "merge") {
+            txn.update(docRef, doc);
+          } else if (action === "delete") {
+            txn.delete(docRef);
+          }
         }
 
-        if (logicDoc.instructions) {
-          const {updateData, removeData} = await convertInstructionsToDbValues(txn, logicDoc.instructions);
+        if (instructions) {
+          const {updateData, removeData} = await convertInstructionsToDbValues(txn, instructions);
           if (Object.keys(updateData).length > 0) {
             txn.update(docRef, updateData);
           }
