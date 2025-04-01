@@ -1,5 +1,5 @@
 import {
-  Action, ActionType, LogicActionType,
+  Action, ActionType, Instructions, LogicActionType,
   LogicResult,
   LogicResultDoc, RunBusinessLogicStatus,
   SecurityFn,
@@ -22,7 +22,7 @@ import {CloudFunctionsServiceClient} from "@google-cloud/functions";
 import {FormData} from "emberflow-admin-client/lib/types";
 import {BatchUtil} from "./utils/batch";
 import {queueSubmitForm} from "./utils/forms";
-import {queueForDistributionLater, queueInstructions} from "./utils/distribution";
+import {convertInstructionsToDbValues, queueForDistributionLater, queueInstructions} from "./utils/distribution";
 import QueryDocumentSnapshot = firestore.QueryDocumentSnapshot;
 import DocumentReference = FirebaseFirestore.DocumentReference;
 import DocumentData = FirebaseFirestore.DocumentData;
@@ -32,6 +32,7 @@ import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
 import {queueRunViewLogics} from "./logics/view-logics";
 import FieldValue = firestore.FieldValue;
 import Timestamp = firestore.Timestamp;
+import Transaction = firestore.Transaction;
 
 export const _mockable = {
   getViewLogicsConfig: () => viewLogicConfigs,
@@ -39,10 +40,12 @@ export const _mockable = {
   createMetricExecution,
 };
 
-export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: BatchUtil) {
+export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: BatchUtil, txn?: Transaction) {
   async function _delete(dstDocRef: DocumentReference) {
     if (batch) {
       await batch.deleteDoc(dstDocRef);
+    } else if (txn) {
+      await txn.delete(dstDocRef);
     } else {
       await dstDocRef.delete();
     }
@@ -51,6 +54,8 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
   async function _update(dstDocRef: DocumentReference, data: DocumentData) {
     if (batch) {
       await batch.update(dstDocRef, data);
+    } else if (txn) {
+      await txn.update(dstDocRef, data);
     } else {
       await dstDocRef.update(data);
     }
@@ -59,8 +64,23 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
   async function _set(dstDocRef: DocumentReference, data: DocumentData) {
     if (batch) {
       await batch.set(dstDocRef, data);
+    } else if (txn) {
+      await txn.set(dstDocRef, data);
     } else {
       await dstDocRef.set(data);
+    }
+  }
+
+  async function processInstructions(instructions: Instructions) {
+    if (!txn) {
+      return;
+    }
+    const {updateData, removeData} = await convertInstructionsToDbValues(txn, instructions);
+    if (Object.keys(updateData).length > 0) {
+      await _update(dstDocRef, updateData);
+    }
+    if (Object.keys(removeData).length > 0) {
+      await _update(dstDocRef, removeData);
     }
   }
 
@@ -109,7 +129,11 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
       if (Object.keys(instructions).length === 0) {
         console.log(`Instructions for ${dstPath} is empty. Skipping...`);
       } else {
-        await queueInstructions(dstPath, instructions);
+        if (txn) {
+          await processInstructions(instructions);
+        } else {
+          await queueInstructions(dstPath, instructions);
+        }
       }
     }
 
