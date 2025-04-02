@@ -21,7 +21,7 @@ import {
   cleanMetricExecutions,
   createMetricComputation,
   createMetricLogicDoc,
-  delayFormSubmissionAndCheckIfCancelled,
+  delayFormSubmissionAndCheckIfCancelled, distributeDoc,
   distributeFnNonTransactional,
   distributeLater,
   expandConsolidateAndGroupByDstPath,
@@ -737,29 +737,9 @@ async function distributeFnTransactional(
           (result) => result.documents).flat().filter((doc) =>
           !doc.journalEntries || doc.journalEntries && doc.action === "delete"));
       // Write to firestore in one transaction
-    for (const [dstPath, logicDocs] of transactionalDstPathLogicDocsMap) {
+    for (const [_, logicDocs] of transactionalDstPathLogicDocsMap) {
       for (const logicDoc of logicDocs) {
-        const docRef = db.doc(dstPath);
-        const {action, doc, instructions} = logicDoc;
-        if (doc) {
-          if (action === "create") {
-            txn.set(docRef, doc);
-          } else if (action === "merge") {
-            txn.update(docRef, doc);
-          } else if (action === "delete") {
-            txn.delete(docRef);
-          }
-        }
-
-        if (instructions) {
-          const {updateData, removeData} = await convertInstructionsToDbValues(txn, instructions);
-          if (Object.keys(updateData).length > 0) {
-            txn.update(docRef, updateData);
-          }
-          if (Object.keys(removeData).length > 0) {
-            txn.update(docRef, removeData);
-          }
-        }
+        await distributeDoc(logicDoc, undefined, txn);
       }
     }
   }
