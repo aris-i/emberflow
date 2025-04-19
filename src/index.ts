@@ -318,14 +318,25 @@ export async function onFormSubmit(
       return;
     }
 
-    let runStatus:RunBusinessLogicStatus = {status: "running", logicResults: []};
+    // Check for delay
+    console.info("Checking for delay");
+    const delay = form["@delay"];
+    if (delay) {
+      const cancelled = await delayFormSubmissionAndCheckIfCancelled(delay, formRef);
+      if (cancelled) {
+        await formRef.update({"@status": "cancelled"});
+        return;
+      }
+    }
 
-    let errorMessage= "";
+    let runBusinessLogicStatus:RunBusinessLogicStatus = {status: "running", logicResults: []};
+
     const actionRef = _mockable.initActionRef(formId);
-    await db.runTransaction(async (txn) => {
+    const runTransactionStatus = await db.runTransaction(async (txn) => {
       const docRef = db.doc(docPath);
       const document = (await txn.get(docRef)).data() || {};
       const formModifiedFields = getFormModifiedFields(form, document);
+
       let user;
       if (!isServiceAccount) {
         const userRef = db.doc(`users/${userId}`);
@@ -334,7 +345,7 @@ export async function onFormSubmit(
           const message = "No user data found";
           console.warn(message);
           await formRef.update({"@status": "error", "@messages": message});
-          return;
+          return "no-user-data-error";
         }
       } else {
         user = {"@id": userId};
@@ -357,27 +368,7 @@ export async function onFormSubmit(
         if (securityResult.status === "rejected") {
           console.log(`Security check failed: ${securityResult.message}`);
           await formRef.update({"@status": "security-error", "@messages": securityResult.message});
-          return;
-        }
-      }
-
-      // Check for delay
-      console.info("Checking for delay");
-      const delay = form["@delay"];
-      if (delay) {
-        const delayStart = performance.now();
-        const cancelled = await delayFormSubmissionAndCheckIfCancelled(delay, formRef);
-        const delayEnd = performance.now();
-        const delayLogicResult: LogicResult = {
-          name: "delayFormSubmission",
-          status: "finished",
-          documents: [],
-          execTime: delayEnd - delayStart,
-        };
-        logicResults.push(delayLogicResult);
-        if (cancelled) {
-          await formRef.update({"@status": "cancelled"});
-          return;
+          return "security-error";
         }
       }
 
@@ -409,41 +400,51 @@ export async function onFormSubmit(
       await formRef.update({"@status": "submitted"});
       console.info("Running Business Logics");
       const businessLogicStart = performance.now();
-      runStatus = await runBusinessLogics(extractTransactionGetOnly(txn), action);
+      runBusinessLogicStatus = await runBusinessLogics(extractTransactionGetOnly(txn), action);
       const businessLogicEnd = performance.now();
-      const businessLogicLogicResult: LogicResult = {
+      const runBusinessLogicsMetrics: LogicResult = {
         name: "runBusinessLogics",
         status: "finished",
         documents: [],
         execTime: businessLogicEnd - businessLogicStart,
       };
-      logicResults.push(businessLogicLogicResult);
+      logicResults.push(runBusinessLogicsMetrics);
 
-      await actionRef.set(action);
+      let errorMessage= "";
+
+      if (runBusinessLogicStatus.status === "no-matching-logics") {
+        errorMessage = "No matching logics found";
+      }
+
+      const errorLogicResults = runBusinessLogicStatus.logicResults.filter((result) => result.status === "error");
+      if (errorLogicResults.length > 0) {
+        errorMessage = errorMessage + errorLogicResults.map((result) => result.message).join("\n");
+      }
+
+      if (errorMessage) {
+        action.status = "processed-with-errors";
+      } else {
+        action.status = "processed";
+      }
+
+      txn.set(actionRef, action);
       async function saveLogicResults() {
-        for (let i = 0; i < runStatus.logicResults.length; i++) {
-          const {documents, ...logicResult} = runStatus.logicResults[i];
+        for (let i = 0; i < runBusinessLogicStatus.logicResults.length; i++) {
+          const {documents, ...logicResult} = runBusinessLogicStatus.logicResults[i];
           const logicResultsRef = actionRef.collection("logicResults")
             .doc(`${actionRef.id}-${i}`);
-          await logicResultsRef.set(logicResult);
+          txn.set(logicResultsRef, logicResult);
           const documentsRef = logicResultsRef.collection("documents");
           for (let j = 0; j < documents.length; j++) {
-            await documentsRef.doc(`${logicResultsRef.id}-${j}`).set(documents[j]);
+            const docRef = documentsRef.doc(`${logicResultsRef.id}-${j}`);
+            txn.set(docRef, documents[j]);
           }
         }
       }
       await saveLogicResults();
 
-      function updateErrorMessage() {
-        const errorLogicResults = runStatus.logicResults.filter((result) => result.status === "error");
-        if (errorLogicResults.length > 0) {
-          errorMessage = errorMessage + errorLogicResults.map((result) => result.message).join("\n");
-        }
-      }
-      updateErrorMessage();
-
       const distributeTransactionalLogicResultsStart = performance.now();
-      await distributeFnTransactional(txn, runStatus.logicResults);
+      await distributeFnTransactional(txn, runBusinessLogicStatus.logicResults);
       const distributeTransactionalLogicResultsEnd = performance.now();
       const distributeTransactionalLogicResults: LogicResult = {
         name: "distributeTransactionalLogicResults",
@@ -452,10 +453,16 @@ export async function onFormSubmit(
         execTime: distributeTransactionalLogicResultsEnd - distributeTransactionalLogicResultsStart,
       };
       logicResults.push(distributeTransactionalLogicResults);
+      return "transaction-complete";
     });
 
+    if (["no-user-data-error", "security-error"].includes(runTransactionStatus)) {
+      console.warn("No User Data Error / Security Error in transaction");
+      return;
+    }
+
     const distributeNonTransactionalLogicResultsStart = performance.now();
-    await distributeNonTransactionalLogicResults(runStatus.logicResults, docPath);
+    await distributeNonTransactionalLogicResults(runBusinessLogicStatus.logicResults, docPath);
     const distributeNonTransactionalLogicResultsEnd = performance.now();
     const distributeNonTransactionalPerfLogicResults: LogicResult = {
       name: "distributeNonTransactionalLogicResults",
@@ -470,11 +477,7 @@ export async function onFormSubmit(
     const end = performance.now();
     const execTime = end - start;
 
-    if (errorMessage) {
-      await actionRef.update({status: "finished-with-error", message: errorMessage, execTime: execTime});
-    } else {
-      await actionRef.update({status: "finished", execTime: execTime});
-    }
+    await actionRef.update({execTime: execTime});
 
     const onFormSubmitLogicResult: LogicResult = {
       name: "onFormSubmit",
