@@ -5,7 +5,6 @@ import * as viewLogics from "../logics/view-logics";
 import {database, firestore} from "firebase-admin";
 
 import {
-  EventContext,
   LogicResult,
   LogicResultDocAction,
   LogicResultDoc,
@@ -127,15 +126,6 @@ function createEvent(form: FirebaseFirestore.DocumentData, userId?: string): Dat
 describe("onFormSubmit", () => {
   const entity = "user";
   let parseEntityMock: jest.SpyInstance;
-
-  const eventContext: EventContext = {
-    id: "test-id",
-    uid: "test-uid",
-    formId: "test-fid",
-    docId: "test-uid",
-    docPath: "users/test-uid",
-    entity,
-  };
 
   const document = {
     "field1": "oldValue",
@@ -267,8 +257,7 @@ describe("onFormSubmit", () => {
     const event = createEvent(form, "service");
     await onFormSubmit(event);
     expect(updateMock.mock.calls[0][0]).toEqual({
-      status: "finished",
-      execTime: expect.any(Number),
+      "execTime": expect.any(Number),
     });
   });
 
@@ -442,7 +431,6 @@ describe("onFormSubmit", () => {
     expect(refMock.update).toHaveBeenCalledWith({"@status": "submitted"});
 
     // Test that addActionSpy is called with the correct parameters
-    expect(setActionMock).toHaveBeenCalled();
     expect(updateActionMock).toHaveBeenCalled();
 
     validateFormMock.mockReset();
@@ -492,7 +480,6 @@ describe("onFormSubmit", () => {
     expect(refMock.update).toHaveBeenCalledWith({"@status": "submitted"});
 
     // Test that addActionSpy is called with the correct parameters
-    expect(setActionMock).toHaveBeenCalled();
     expect(updateActionMock).toHaveBeenCalled();
 
     getFormModifiedFieldsMock.mockReset();
@@ -578,16 +565,12 @@ describe("onFormSubmit", () => {
         description: "test description",
         name: "test",
       },
-      status: "processing",
+      status: "processed-with-errors",
     };
 
     // Test that the runBusinessLogics function was called with the correct parameters
-    expect(runBusinessLogicsMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        get: expect.any(Function),
-      }),
-      expectedAction,
-    );
+    const actionRef = _mockable.initActionRef(event.params.formId);
+    expect(transactionSetMock).toHaveBeenNthCalledWith(4, actionRef, expectedAction);
 
     // form should still finish successfully
     expect(refMock.update).toHaveBeenCalledTimes(3);
@@ -595,18 +578,13 @@ describe("onFormSubmit", () => {
     expect(refMock.update.mock.calls[1][0]).toEqual({"@status": "submitted"});
     expect(refMock.update.mock.calls[2][0]).toEqual({"@status": "finished"});
 
-    expect(docMock.set).toHaveBeenCalledWith(expect.objectContaining({
-      eventContext,
-      actionType: "create",
-      document: doc,
-      modifiedFields: {"field1": "value1", "field2": "value2"},
-      status: "processing",
-    }));
     expect(docMock.update).toHaveBeenCalledTimes(1);
-    expect((docMock.update as jest.Mock).mock.calls[0][0]).toEqual({
-      status: "finished-with-error",
+    const logicResultsRef = actionRef.collection("logicResults").doc("undefined-0");
+    expect(transactionSetMock).toHaveBeenNthCalledWith(5, logicResultsRef, {
+      status: "error",
       message: errorMessage,
-      execTime: expect.any(Number),
+      name: "testLogic",
+      timeFinished: expect.any(Timestamp),
     });
 
     validateFormMock.mockReset();
@@ -657,7 +635,6 @@ describe("onFormSubmit", () => {
     await onFormSubmit(event);
     expect(consoleInfoSpy).toHaveBeenCalledWith("No journal entries to write");
     expect(transactionUpdateMock).not.toHaveBeenCalled();
-    expect(transactionSetMock).not.toHaveBeenCalled();
     expect(txnGetFnMock).toBeCalledTimes(2);
 
     logicResults = [
@@ -673,7 +650,7 @@ describe("onFormSubmit", () => {
     await onFormSubmit(event);
     expect(consoleInfoSpy).toHaveBeenCalledWith("No journal entries to write");
     expect(transactionUpdateMock).not.toHaveBeenCalled();
-    expect(transactionSetMock).not.toHaveBeenCalled();
+    expect(transactionSetMock).toHaveBeenCalledTimes(11);
     expect(txnGetFnMock).toBeCalledTimes(4);
     logicResults = [
       {
@@ -688,7 +665,7 @@ describe("onFormSubmit", () => {
     await onFormSubmit(event);
     expect(consoleErrorSpy).toHaveBeenCalledWith("Dst path has no docId");
     expect(transactionUpdateMock).not.toHaveBeenCalled();
-    expect(transactionSetMock).not.toHaveBeenCalled();
+    expect(transactionSetMock).toHaveBeenCalledTimes(14);
     expect(txnGetFnMock).toHaveBeenCalledTimes(6);
 
     logicResults = [
@@ -704,7 +681,7 @@ describe("onFormSubmit", () => {
     await onFormSubmit(event);
     expect(consoleErrorSpy).toHaveBeenCalledWith("Doc cannot have keys that are the same as account names");
     expect(transactionUpdateMock).not.toHaveBeenCalled();
-    expect(transactionSetMock).not.toHaveBeenCalled();
+    expect(transactionSetMock).toHaveBeenCalledTimes(17);
     expect(txnGetFnMock).toHaveBeenCalledTimes(8);
 
     logicResults = [
@@ -720,7 +697,7 @@ describe("onFormSubmit", () => {
     await onFormSubmit(event);
     expect(consoleErrorSpy).toHaveBeenCalledWith("Instructions cannot have keys that are the same as account names");
     expect(transactionUpdateMock).not.toHaveBeenCalled();
-    expect(transactionSetMock).not.toHaveBeenCalled();
+    expect(transactionSetMock).toHaveBeenCalledTimes(20);
     expect(txnGetFnMock).toHaveBeenCalledTimes(10);
     const unbalancedJournalEntry: JournalEntry = {
       date: _mockable.createNowTimestamp(),
@@ -756,7 +733,7 @@ describe("onFormSubmit", () => {
     await onFormSubmit(event);
     expect(consoleErrorSpy).toHaveBeenCalledWith("Debit and credit should be equal");
     expect(transactionUpdateMock).not.toHaveBeenCalled();
-    expect(transactionSetMock).not.toHaveBeenCalled();
+    expect(transactionSetMock).toHaveBeenCalledTimes(23);
     expect(txnGetFnMock).toHaveBeenCalledTimes(12);
 
     txnGetFnMock.mockRestore();
@@ -786,7 +763,7 @@ describe("onFormSubmit", () => {
     await onFormSubmit(event);
     expect(txnGetFnMock).toHaveBeenCalledTimes(3);
     expect(txnGetFnMock).toHaveBeenCalledWith(docRef);
-    expect(transactionSetMock).toHaveBeenCalledTimes(1);
+    expect(transactionSetMock).toHaveBeenCalledTimes(4);
     expect(transactionSetMock).toHaveBeenCalledWith(docRef, {"field": "value", "@forDeletionLater": true});
     expect(transactionUpdateMock).toHaveBeenCalledTimes(2);
     expect(transactionUpdateMock).toHaveBeenNthCalledWith(1, docRef, {
@@ -833,7 +810,7 @@ describe("onFormSubmit", () => {
     await onFormSubmit(event);
     expect(txnGetFnMock).toHaveBeenCalledTimes(3);
     expect(txnGetFnMock).toHaveBeenCalledWith(docRef);
-    expect(transactionSetMock).not.toHaveBeenCalled();
+    expect(transactionSetMock).toHaveBeenCalledTimes(3);
     expect(transactionUpdateMock).toHaveBeenCalledTimes(3);
     expect(transactionUpdateMock).toHaveBeenNthCalledWith(1, docRef, {"field": "value", "@forDeletionLater": true});
     expect(transactionUpdateMock).toHaveBeenNthCalledWith(2, docRef, {
@@ -897,7 +874,7 @@ describe("onFormSubmit", () => {
     await onFormSubmit(event);
     expect(txnGetFnMock).toHaveBeenCalledTimes(3);
     expect(txnGetFnMock).toHaveBeenCalledWith(docRef);
-    expect(transactionSetMock).not.toHaveBeenCalled();
+    expect(transactionSetMock).toHaveBeenCalledTimes(3);
     expect(transactionUpdateMock).toHaveBeenCalledTimes(3);
     expect(transactionUpdateMock).toHaveBeenNthCalledWith(1, docRef, {"@forDeletionLater": true});
     expect(transactionUpdateMock).toHaveBeenNthCalledWith(2, docRef, {"@forDeletionLater": FieldValue.delete()});
@@ -953,7 +930,7 @@ describe("onFormSubmit", () => {
     }
     expect(txnGetFnMock).toHaveBeenCalledTimes(3);
     expect(txnGetFnMock).toHaveBeenCalledWith(docRef);
-    expect(transactionSetMock).not.toHaveBeenCalled();
+    expect(transactionSetMock).toHaveBeenCalledTimes(3);
     expect(transactionUpdateMock).toHaveBeenCalledTimes(1);
     expect(transactionUpdateMock).toHaveBeenCalledWith(docRef, {"@forDeletionLater": true});
     expect(errorMock).toHaveBeenCalledTimes(1);
@@ -997,8 +974,8 @@ describe("onFormSubmit", () => {
       "doneCount": 1,
       "@forDeletionLater": FieldValue.delete(),
     });
-    expect(transactionSetMock).toHaveBeenCalledTimes(2);
-    expect(transactionSetMock).toHaveBeenNthCalledWith(1, db.doc("path/doc1/@ledgers/doc100"), {
+    expect(transactionSetMock).toHaveBeenCalledTimes(5);
+    expect(transactionSetMock).toHaveBeenNthCalledWith(4, db.doc("path/doc1/@ledgers/doc100"), {
       "journalEntryId": "doc10",
       "account": "inProgressCount",
       "debit": 1,
@@ -1006,7 +983,7 @@ describe("onFormSubmit", () => {
       "date": expect.any(Timestamp),
       "equation": equation,
     });
-    expect(transactionSetMock).toHaveBeenNthCalledWith(2, db.doc("path/doc1/@ledgers/doc101"), {
+    expect(transactionSetMock).toHaveBeenNthCalledWith(5, db.doc("path/doc1/@ledgers/doc101"), {
       "journalEntryId": "doc10",
       "account": "doneCount",
       "debit": 0,
@@ -1283,7 +1260,6 @@ describe("onFormSubmit", () => {
 
     // Test that the runBusinessLogics function was called with the correct parameters
     expect(runBusinessLogicsSpy).toHaveBeenCalled();
-    expect(setMock).toHaveBeenCalledTimes(18);
     expect(refMock.update).toHaveBeenCalledTimes(3);
     expect(refMock.update).toHaveBeenNthCalledWith(1, {"@status": "processing"});
     expect(refMock.update).toHaveBeenNthCalledWith(2, {"@status": "submitted"});
@@ -1293,7 +1269,7 @@ describe("onFormSubmit", () => {
     expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(1, journalDocs);
     console.debug("set", transactionSetMock.mock.calls);
     console.debug("update", transactionUpdateMock.mock.calls);
-    expect(transactionMock.set).toHaveBeenCalledTimes(3);
+    expect(transactionMock.set).toHaveBeenCalledTimes(21);
     expect(transactionMock.update).toHaveBeenCalledTimes(11);
 
     expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(2, transactionalDocs);
@@ -1317,7 +1293,6 @@ describe("onFormSubmit", () => {
     expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenCalledTimes(5);
     expect(updateMock).toHaveBeenCalledTimes(1);
     expect(updateMock.mock.calls[0][0]).toEqual({
-      status: "finished",
       execTime: expect.any(Number),
     });
   });

@@ -48,7 +48,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       const documents: LogicResultDoc[] = viewDstPathDocs.map((viewDstPathDoc) => {
         return {
           action: "delete",
-          dstPath: viewDstPathDoc.data().dstPath,
+          dstPath: viewDstPathDoc.data().path,
           skipRunViewLogics: true,
         };
       });
@@ -77,7 +77,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       const documents: LogicResultDoc[] = viewDstPathDocs.map((viewDstPathDoc) => {
         return {
           action: "merge",
-          dstPath: viewDstPathDoc.data().dstPath,
+          dstPath: viewDstPathDoc.data().path,
           doc: viewDoc,
           instructions: viewInstructions,
           skipRunViewLogics: true,
@@ -165,14 +165,12 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     }
 
     function formSrcPath() {
-      const srcDocPath = docPaths[srcEntity]; // srcDocPath has the following format: /topics/{topicId}/orders/{orderId}/menus/{menuItemId}
+      const srcDocPath = docPaths[srcEntity];
       let srcPath = srcDocPath.split("/").slice(0, -1).join("/") + "/" + srcDocId;
 
-      // We will capture placeholders value in the dstPath and replace them in the srcPath
-      // dstPath: /topics/xjkdfj1/subTodos/jdkfjdfk
-      const destDocPath = docPaths[destEntity]; // destDocPath has the following format: /topics/{topicId}/orders/{orderId}/menus/{menuItemId}
-      const destDocPathRegex = docPathsRegex[destEntity]; // destDocPathRegex has the following format: /topics/([^/]+)/orders/([^/]+)/menus/([^/]+)
-      const destDocPathMatches = dstPath.match(destDocPathRegex);
+      const destDocPath = docPaths[destEntity];
+      const destDocPathRegex = docPathsRegex[destEntity];
+      const destDocPathMatches = dstPath.split("#")[0].match(destDocPathRegex);
 
       // let's create a map of the placeholders with their matching values from dstPath
       const dstPathKeyValuesMap: Record<string, string> = {};
@@ -186,12 +184,6 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
         }
       }
 
-      // srcDocPath: /topics/{topicId}/orders/{orderId}/menus/{orderItemId}
-      // dstDocPath:  /topics/{topicId}/prepAreas/{preAreaId}/menus/{prepAreaMenuItemId}#orderItem
-      // /topics/{topicId}/orders/{orderId}#menuItem
-      // dstPath: /topics/topicId21/prepAreas/preAreaId2/menus/prepAreaMenuItemId34#orderItem
-      // Now let's replace srcDocPath with the placeholders values
-      // srcPath: /topics/topicId21/orders/{orderId}/menus/value-ng-@id
       const srcDocPathKeys = srcDocPath.match(/{([^}]+)}/g);
       if (srcDocPathKeys) {
         for (const srcDocPathKey of srcDocPathKeys) {

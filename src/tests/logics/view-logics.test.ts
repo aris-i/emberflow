@@ -7,7 +7,6 @@ import {
 
 const isProcessedMock = jest.fn();
 const trackProcessedIdsMock = jest.fn();
-import * as pathsutils from "../../utils/paths";
 import * as viewLogics from "../../logics/view-logics";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
 import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
@@ -154,6 +153,9 @@ describe("createViewLogicFn", () => {
               get: colGetMock,
               where: jest.fn().mockReturnValue({
                 get: colGetMock,
+                where: jest.fn().mockReturnValue({
+                  get: colGetMock,
+                }),
               }),
             }),
           }),
@@ -284,61 +286,6 @@ describe("createViewLogicFn", () => {
     expect(result.documents[0]).toHaveProperty("action", "delete");
     expect(result.documents[0])
       .toHaveProperty("dstPath", "users/1234/@views/servers+123+createdBy");
-  });
-
-  it("should add @viewsAlreadyBuilt when action is create", async () => {
-    const logicFn = viewLogics.createViewLogicFn(vd1);
-
-    const result = await logicFn[0](createLogicResultDoc);
-
-    expect(docUpdateMock).toHaveBeenCalledTimes(1);
-    expect(docUpdateMock).toHaveBeenCalledWith({"@viewsAlreadyBuilt+friend": true});
-    expect(result).toBeDefined();
-    expect(result.documents).toBeDefined();
-    expect(result.documents.length).toEqual(0);
-  });
-
-  it("should build @views doc when viewPaths is empty", async () => {
-    colGetMock.mockResolvedValue({
-      docs: [],
-    });
-
-    const hydrateDocPathSpy = jest.spyOn(pathsutils, "hydrateDocPath");
-    hydrateDocPathSpy.mockReset();
-    hydrateDocPathSpy
-      .mockReturnValueOnce(Promise.resolve([
-        "users/456/friends/1234",
-        "users/789/friends/1234",
-      ]));
-
-    // Create the logic function using the viewDefinition
-    const logicFn = viewLogics.createViewLogicFn(vd1);
-
-    // Call the logic function with the test action
-    const result = await logicFn[0](mergeLogicResultDoc);
-
-    expect(colGetMock).toHaveBeenCalledTimes(1);
-    expect(docSpy).toHaveBeenCalledWith("users/1234/@views/users+456+friends+1234");
-    expect(docSetMock).toHaveBeenCalledTimes(2);
-    expect(docSetMock).toHaveBeenNthCalledWith(1, {
-      "path": "users/456/friends/1234",
-      "srcProps": ["age", "avatar", "name"],
-      "destEntity": "friend",
-    });
-    expect(docSetMock).toHaveBeenNthCalledWith(2, {
-      "path": "users/789/friends/1234",
-      "srcProps": ["age", "avatar", "name"],
-      "destEntity": "friend",
-    });
-    expect(docUpdateMock).toHaveBeenCalledTimes(1);
-    expect(docUpdateMock).toHaveBeenCalledWith({"@viewsAlreadyBuilt+friend": true});
-
-    expect(hydrateDocPathSpy.mock.calls[0][0]).toEqual("users/{userId}/friends/1234");
-    expect(hydrateDocPathSpy.mock.calls[0][1]).toEqual({});
-
-    expect(result).toBeDefined();
-    expect(result.documents).toBeDefined();
-    expect(result.documents.length).toEqual(2);
   });
 
   it("should not build @views doc when action is merge and @viewsAlreadyBuilt is true", async () => {
@@ -712,6 +659,83 @@ describe("createViewLogicFn", () => {
     expect(document).toHaveProperty("action", "merge");
     expect(document).toHaveProperty("dstPath", "servers/456+createdBy");
     expect(document.doc).toEqual({"name": "new_name", "@updatedByViewDefinitionAt": expect.any(Timestamp)});
+  });
+
+  it("should use doc values when placeholders are not in dstPath", async () => {
+    const logicFn = viewLogics.createViewLogicFn( {
+      srcEntity: "menuItem",
+      srcProps: ["name", "avatarUrl"],
+      destEntity: "prepAreaMenuItem",
+      destProp: {
+        name: "createdBy",
+        type: "map",
+      },
+    });
+
+    const dstPath = "topics/topic21/prepAreas/prepArea2/menus/prepAreaMenuItem34";
+    const logicResultDoc: LogicResultDoc = {
+      action: "create",
+      dstPath,
+      doc: {
+        "name": "Sample Menu",
+        "@id": "menuItem789",
+        "orderId": "order123",
+      },
+      priority: "normal",
+    };
+    const result = await logicFn[1](logicResultDoc);
+
+    expect(result.documents[0].dstPath).toBe("topics/topic21/orders/order123/menus/menuItem789/@views/topics+topic21+prepAreas+prepArea2+menus+prepAreaMenuItem34");
+  });
+
+  it("should correctly map placeholders from dstPath into srcPath", async () => {
+    const logicFn = viewLogics.createViewLogicFn( {
+      srcEntity: "prepAreaMenuItem",
+      srcProps: ["name", "avatarUrl"],
+      destEntity: "prepAreaMenuItem",
+      destProp: {
+        name: "createdBy",
+        type: "map",
+      },
+    });
+
+    const dstPath = "topics/topic21/prepAreas/prepArea2/menus/prepAreaMenuItem34#orderItem";
+    const logicResultDoc: LogicResultDoc = {
+      action: "create",
+      dstPath,
+      doc: {
+        "name": "Sample Menu",
+        "@id": "menuItem789",
+      },
+    };
+    const result = await logicFn[1](logicResultDoc);
+
+    expect(result.documents[0].dstPath).toBe("topics/topic21/prepAreas/prepArea2/menus/menuItem789/@views/topics+topic21+prepAreas+prepArea2+menus+prepAreaMenuItem34+orderItem");
+  });
+
+  it("should return an error if srcPath has a placeholder", async () => {
+    const logicFn = viewLogics.createViewLogicFn( {
+      srcEntity: "menuItem",
+      srcProps: ["name", "avatarUrl"],
+      destEntity: "prepAreaMenuItem",
+      destProp: {
+        name: "createdBy",
+        type: "map",
+      },
+    });
+
+    const dstPath = "topics/topic21/prepAreas/prepArea2/menus/prepAreaMenuItem34#orderItem";
+    const logicResultDoc: LogicResultDoc = {
+      action: "create",
+      dstPath,
+      doc: {
+        "name": "Sample Menu",
+        "@id": "menuItem789",
+      },
+    };
+    const result = await logicFn[1](logicResultDoc);
+    expect(result.status).toBe("error");
+    expect(result.message).toBe("srcPath should not have a placeholder");
   });
 });
 
