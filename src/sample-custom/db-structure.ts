@@ -12,6 +12,11 @@ export enum Entity {
     Member = "member",
     Post = "post",
     Comment = "comment",
+    Topic = "topic",
+    Order = "order",
+    MenuItem = "menuItem",
+    PrepArea = "prepArea",
+    PrepAreaMenuItem = "prepAreaMenuItem",
 }
 
 // Map your custom entities to dbStructure below.
@@ -35,6 +40,31 @@ export const dbStructure = {
         },
       },
       followers: [view(Entity.User, ["name", "email"])],
+    },
+  },
+  topics: {
+    [Entity.Topic]: {
+      createdBy: view(Entity.User, ["name", "email"]),
+      orders: {
+        [Entity.Order]: {
+          createdBy: view(Entity.User, ["name", "email"]),
+          menus: {
+            [Entity.MenuItem]: {
+              createdBy: view(Entity.User, ["name", "email"]),
+            },
+          },
+        },
+      },
+      prepAreas: {
+        [Entity.PrepArea]: {
+          "createdBy": view(Entity.User, ["name", "email"]),
+          "menus": {
+            [Entity.PrepAreaMenuItem]: {
+              createdBy: view(Entity.User, ["name", "email"]),
+            },
+          },
+        },
+      },
     },
   },
   users: {
