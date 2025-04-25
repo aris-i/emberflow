@@ -352,10 +352,11 @@ export async function onFormSubmit(
       }
 
       console.info("Validating Security");
+      const txnGet = extractTransactionGetOnly(txn);
       const securityFn = getSecurityFn(entity);
       if (securityFn) {
         const securityFnStart = performance.now();
-        const securityResult = await securityFn(entity, docPath, document,
+        const securityResult = await securityFn(txnGet, entity, docPath, document,
           actionType, formModifiedFields, user);
         const securityFnEnd = performance.now();
         const securityLogicResult: LogicResult = {
@@ -400,7 +401,7 @@ export async function onFormSubmit(
       await formRef.update({"@status": "submitted"});
       console.info("Running Business Logics");
       const businessLogicStart = performance.now();
-      runBusinessLogicStatus = await runBusinessLogics(extractTransactionGetOnly(txn), action);
+      runBusinessLogicStatus = await runBusinessLogics(txnGet, action);
       const businessLogicEnd = performance.now();
       const runBusinessLogicsMetrics: LogicResult = {
         name: "runBusinessLogics",
