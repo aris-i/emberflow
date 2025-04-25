@@ -1,5 +1,6 @@
 import {_mockable, db, initializeEmberFlow, onFormSubmit} from "../index";
 import * as indexutils from "../index-utils";
+import * as transactionutils from "../utils/transaction";
 import * as admin from "firebase-admin";
 import * as viewLogics from "../logics/view-logics";
 import {database, firestore} from "firebase-admin";
@@ -339,11 +340,17 @@ describe("onFormSubmit", () => {
 
     const validateFormMock = jest.spyOn(indexutils, "validateForm");
     validateFormMock.mockResolvedValue([false, {}] as ValidateFormResult);
+
+    jest.spyOn(transactionutils, "extractTransactionGetOnly").mockReturnValue( {
+      get: txnGetFnMock,
+    });
     await onFormSubmit(event);
 
     expect(getSecurityFnMock).toHaveBeenCalledWith(entity);
     expect(validateFormMock).toHaveBeenCalledWith(entity, formData);
-    expect(securityFnMock).toHaveBeenCalledWith(entity, docPath, document, "update", {field1: "newValue"}, user);
+    expect(securityFnMock).toHaveBeenCalledWith(entity, docPath, document, "update", {field1: "newValue"}, user, {
+      get: txnGetFnMock,
+    });
     expect(refMock.update).toHaveBeenCalledWith({
       "@status": "security-error",
       "@messages": "Unauthorized access",

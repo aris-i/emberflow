@@ -356,7 +356,7 @@ export async function onFormSubmit(
       if (securityFn) {
         const securityFnStart = performance.now();
         const securityResult = await securityFn(entity, docPath, document,
-          actionType, formModifiedFields, user);
+          actionType, formModifiedFields, user, extractTransactionGetOnly(txn));
         const securityFnEnd = performance.now();
         const securityLogicResult: LogicResult = {
           name: "securityFn",
