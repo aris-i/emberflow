@@ -23,6 +23,7 @@ const allAllowed: SecurityFn = async (
 
 const userSecurityFn: SecurityFn =
     async (
+      txnGet,
       entity,
       docPath,
       doc,

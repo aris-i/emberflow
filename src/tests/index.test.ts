@@ -341,16 +341,15 @@ describe("onFormSubmit", () => {
     const validateFormMock = jest.spyOn(indexutils, "validateForm");
     validateFormMock.mockResolvedValue([false, {}] as ValidateFormResult);
 
-    jest.spyOn(transactionutils, "extractTransactionGetOnly").mockReturnValue( {
+    const extractedTxnGet = {
       get: txnGetFnMock,
-    });
+    };
+    jest.spyOn(transactionutils, "extractTransactionGetOnly").mockReturnValue( extractedTxnGet);
     await onFormSubmit(event);
 
     expect(getSecurityFnMock).toHaveBeenCalledWith(entity);
     expect(validateFormMock).toHaveBeenCalledWith(entity, formData);
-    expect(securityFnMock).toHaveBeenCalledWith(entity, docPath, document, "update", {field1: "newValue"}, user, {
-      get: txnGetFnMock,
-    });
+    expect(securityFnMock).toHaveBeenCalledWith(extractedTxnGet, entity, docPath, document, "update", {field1: "newValue"}, user);
     expect(refMock.update).toHaveBeenCalledWith({
       "@status": "security-error",
       "@messages": "Unauthorized access",

@@ -108,8 +108,8 @@ export interface SecurityResult {
     message?: string;
 }
 
-export type SecurityFn = (entity: string, docPath: string, document: FirebaseFirestore.DocumentData, actionType: LogicActionType,
-                          modifiedFields: DocumentData, user: DocumentData, txnGet: TxnGet) => Promise<SecurityResult>;
+export type SecurityFn = (txnGet: TxnGet, entity: string, docPath: string, document: FirebaseFirestore.DocumentData, actionType: LogicActionType,
+                          modifiedFields: DocumentData, user: DocumentData) => Promise<SecurityResult>;
 export type SecurityConfig = Record<string, SecurityFn>;
 export interface ValidationResult {
     [key: string]: string[];
