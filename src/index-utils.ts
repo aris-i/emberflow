@@ -51,23 +51,13 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
     }
   }
 
-  async function _update(dstDocRef: DocumentReference, data: DocumentData) {
+  async function _merge(dstDocRef: DocumentReference, data: DocumentData) {
     if (batch) {
-      await batch.update(dstDocRef, data);
+      await batch.set(dstDocRef, data, {merge: true});
     } else if (txn) {
-      await txn.update(dstDocRef, data);
+      txn.set(dstDocRef, data, {merge: true});
     } else {
-      await dstDocRef.update(data);
-    }
-  }
-
-  async function _set(dstDocRef: DocumentReference, data: DocumentData) {
-    if (batch) {
-      await batch.set(dstDocRef, data);
-    } else if (txn) {
-      await txn.set(dstDocRef, data);
-    } else {
-      await dstDocRef.set(data);
+      await dstDocRef.set(data, {merge: true});
     }
   }
 
@@ -77,10 +67,10 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
     }
     const {updateData, removeData} = await convertInstructionsToDbValues(txn, instructions);
     if (Object.keys(updateData).length > 0) {
-      await _update(dstDocRef, updateData);
+      await _merge(dstDocRef, updateData);
     }
     if (Object.keys(removeData).length > 0) {
-      await _update(dstDocRef, removeData);
+      await _merge(dstDocRef, removeData);
     }
   }
 
@@ -104,14 +94,18 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
         console.error("destPropId should not be blank for array map");
         return;
       }
-      destProp = `${destProp}.${destPropId}`;
     }
   }
 
   const dstDocRef = db.doc(baseDstPath);
   if (!skipRunViewLogics && ["create", "merge", "delete"].includes(action)) {
     if (action === "delete") {
-      logicResultDoc.doc = (await dstDocRef.get()).data() || {};
+      const data = (await dstDocRef.get()).data() || {};
+      if (destProp) {
+        logicResultDoc.doc = {[destProp]: data[destProp] || {}};
+      } else {
+        logicResultDoc.doc = data;
+      }
     }
     await queueRunViewLogics(logicResultDoc);
   }
@@ -119,51 +113,47 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
   console.debug(`Distributing doc with Action: ${action}`);
   if (action === "delete") {
     if (destProp) {
-      await _update(dstDocRef, {[destProp]: FieldValue.delete()});
+      if (destPropId) {
+        await _merge(dstDocRef, {
+          [destProp]: {
+            [destPropId]: FieldValue.delete(),
+          },
+        });
+      } else {
+        await _merge(dstDocRef, {
+          [destProp]: FieldValue.delete(),
+        });
+      }
     } else {
       await _delete(dstDocRef);
     }
     console.log(`Document deleted at ${dstPath}`);
   } else if (action === "merge" || action === "create") {
     if (instructions) {
-      if (Object.keys(instructions).length === 0) {
-        console.log(`Instructions for ${dstPath} is empty. Skipping...`);
+      if (txn) {
+        await processInstructions(instructions);
       } else {
-        if (txn) {
-          await processInstructions(instructions);
-        } else {
-          await queueInstructions(dstPath, instructions);
-        }
+        await queueInstructions(dstPath, instructions);
       }
     }
 
     if (doc) {
       let updateData: { [key: string]: any } = {};
-      if (action === "merge") {
-        if (destProp) {
-          for (const key of Object.keys(doc)) {
-            updateData[`${destProp}.${key}`] = doc[key];
-          }
+      if (destProp) {
+        if (destPropId) {
+          updateData[destProp] = {[destPropId]: doc};
         } else {
-          updateData = {
-            ...doc,
-            "@id": dstDocRef.id,
-          };
-        }
-        await _update(dstDocRef, updateData);
-      } else {
-        if (destProp) {
           updateData[destProp] = doc;
-          await _update(dstDocRef, updateData);
-        } else {
-          updateData = {
-            ...doc,
-            "@id": dstDocRef.id,
-            "@dateCreated": Timestamp.now(),
-          };
-          await _set(dstDocRef, updateData);
         }
+      } else {
+        updateData = {
+          ...doc,
+          "@id": dstDocRef.id,
+          ...(action === "create" ? {"@dateCreated": Timestamp.now()} : {}),
+        };
       }
+      await _merge(dstDocRef, updateData);
+
       console.log(`Document merged to ${dstPath}`);
     }
   } else if (action === "submit-form") {
@@ -174,8 +164,6 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
       ...doc,
     };
     await queueSubmitForm(formData);
-  } else if (action === "simulate-submit-form") {
-    console.debug("Not distributing doc for action simulate-submit-form");
   }
 }
 
@@ -466,8 +454,6 @@ export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultD
     } else if (action === "delete") {
       processDelete(existingDocs, doc, dstPath);
     } else if (action === "submit-form") {
-      existingDocs.push(doc);
-    } else if (action === "simulate-submit-form") {
       existingDocs.push(doc);
     }
   }

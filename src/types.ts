@@ -28,7 +28,7 @@ export interface Action{
 export type TxnGet = Readonly<Pick<firestore.Transaction, "get">>;
 
 export type LogicResultDocAction = "create" | "merge" | "delete" | "copy" | "recursive-copy" | "recursive-delete"
-    | "submit-form" | "simulate-submit-form";
+    | "submit-form";
 export type LogicResultDocPriority = "high" | "normal" | "low";
 export interface LogicResultDoc{
     action: LogicResultDocAction;

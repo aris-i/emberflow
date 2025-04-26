@@ -82,9 +82,20 @@ export const queueInstructions = async (dstPath: string, instructions: { [p: str
   }
 };
 
-export async function convertInstructionsToDbValues(transaction: Transaction, instructions: Instructions) {
+export async function convertInstructionsToDbValues(txn: Transaction, instructions: Instructions, destProp?: string, destPropId?: string) {
+  const actualUpdateData: { [key: string ]: object} = {};
+  const actualRemoveData: { [key: string]: object } = {};
   const updateData: { [key: string ]: FieldValue | number } = {};
   const removeData: { [key: string]: FieldValue } = {};
+  if (destProp) {
+    if (destPropId) {
+      actualUpdateData[destProp] = {[destPropId]: updateData};
+      actualRemoveData[destProp] = {[destPropId]: removeData};
+    } else {
+      actualUpdateData[destProp] = updateData;
+      actualRemoveData[destProp] = removeData;
+    }
+  }
 
   for (const [property, instruction] of Object.entries(instructions)) {
     if (instruction === "++") {
@@ -158,11 +169,10 @@ export async function convertInstructionsToDbValues(transaction: Transaction, in
       const now = admin.firestore.Timestamp.now();
 
       try {
-        console.debug("Initiate global counter transaction");
         console.debug("Start of global counter transaction");
         let newCount: number;
         const counterRef = db.doc(`@counters/${counterName}`);
-        const counterDoc = await transaction.get(counterRef);
+        const counterDoc = await txn.get(counterRef);
         const counterData = counterDoc?.data();
         if (!counterData) {
           newCount = 1;
@@ -171,21 +181,20 @@ export async function convertInstructionsToDbValues(transaction: Transaction, in
             "count": newCount,
             "lastUpdatedAt": now,
           };
-          transaction.set(counterRef, newDocument);
+          txn.set(counterRef, newDocument);
         } else {
           const {count} = counterData;
           const maxValueReached = maxValue && count >= maxValue;
 
           newCount = maxValueReached ? 1 : count + 1;
 
-          transaction.update(counterRef, {
+          txn.update(counterRef, {
             "count": newCount,
             "lastUpdatedAt": now,
           });
         }
         updateData[property] = newCount;
         console.debug("End of global counter transaction");
-        console.debug("Committed global counter transaction");
       } catch (error) {
         console.error(error);
       }
@@ -193,7 +202,7 @@ export async function convertInstructionsToDbValues(transaction: Transaction, in
       console.log(`Invalid instruction ${instruction} for property ${property}`);
     }
   }
-  return {updateData, removeData};
+  return {updateData: actualUpdateData, removeData: actualRemoveData};
 }
 
 export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublishedData> | Map<string, Instructions>) {
@@ -201,13 +210,14 @@ export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublis
     const {updateData, removeData} = await convertInstructionsToDbValues(txn, instructions);
     const dstDocRef = db.doc(dstPath);
     if (Object.keys(updateData).length > 0) {
-      await dstDocRef.update(updateData);
+      txn.update(dstDocRef, updateData);
     }
     if (Object.keys(removeData).length > 0) {
-      await dstDocRef.update(removeData);
+      txn.update(dstDocRef, removeData);
     }
   }
 
+  // TODO: consider dstPath has destProp and destPropId
   await db.runTransaction(async (txn) => {
     if (event instanceof Map) {
       // Process the reduced instructions here
