@@ -19,6 +19,7 @@ import {pubsubUtils} from "./pubsub";
 import {reviveDateAndTimestamp} from "./misc";
 import FieldValue = firestore.FieldValue;
 import Transaction = firestore.Transaction;
+import {getDestPropAndDestPropId} from "./paths";
 
 export const queueForDistributionLater = async (...logicResultDocs: LogicResultDoc[]) => {
   try {
@@ -83,10 +84,11 @@ export const queueInstructions = async (dstPath: string, instructions: { [p: str
 };
 
 export async function convertInstructionsToDbValues(txn: Transaction, instructions: Instructions, destProp?: string, destPropId?: string) {
-  const actualUpdateData: { [key: string ]: object} = {};
-  const actualRemoveData: { [key: string]: object } = {};
+  let actualUpdateData: { [key: string ]: object | FieldValue | number} = {};
+  let actualRemoveData: { [key: string]: object | FieldValue | number } = {};
   const updateData: { [key: string ]: FieldValue | number } = {};
   const removeData: { [key: string]: FieldValue } = {};
+
   if (destProp) {
     if (destPropId) {
       actualUpdateData[destProp] = {[destPropId]: updateData};
@@ -95,6 +97,9 @@ export async function convertInstructionsToDbValues(txn: Transaction, instructio
       actualUpdateData[destProp] = updateData;
       actualRemoveData[destProp] = removeData;
     }
+  } else {
+    actualUpdateData = updateData;
+    actualRemoveData = removeData;
   }
 
   for (const [property, instruction] of Object.entries(instructions)) {
@@ -202,12 +207,28 @@ export async function convertInstructionsToDbValues(txn: Transaction, instructio
       console.log(`Invalid instruction ${instruction} for property ${property}`);
     }
   }
+
+  // Clean up to empty destProps to avoid overriding whole object
+  if (destProp && Object.keys(updateData).length == 0) {
+    actualUpdateData = {};
+  }
+
+  if (destProp && Object.keys(removeData).length == 0) {
+    actualRemoveData = {};
+  }
+
   return {updateData: actualUpdateData, removeData: actualRemoveData};
 }
 
 export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublishedData> | Map<string, Instructions>) {
   async function applyInstructions(txn: Transaction, instructions: Instructions, dstPath: string) {
-    const {updateData, removeData} = await convertInstructionsToDbValues(txn, instructions);
+    const {destProp, destPropId} = getDestPropAndDestPropId(dstPath);
+    const {updateData, removeData} = await convertInstructionsToDbValues(
+      txn,
+      instructions,
+      destProp,
+      destPropId
+    );
     const dstDocRef = db.doc(dstPath);
     if (Object.keys(updateData).length > 0) {
       txn.update(dstDocRef, updateData);

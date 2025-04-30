@@ -1,7 +1,7 @@
 import * as admin from "firebase-admin";
 import * as indexUtils from "../index-utils";
 import {firestore} from "firebase-admin";
-import {initializeEmberFlow, _mockable} from "../index";
+import {initializeEmberFlow, _mockable, db} from "../index";
 import {
   Action,
   LogicConfig,
@@ -57,6 +57,17 @@ admin.initializeApp({
 const txnGet: TxnGet = {
   get: jest.fn(),
 };
+
+const txnGetFnMock = jest.fn();
+const transactionSetMock = jest.fn();
+const transactionUpdateMock = jest.fn();
+const transactionMock = {
+  get: txnGetFnMock,
+  set: transactionSetMock,
+  update: transactionUpdateMock,
+  delete: jest.fn(),
+} as any;
+
 jest.mock("../utils/paths", () => {
   const originalModule = jest.requireActual("../utils/paths");
 
@@ -110,7 +121,7 @@ describe("distributeDoc", () => {
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
     expect(dbDoc.set).toHaveBeenCalledTimes(1);
-    expect(dbDoc.set).toHaveBeenCalledWith(expectedData);
+    expect(dbDoc.set).toHaveBeenCalledWith(expectedData, {merge: true});
     expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
     expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
   });
@@ -130,8 +141,9 @@ describe("distributeDoc", () => {
     await indexUtils.distributeDoc(logicResultDoc);
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
-    expect(dbDoc.update).toHaveBeenCalledTimes(1);
-    expect(dbDoc.update).toHaveBeenCalledWith(expectedData);
+
+    const dstDocRef = db.doc("/users/test-user-id/documents/test-doc-id");
+    expect(dstDocRef.set).toHaveBeenCalledWith(expectedData, {merge: true});
     expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
     expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
   });
@@ -159,8 +171,90 @@ describe("distributeDoc", () => {
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
     expect(queueInstructionsSpy).toHaveBeenCalledTimes(1);
     expect(queueInstructionsSpy).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id", logicResultDoc.instructions);
-    expect(dbDoc.update).toHaveBeenCalledTimes(1);
-    expect(dbDoc.update).toHaveBeenCalledWith(expectedData);
+
+    const dstDocRef = db.doc(logicResultDoc.dstPath);
+    expect(dstDocRef.set).toHaveBeenCalledWith(expectedData, {merge: true});
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
+  });
+
+  it("should process instructions if using transaction", async () => {
+    const logicResultDoc: LogicResultDoc = {
+      action: "merge",
+      priority: "normal",
+      doc: {name: "test-doc-name-updated"},
+      instructions: {
+        "count": "++",
+        "score": "+5",
+        "minusCount": "--",
+        "minusScore": "-3",
+      },
+      dstPath: "/users/test-user-id/documents/test-doc-id",
+    };
+    const expectedData = {
+      ...logicResultDoc.doc,
+      "@id": "test-doc-id",
+    };
+
+    await indexUtils.distributeDoc(logicResultDoc, undefined, transactionMock);
+    expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
+    expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
+    expect(queueInstructionsSpy).not.toHaveBeenCalled();
+
+    const expectedInstructions = {
+      "count": admin.firestore.FieldValue.increment(1),
+      "score": admin.firestore.FieldValue.increment(5),
+      "minusCount": admin.firestore.FieldValue.increment(-1),
+      "minusScore": admin.firestore.FieldValue.increment(-3),
+    };
+    const dstDocRef = db.doc(logicResultDoc.dstPath);
+    expect(transactionSetMock).toHaveBeenNthCalledWith(1, dstDocRef, expectedInstructions, {merge: true});
+    expect(transactionSetMock).toHaveBeenNthCalledWith(2, dstDocRef, expectedData, {merge: true});
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
+  });
+
+  it("should add parsed instructions to destPropId field if has destPropId", async () => {
+    transactionSetMock.mockReset();
+    const logicResultDoc: LogicResultDoc = {
+      action: "merge",
+      priority: "normal",
+      doc: {name: "test-doc-name-updated"},
+      instructions: {
+        "count": "++",
+        "score": "+5",
+        "minusCount": "--",
+        "minusScore": "-3",
+      },
+      dstPath: "/users/test-user-id/documents/test-doc-id#destination[sampleDestPropId]",
+    };
+    const expectedData = {
+      destination: {
+        sampleDestPropId: {
+          ...logicResultDoc.doc,
+        },
+      },
+    };
+
+    await indexUtils.distributeDoc(logicResultDoc, undefined, transactionMock);
+    expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
+    expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
+    expect(queueInstructionsSpy).not.toHaveBeenCalled();
+
+    const expectedInstructions = {
+      destination: {
+        sampleDestPropId: {
+          "count": admin.firestore.FieldValue.increment(1),
+          "score": admin.firestore.FieldValue.increment(5),
+          "minusCount": admin.firestore.FieldValue.increment(-1),
+          "minusScore": admin.firestore.FieldValue.increment(-3),
+        },
+      },
+    };
+
+    const dstDocRef = db.doc(logicResultDoc.dstPath);
+    expect(transactionSetMock).toHaveBeenNthCalledWith(1, dstDocRef, expectedInstructions, {merge: true});
+    expect(transactionSetMock).toHaveBeenNthCalledWith(2, dstDocRef, expectedData, {merge: true});
     expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
     expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
   });
@@ -249,7 +343,7 @@ describe("distributeDoc", () => {
     });
 
     it("should merge a document to dstPath", async () => {
-      const batchSetSpy = jest.spyOn(batch, "update").mockResolvedValue(undefined);
+      const batchSetSpy = jest.spyOn(batch, "set").mockResolvedValue(undefined);
       const logicResultDoc: LogicResultDoc = {
         action: "merge",
         priority: "normal",
@@ -307,8 +401,10 @@ describe("distributeDoc", () => {
       await indexUtils.distributeDoc(logicResultDoc);
       expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
       expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
-      expect(dbDoc.update).toHaveBeenCalledTimes(1);
-      expect(dbDoc.update).toHaveBeenCalledWith(expectedData);
+
+      const dstDocRef = db.doc(logicResultDoc.dstPath);
+      expect(dstDocRef.set).toHaveBeenCalledTimes(1);
+      expect(dstDocRef.set).toHaveBeenCalledWith(expectedData, {merge: true});
       expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
       expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
     });
@@ -321,14 +417,18 @@ describe("distributeDoc", () => {
         doc: {name: "test-doc-name-updated"},
       };
       const expectedData = {
-        "createdBy.name": "test-doc-name-updated",
+        "createdBy": {
+          name: "test-doc-name-updated",
+        },
       };
 
       await indexUtils.distributeDoc(logicResultDoc);
       expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
       expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
-      expect(dbDoc.update).toHaveBeenCalledTimes(1);
-      expect(dbDoc.update).toHaveBeenCalledWith(expectedData);
+
+      const dstDocRef = db.doc(logicResultDoc.dstPath);
+      expect(dstDocRef.set).toHaveBeenCalledTimes(1);
+      expect(dstDocRef.set).toHaveBeenCalledWith(expectedData, {merge: true});
       expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
       expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
     });
@@ -347,8 +447,10 @@ describe("distributeDoc", () => {
       expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
       expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
       expect(dbDoc.get).toHaveBeenCalledTimes(1);
-      expect(dbDoc.update).toHaveBeenCalledTimes(1);
-      expect(dbDoc.update).toHaveBeenCalledWith(expectedData);
+
+      const dstDocRef = db.doc(logicResultDoc.dstPath);
+      expect(dstDocRef.set).toHaveBeenCalledTimes(1);
+      expect(dstDocRef.set).toHaveBeenCalledWith(expectedData, {merge: true});
       expect(dbDoc.delete).not.toHaveBeenCalled();
       expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
       expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
@@ -380,14 +482,18 @@ describe("distributeDoc", () => {
         doc: {name: "test-doc-name-updated"},
       };
       const expectedData = {
-        "followers.test-another-user": logicResultDoc.doc,
+        "followers": {
+          "test-another-user": logicResultDoc.doc,
+        },
       };
 
       await indexUtils.distributeDoc(logicResultDoc);
       expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
       expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
-      expect(dbDoc.update).toHaveBeenCalledTimes(1);
-      expect(dbDoc.update).toHaveBeenCalledWith(expectedData);
+
+      const dstDocRef = db.doc(logicResultDoc.dstPath);
+      expect(dstDocRef.set).toHaveBeenCalledTimes(1);
+      expect(dstDocRef.set).toHaveBeenCalledWith(expectedData, {merge: true});
       expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
       expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
     });
@@ -400,14 +506,19 @@ describe("distributeDoc", () => {
         doc: {name: "test-doc-name-updated"},
       };
       const expectedData = {
-        "followers.test-another-user.name": "test-doc-name-updated",
+        "followers": {
+          "test-another-user": {
+            "name": "test-doc-name-updated",
+          },
+        },
       };
 
       await indexUtils.distributeDoc(logicResultDoc);
       expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
       expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
-      expect(dbDoc.update).toHaveBeenCalledTimes(1);
-      expect(dbDoc.update).toHaveBeenCalledWith(expectedData);
+      const dstDocRef = db.doc(logicResultDoc.dstPath);
+      expect(dstDocRef.set).toHaveBeenCalledTimes(1);
+      expect(dstDocRef.set).toHaveBeenCalledWith(expectedData, {merge: true});
       expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
       expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
     });
@@ -419,15 +530,18 @@ describe("distributeDoc", () => {
         dstPath: "/users/test-user-id/documents/test-doc-id#followers[test-another-user]",
       };
       const expectedData = {
-        "followers.test-another-user": admin.firestore.FieldValue.delete(),
+        "followers": {
+          "test-another-user": admin.firestore.FieldValue.delete(),
+        },
       };
 
       await indexUtils.distributeDoc(logicResultDoc);
       expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
       expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
       expect(dbDoc.get).toHaveBeenCalledTimes(1);
-      expect(dbDoc.update).toHaveBeenCalledTimes(1);
-      expect(dbDoc.update).toHaveBeenCalledWith(expectedData);
+      const dstDocRef = db.doc(logicResultDoc.dstPath);
+      expect(dstDocRef.set).toHaveBeenCalledTimes(1);
+      expect(dstDocRef.set).toHaveBeenCalledWith(expectedData, {merge: true});
       expect(dbDoc.delete).not.toHaveBeenCalled();
       expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
       expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
@@ -467,7 +581,7 @@ describe("distribute", () => {
   });
 
   it("should merge a document to dstPath and queue instructions", async () => {
-    const batchSetSpy = jest.spyOn(batch, "update").mockResolvedValue(undefined);
+    const batchSetSpy = jest.spyOn(batch, "set").mockResolvedValue(undefined);
 
     const userDocsByDstPath = new Map([[
       "/users/test-user-id/documents/test-doc-id",

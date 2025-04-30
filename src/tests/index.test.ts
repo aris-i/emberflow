@@ -1275,8 +1275,8 @@ describe("onFormSubmit", () => {
     expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(1, journalDocs);
     console.debug("set", transactionSetMock.mock.calls);
     console.debug("update", transactionUpdateMock.mock.calls);
-    expect(transactionMock.set).toHaveBeenCalledTimes(21);
-    expect(transactionMock.update).toHaveBeenCalledTimes(11);
+    expect(transactionMock.set).toHaveBeenCalledTimes(23);
+    expect(transactionMock.update).toHaveBeenCalledTimes(9);
 
     expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(2, transactionalDocs);
     expect(transactionMock.delete).toHaveBeenCalledTimes(1);

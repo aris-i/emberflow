@@ -16,7 +16,11 @@ import {
   validatorConfig,
   viewLogicConfigs,
 } from "./index";
-import {_mockable as _pathMockable, expandAndGroupDocPathsByEntity, findMatchingDocPathRegex} from "./utils/paths";
+import {
+  _mockable as _pathMockable,
+  expandAndGroupDocPathsByEntity,
+  findMatchingDocPathRegex,
+} from "./utils/paths";
 import {deepEqual, deleteCollection} from "./utils/misc";
 import {CloudFunctionsServiceClient} from "@google-cloud/functions";
 import {FormData} from "emberflow-admin-client/lib/types";
@@ -61,11 +65,17 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
     }
   }
 
-  async function processInstructions(instructions: Instructions) {
+  async function processInstructions(instructions: Instructions, destProp?: string, destPropId?: string) {
     if (!txn) {
       return;
     }
-    const {updateData, removeData} = await convertInstructionsToDbValues(txn, instructions);
+
+    const {updateData, removeData} = await convertInstructionsToDbValues(
+      txn,
+      instructions,
+      destProp,
+      destPropId
+    );
     if (Object.keys(updateData).length > 0) {
       await _merge(dstDocRef, updateData);
     }
@@ -85,6 +95,7 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
   let destProp = "";
   let destPropArg = "";
   let destPropId = "";
+
   if (dstPath.includes("#")) {// users/userId1#followers[userId3]
     [baseDstPath, destProp] = dstPath.split("#");
     if (destProp.includes("[") && destProp.endsWith("]")) {
@@ -131,7 +142,7 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
   } else if (action === "merge" || action === "create") {
     if (instructions) {
       if (txn) {
-        await processInstructions(instructions);
+        await processInstructions(instructions, destProp, destPropId);
       } else {
         await queueInstructions(dstPath, instructions);
       }
