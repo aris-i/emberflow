@@ -159,3 +159,22 @@ export function parseEntity(docPath: string) {
   const {entity} = findMatchingDocPathRegex(docPath);
   return {entityId, entity};
 }
+
+export function getDestPropAndDestPropId(dstPath: string) {
+  let destProp;
+  let destPropArg = "";
+  let destPropId;
+
+  if (dstPath.includes("#")) {
+    destProp = dstPath.split("#")[1];
+    if (destProp.includes("[") && destProp.endsWith("]")) {
+      [destProp, destPropArg] = destProp.split("[");
+      destPropId = destPropArg.slice(0, -1);
+      if (!destPropId) {
+        destPropId = undefined;
+      }
+    }
+  }
+
+  return {destProp, destPropId};
+}
