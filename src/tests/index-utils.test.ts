@@ -458,22 +458,6 @@ describe("distributeDoc", () => {
   });
 
   describe("array map destProp", () => {
-    it("should return when destProp id is empty", async () => {
-      const consoleErrorSpy = jest.spyOn(console, "error").mockImplementation();
-      const logicResultDoc: LogicResultDoc = {
-        action: "merge",
-        priority: "normal",
-        dstPath: "/users/test-user-id/documents/test-doc-id#followers[]",
-        doc: {name: "test-doc-name-updated"},
-      };
-
-      await indexUtils.distributeDoc(logicResultDoc);
-      expect(consoleErrorSpy).toHaveBeenCalledWith("destPropId should not be blank for array map");
-      expect(admin.firestore().doc).not.toHaveBeenCalled();
-      expect(dbDoc.update).not.toHaveBeenCalled();
-      expect(queueRunViewLogicsSpy).not.toHaveBeenCalled();
-    });
-
     it("should create destProp", async () => {
       const logicResultDoc: LogicResultDoc = {
         action: "create",

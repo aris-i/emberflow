@@ -91,7 +91,7 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
     dstPath,
     skipRunViewLogics,
   } = logicResultDoc;
-  const baseDstPath = dstPath;
+  const baseDstPath = dstPath.split("#")[0];
 
   const {destProp, destPropId} = getDestPropAndDestPropId(dstPath);
 
