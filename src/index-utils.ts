@@ -19,7 +19,7 @@ import {
 import {
   _mockable as _pathMockable,
   expandAndGroupDocPathsByEntity,
-  findMatchingDocPathRegex,
+  findMatchingDocPathRegex, getDestPropAndDestPropId,
 } from "./utils/paths";
 import {deepEqual, deleteCollection} from "./utils/misc";
 import {CloudFunctionsServiceClient} from "@google-cloud/functions";
@@ -91,29 +91,20 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
     dstPath,
     skipRunViewLogics,
   } = logicResultDoc;
-  let baseDstPath = dstPath;
-  let destProp = "";
-  let destPropArg = "";
-  let destPropId = "";
+  const baseDstPath = dstPath;
 
-  if (dstPath.includes("#")) {// users/userId1#followers[userId3]
-    [baseDstPath, destProp] = dstPath.split("#");
-    if (destProp.includes("[") && destProp.endsWith("]")) {
-      [destProp, destPropArg] = destProp.split("[");
-      destPropId = destPropArg.slice(0, -1);
-      if (!destPropId) {
-        console.error("destPropId should not be blank for array map");
-        return;
-      }
-    }
-  }
+  const {destProp, destPropId} = getDestPropAndDestPropId(dstPath);
 
   const dstDocRef = db.doc(baseDstPath);
   if (!skipRunViewLogics && ["create", "merge", "delete"].includes(action)) {
     if (action === "delete") {
       const data = (await dstDocRef.get()).data() || {};
       if (destProp) {
-        logicResultDoc.doc = {[destProp]: data[destProp] || {}};
+        if (destPropId) {
+          logicResultDoc.doc = {[destProp]: data[destProp]?.[destPropId] || {}};
+        } else {
+          logicResultDoc.doc = {[destProp]: data[destProp] || {}};
+        }
       } else {
         logicResultDoc.doc = data;
       }
