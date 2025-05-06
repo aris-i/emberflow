@@ -678,6 +678,116 @@ describe("onMessageInstructionsQueue", () => {
     expect(transactionUpdateMock).toHaveBeenCalledWith(dstDocRef, expectedData);
     expect(transactionUpdateMock).toHaveBeenCalledWith(dstDocRef, expectedRemoveData);
   });
+
+  it("should process event instructions correctly with destprop and destpropid", async () => {
+    transactionUpdateMock.mockReset();
+    isProcessedMock.mockResolvedValueOnce(false);
+    const expectedData = {
+      "hello": {
+        "world": {
+          "count": admin.firestore.FieldValue.increment(1),
+          "score": admin.firestore.FieldValue.increment(5),
+          "minusCount": admin.firestore.FieldValue.increment(-1),
+          "minusScore": admin.firestore.FieldValue.increment(-3),
+          "optionalField": admin.firestore.FieldValue.delete(),
+          "arrayUnion": admin.firestore.FieldValue.arrayUnion("add-this"),
+          "queueNumber": 11,
+        },
+      },
+    };
+
+    const expectedRemoveData = {
+      "hello": {
+        "world": {
+          "arrayRemove": admin.firestore.FieldValue.arrayRemove("remove-this"),
+        },
+      },
+    };
+    const event = {
+      id: "test-event",
+      data: {
+        message: {
+          json: {
+            dstPath: "/users/test-user-id/documents/test-doc-id#hello[world]",
+            instructions: {
+              "count": "++",
+              "score": "+5",
+              "minusCount": "--",
+              "minusScore": "-3",
+              "optionalField": "del",
+              "arrayUnion": "arr(+add-this)",
+              "arrayRemove": "arr(-remove-this)",
+              "queueNumber": "globalCounter(queueNumber,20)",
+            },
+          },
+        },
+      },
+    } as CloudEvent<MessagePublishedData>;
+    await distribution.onMessageInstructionsQueue(event);
+
+    expect(admin.firestore().doc).toHaveBeenCalledTimes(2);
+    expect(admin.firestore().doc).toHaveBeenNthCalledWith(1, "@counters/queueNumber");
+    expect(admin.firestore().doc).toHaveBeenNthCalledWith(2, "/users/test-user-id/documents/test-doc-id");
+    expect(transactionUpdateMock).toHaveBeenCalledTimes(3);
+
+    const dstDocRef = db.doc(event.data.message.json.dstPath.split("#")[0]);
+    expect(transactionUpdateMock).toHaveBeenCalledWith(dstDocRef, expectedData);
+    expect(transactionUpdateMock).toHaveBeenCalledWith(dstDocRef, expectedRemoveData);
+    expect(trackProcessedIdsMock).toHaveBeenCalledWith(INSTRUCTIONS_TOPIC_NAME, event.id);
+  });
+
+  it("should process event instructions correctly with destprop only", async () => {
+    transactionUpdateMock.mockReset();
+    isProcessedMock.mockResolvedValueOnce(false);
+    const expectedData = {
+      "hello": {
+        "count": admin.firestore.FieldValue.increment(1),
+        "score": admin.firestore.FieldValue.increment(5),
+        "minusCount": admin.firestore.FieldValue.increment(-1),
+        "minusScore": admin.firestore.FieldValue.increment(-3),
+        "optionalField": admin.firestore.FieldValue.delete(),
+        "arrayUnion": admin.firestore.FieldValue.arrayUnion("add-this"),
+        "queueNumber": 11,
+      },
+    };
+
+    const expectedRemoveData = {
+      "hello": {
+        "arrayRemove": admin.firestore.FieldValue.arrayRemove("remove-this"),
+      },
+    };
+    const event = {
+      id: "test-event",
+      data: {
+        message: {
+          json: {
+            dstPath: "/users/test-user-id/documents/test-doc-id#hello",
+            instructions: {
+              "count": "++",
+              "score": "+5",
+              "minusCount": "--",
+              "minusScore": "-3",
+              "optionalField": "del",
+              "arrayUnion": "arr(+add-this)",
+              "arrayRemove": "arr(-remove-this)",
+              "queueNumber": "globalCounter(queueNumber,20)",
+            },
+          },
+        },
+      },
+    } as CloudEvent<MessagePublishedData>;
+    await distribution.onMessageInstructionsQueue(event);
+
+    expect(admin.firestore().doc).toHaveBeenCalledTimes(2);
+    expect(admin.firestore().doc).toHaveBeenNthCalledWith(1, "@counters/queueNumber");
+    expect(admin.firestore().doc).toHaveBeenNthCalledWith(2, "/users/test-user-id/documents/test-doc-id");
+    expect(transactionUpdateMock).toHaveBeenCalledTimes(3);
+
+    const dstDocRef = db.doc(event.data.message.json.dstPath.split("#")[0]);
+    expect(transactionUpdateMock).toHaveBeenCalledWith(dstDocRef, expectedData);
+    expect(transactionUpdateMock).toHaveBeenCalledWith(dstDocRef, expectedRemoveData);
+    expect(trackProcessedIdsMock).toHaveBeenCalledWith(INSTRUCTIONS_TOPIC_NAME, event.id);
+  });
 });
 
 describe("mergeInstructions", () => {

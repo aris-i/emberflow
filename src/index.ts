@@ -37,7 +37,7 @@ import {createViewLogicFn, onMessageViewLogicsQueue, queueRunViewLogics} from ".
 import {resetUsageStats, stopBillingIfBudgetExceeded, useBillProtect} from "./utils/bill-protect";
 import {Firestore} from "firebase-admin/firestore";
 import {DatabaseEvent, DataSnapshot, onValueCreated} from "firebase-functions/v2/database";
-import {getDestPropAndDestPropId, parseEntity} from "./utils/paths";
+import {getBasePath, getDestPropAndDestPropId, parseEntity} from "./utils/paths";
 import {database, firestore} from "firebase-admin";
 import {initClient} from "emberflow-admin-client/lib";
 import {internalDbStructure, InternalEntity} from "./db-structure";
@@ -646,7 +646,7 @@ async function distributeFnTransactional(
             continue;
           }
 
-          const docRef = db.doc(dstPath);
+          const docRef = db.doc(getBasePath(dstPath));
           const currData = (await txn.get(docRef)).data();
 
           let instructionsDbValues;

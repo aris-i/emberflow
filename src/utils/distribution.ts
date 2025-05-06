@@ -19,7 +19,7 @@ import {pubsubUtils} from "./pubsub";
 import {reviveDateAndTimestamp} from "./misc";
 import FieldValue = firestore.FieldValue;
 import Transaction = firestore.Transaction;
-import {getDestPropAndDestPropId} from "./paths";
+import {getBasePath, getDestPropAndDestPropId} from "./paths";
 
 export const queueForDistributionLater = async (...logicResultDocs: LogicResultDoc[]) => {
   try {
@@ -229,7 +229,7 @@ export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublis
       destProp,
       destPropId
     );
-    const dstDocRef = db.doc(dstPath);
+    const dstDocRef = db.doc(getBasePath(dstPath));
     if (Object.keys(updateData).length > 0) {
       txn.update(dstDocRef, updateData);
     }
@@ -238,7 +238,6 @@ export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublis
     }
   }
 
-  // TODO: consider dstPath has destProp and destPropId
   await db.runTransaction(async (txn) => {
     if (event instanceof Map) {
       // Process the reduced instructions here
