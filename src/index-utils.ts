@@ -19,7 +19,7 @@ import {
 import {
   _mockable as _pathMockable,
   expandAndGroupDocPathsByEntity,
-  findMatchingDocPathRegex, getDestPropAndDestPropId,
+  findMatchingDocPathRegex, getBasePath, getDestPropAndDestPropId,
 } from "./utils/paths";
 import {deepEqual, deleteCollection} from "./utils/misc";
 import {CloudFunctionsServiceClient} from "@google-cloud/functions";
@@ -91,8 +91,8 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
     dstPath,
     skipRunViewLogics,
   } = logicResultDoc;
-  const baseDstPath = dstPath.split("#")[0];
 
+  const baseDstPath = getBasePath(dstPath);
   const {destProp, destPropId} = getDestPropAndDestPropId(dstPath);
 
   const dstDocRef = db.doc(baseDstPath);

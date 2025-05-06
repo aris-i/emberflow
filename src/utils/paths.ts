@@ -178,3 +178,7 @@ export function getDestPropAndDestPropId(dstPath: string) {
 
   return {destProp, destPropId};
 }
+
+export function getBasePath(dstPath: string) {
+  return dstPath.split("#")[0];
+}
