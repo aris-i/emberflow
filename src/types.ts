@@ -36,7 +36,7 @@ export interface LogicResultDoc{
     priority?: LogicResultDocPriority;
     srcPath?: string;
     doc?: FirebaseFirestore.DocumentData;
-    instructions?: { [key: string]: string };
+    instructions?: Record<string, any>;
     journalEntries?: JournalEntry[];
     skipEntityDuringRecursion?: string[];
     skipRunViewLogics?: boolean;
