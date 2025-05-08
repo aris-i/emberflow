@@ -231,10 +231,10 @@ export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublis
     );
     const dstDocRef = db.doc(getBasePath(dstPath));
     if (Object.keys(updateData).length > 0) {
-      txn.update(dstDocRef, updateData);
+      txn.set(dstDocRef, updateData, {merge: true});
     }
     if (Object.keys(removeData).length > 0) {
-      txn.update(dstDocRef, removeData);
+      txn.set(dstDocRef, removeData, {merge: true});
     }
   }
 

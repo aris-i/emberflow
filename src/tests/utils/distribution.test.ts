@@ -490,11 +490,11 @@ describe("onMessageInstructionsQueue", () => {
     } as CloudEvent<MessagePublishedData>;
     await distribution.onMessageInstructionsQueue(event);
     const dstDocRef = db.doc(event.data.message.json.dstPath);
-    expect(transactionUpdateMock).toHaveBeenCalledWith(dstDocRef, expectedData);
+    expect(transactionSetMock).toHaveBeenCalledWith(dstDocRef, expectedData, {merge: true});
   });
 
   it("should convert array remove instructions correctly", async () => {
-    transactionUpdateMock.mockReset();
+    transactionSetMock.mockReset();
     isProcessedMock.mockResolvedValueOnce(false);
     const expectedData = {
       "planets": admin.firestore.FieldValue.arrayRemove("Earth"),
@@ -518,13 +518,13 @@ describe("onMessageInstructionsQueue", () => {
     } as CloudEvent<MessagePublishedData>;
     await distribution.onMessageInstructionsQueue(event);
 
-    expect(transactionUpdateMock).toHaveBeenCalledTimes(1);
+    expect(transactionSetMock).toHaveBeenCalledTimes(1);
     const dstDocRef = db.doc(event.data.message.json.dstPath);
-    expect(transactionUpdateMock).toHaveBeenCalledWith(dstDocRef, expectedData);
+    expect(transactionSetMock).toHaveBeenCalledWith(dstDocRef, expectedData, {merge: true});
   });
 
   it("should convert global counter instruction correctly", async () => {
-    transactionUpdateMock.mockReset();
+    transactionSetMock.mockReset();
     isProcessedMock.mockResolvedValueOnce(false);
     const expectedData = {
       "queueNumber": 11,
@@ -544,13 +544,13 @@ describe("onMessageInstructionsQueue", () => {
     } as CloudEvent<MessagePublishedData>;
     await distribution.onMessageInstructionsQueue(event);
 
-    expect(transactionUpdateMock).toHaveBeenCalledTimes(2);
+    expect(transactionSetMock).toHaveBeenCalledTimes(1);
     const dstDocRef = db.doc(event.data.message.json.dstPath);
-    expect(transactionUpdateMock).toHaveBeenCalledWith(dstDocRef, expectedData);
+    expect(transactionSetMock).toHaveBeenCalledWith(dstDocRef, expectedData, {merge: true});
   });
 
   it("should convert array union and remove instructions correctly in a single field", async () => {
-    transactionUpdateMock.mockReset();
+    transactionSetMock.mockReset();
     isProcessedMock.mockResolvedValueOnce(false);
     const expectedData = {
       "planets": admin.firestore.FieldValue.arrayUnion("Earth", "Mars", "Venus"),
@@ -575,9 +575,9 @@ describe("onMessageInstructionsQueue", () => {
     await distribution.onMessageInstructionsQueue(event);
 
     const dstDocRef = db.doc(event.data.message.json.dstPath);
-    expect(transactionUpdateMock).toHaveBeenCalledTimes(2);
-    expect(transactionUpdateMock).toHaveBeenCalledWith(dstDocRef, expectedData);
-    expect(transactionUpdateMock).toHaveBeenCalledWith(dstDocRef, expectedRemoveData);
+    expect(transactionSetMock).toHaveBeenCalledTimes(2);
+    expect(transactionSetMock).toHaveBeenCalledWith(dstDocRef, expectedData, {merge: true});
+    expect(transactionSetMock).toHaveBeenCalledWith(dstDocRef, expectedRemoveData, {merge: true});
   });
 
   it("should skip duplicate message", async () => {
@@ -593,6 +593,7 @@ describe("onMessageInstructionsQueue", () => {
   });
 
   it("should process event instructions correctly", async () => {
+    transactionSetMock.mockReset();
     transactionUpdateMock.mockReset();
     isProcessedMock.mockResolvedValueOnce(false);
     const expectedData = {
@@ -633,16 +634,17 @@ describe("onMessageInstructionsQueue", () => {
     expect(admin.firestore().doc).toHaveBeenCalledTimes(2);
     expect(admin.firestore().doc).toHaveBeenNthCalledWith(1, "@counters/queueNumber");
     expect(admin.firestore().doc).toHaveBeenNthCalledWith(2, "/users/test-user-id/documents/test-doc-id");
-    expect(transactionUpdateMock).toHaveBeenCalledTimes(3);
+    expect(transactionSetMock).toHaveBeenCalledTimes(2);
+    expect(transactionUpdateMock).toHaveBeenCalledTimes(1);
 
     const dstDocRef = db.doc(event.data.message.json.dstPath);
-    expect(transactionUpdateMock).toHaveBeenCalledWith(dstDocRef, expectedData);
-    expect(transactionUpdateMock).toHaveBeenCalledWith(dstDocRef, expectedRemoveData);
+    expect(transactionSetMock).toHaveBeenCalledWith(dstDocRef, expectedData, {merge: true});
+    expect(transactionSetMock).toHaveBeenCalledWith(dstDocRef, expectedRemoveData, {merge: true});
     expect(trackProcessedIdsMock).toHaveBeenCalledWith(INSTRUCTIONS_TOPIC_NAME, event.id);
   });
 
   it("should process map instructions correctly", async () => {
-    transactionUpdateMock.mockReset();
+    transactionSetMock.mockReset();
     const expectedData = {
       "count": admin.firestore.FieldValue.increment(1),
       "score": admin.firestore.FieldValue.increment(5),
@@ -672,15 +674,15 @@ describe("onMessageInstructionsQueue", () => {
     expect(admin.firestore().doc).toHaveBeenCalledTimes(2);
     expect(admin.firestore().doc).toHaveBeenNthCalledWith(1, "@counters/queueNumber");
     expect(admin.firestore().doc).toHaveBeenNthCalledWith(2, "/users/test-user-id/documents/test-doc-id");
-    expect(transactionUpdateMock).toHaveBeenCalledTimes(3);
+    expect(transactionSetMock).toHaveBeenCalledTimes(2);
 
     const dstDocRef = db.doc("/users/test-user-id/documents/test-doc-id");
-    expect(transactionUpdateMock).toHaveBeenCalledWith(dstDocRef, expectedData);
-    expect(transactionUpdateMock).toHaveBeenCalledWith(dstDocRef, expectedRemoveData);
+    expect(transactionSetMock).toHaveBeenCalledWith(dstDocRef, expectedData, {merge: true});
+    expect(transactionSetMock).toHaveBeenCalledWith(dstDocRef, expectedRemoveData, {merge: true});
   });
 
   it("should process event instructions correctly with destprop and destpropid", async () => {
-    transactionUpdateMock.mockReset();
+    transactionSetMock.mockReset();
     isProcessedMock.mockResolvedValueOnce(false);
     const expectedData = {
       "hello": {
@@ -728,16 +730,16 @@ describe("onMessageInstructionsQueue", () => {
     expect(admin.firestore().doc).toHaveBeenCalledTimes(2);
     expect(admin.firestore().doc).toHaveBeenNthCalledWith(1, "@counters/queueNumber");
     expect(admin.firestore().doc).toHaveBeenNthCalledWith(2, "/users/test-user-id/documents/test-doc-id");
-    expect(transactionUpdateMock).toHaveBeenCalledTimes(3);
+    expect(transactionSetMock).toHaveBeenCalledTimes(2);
 
     const dstDocRef = db.doc(event.data.message.json.dstPath.split("#")[0]);
-    expect(transactionUpdateMock).toHaveBeenCalledWith(dstDocRef, expectedData);
-    expect(transactionUpdateMock).toHaveBeenCalledWith(dstDocRef, expectedRemoveData);
+    expect(transactionSetMock).toHaveBeenCalledWith(dstDocRef, expectedData, {merge: true});
+    expect(transactionSetMock).toHaveBeenCalledWith(dstDocRef, expectedRemoveData, {merge: true});
     expect(trackProcessedIdsMock).toHaveBeenCalledWith(INSTRUCTIONS_TOPIC_NAME, event.id);
   });
 
   it("should process event instructions correctly with destprop only", async () => {
-    transactionUpdateMock.mockReset();
+    transactionSetMock.mockReset();
     isProcessedMock.mockResolvedValueOnce(false);
     const expectedData = {
       "hello": {
@@ -781,11 +783,11 @@ describe("onMessageInstructionsQueue", () => {
     expect(admin.firestore().doc).toHaveBeenCalledTimes(2);
     expect(admin.firestore().doc).toHaveBeenNthCalledWith(1, "@counters/queueNumber");
     expect(admin.firestore().doc).toHaveBeenNthCalledWith(2, "/users/test-user-id/documents/test-doc-id");
-    expect(transactionUpdateMock).toHaveBeenCalledTimes(3);
+    expect(transactionSetMock).toHaveBeenCalledTimes(2);
 
     const dstDocRef = db.doc(event.data.message.json.dstPath.split("#")[0]);
-    expect(transactionUpdateMock).toHaveBeenCalledWith(dstDocRef, expectedData);
-    expect(transactionUpdateMock).toHaveBeenCalledWith(dstDocRef, expectedRemoveData);
+    expect(transactionSetMock).toHaveBeenCalledWith(dstDocRef, expectedData, {merge: true});
+    expect(transactionSetMock).toHaveBeenCalledWith(dstDocRef, expectedRemoveData, {merge: true});
     expect(trackProcessedIdsMock).toHaveBeenCalledWith(INSTRUCTIONS_TOPIC_NAME, event.id);
   });
 });
