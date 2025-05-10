@@ -68,7 +68,7 @@ const vd2: ViewDefinition = {
 
 const vd3: ViewDefinition = {
   srcEntity: "user",
-  srcProps: ["name", "avatarUrl"],
+  srcProps: ["name", "avatarUrl", "friendCount", "likes"],
   destEntity: "server",
   destProp: {
     name: "createdBy",
@@ -99,6 +99,7 @@ const mergeLogicResultDoc: LogicResultDoc = {
   doc: {
     "@id": "1234",
     "name": "John Doe",
+    "pets": 0,
   },
   instructions: {
     age: "++",
@@ -121,6 +122,8 @@ const userLogicResultDoc: LogicResultDoc = {
   priority: "normal",
   doc: {
     name: "new_name",
+    friendCount: 0,
+    likes: 24,
   },
 };
 
@@ -246,7 +249,7 @@ describe("createViewLogicFn", () => {
       .toHaveProperty("dstPath", "users/1234/@views/servers+123+createdBy");
     expect(result.documents[0].doc).toEqual({
       path: "servers/123#createdBy",
-      srcProps: ["avatarUrl", "name"],
+      srcProps: ["avatarUrl", "friendCount", "likes", "name"],
       destEntity: "server",
       destProp: "createdBy",
     });
@@ -653,12 +656,12 @@ describe("createViewLogicFn", () => {
     document = result3.documents[0];
     expect(document).toHaveProperty("action", "merge");
     expect(document).toHaveProperty("dstPath", "servers/123+createdBy");
-    expect(document.doc).toEqual({"name": "new_name", "@updatedByViewDefinitionAt": expect.any(Timestamp)});
+    expect(document.doc).toEqual({"name": "new_name", "friendCount": 0, "likes": 24, "@updatedByViewDefinitionAt": expect.any(Timestamp)});
 
     document = result3.documents[1];
     expect(document).toHaveProperty("action", "merge");
     expect(document).toHaveProperty("dstPath", "servers/456+createdBy");
-    expect(document.doc).toEqual({"name": "new_name", "@updatedByViewDefinitionAt": expect.any(Timestamp)});
+    expect(document.doc).toEqual({"name": "new_name", "friendCount": 0, "likes": 24, "@updatedByViewDefinitionAt": expect.any(Timestamp)});
   });
 
   it("should use doc values when placeholders are not in dstPath", async () => {
@@ -710,6 +713,7 @@ describe("createViewLogicFn", () => {
     };
     const result = await logicFn[1](logicResultDoc);
 
+    console.log(result);
     expect(result.documents[0].dstPath).toBe("topics/topic21/prepAreas/prepArea2/menus/menuItem789/@views/topics+topic21+prepAreas+prepArea2+menus+prepAreaMenuItem34+orderItem");
   });
 

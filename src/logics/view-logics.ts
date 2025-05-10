@@ -67,7 +67,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       };
       const viewInstructions: Record<string, string> = {};
       for (const srcProp of srcProps) {
-        if (doc?.[srcProp]) {
+        if (doc?.[srcProp] !== undefined) {
           viewDoc[srcProp] = doc[srcProp];
         }
         if (instructions?.[srcProp]) {
