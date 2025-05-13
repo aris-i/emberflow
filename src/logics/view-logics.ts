@@ -46,6 +46,8 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
 
     function syncDeleteToViewDstPaths() {
       const documents: LogicResultDoc[] = viewDstPathDocs.map((viewDstPathDoc) => {
+        // Check if viewDstPathDoc.data.path exists
+        // If it doesn't, we should not proceed with creating delete logicResultDoc and just delete the viewDstPathDoc
         return {
           action: "delete",
           dstPath: viewDstPathDoc.data().path,
@@ -75,6 +77,8 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
         }
       }
       const documents: LogicResultDoc[] = viewDstPathDocs.map((viewDstPathDoc) => {
+        // Check if viewDstPathDoc.data.path exists
+        // If it doesn't, we should not proceed with the creating merge logicResultDoc and just delete the viewDstPathDoc
         return {
           action: "merge",
           dstPath: viewDstPathDoc.data().path,
