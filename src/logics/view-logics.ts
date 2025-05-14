@@ -11,6 +11,7 @@ import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
 import {_mockable, distributeFnNonTransactional, expandConsolidateAndGroupByDstPath, runViewLogics} from "../index-utils";
 import {pubsubUtils} from "../utils/pubsub";
 import {reviveDateAndTimestamp} from "../utils/misc";
+import {getDestPropAndDestPropId} from "../utils/paths";
 
 export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[] {
   const {
@@ -49,7 +50,6 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
         return {
           action: "delete",
           dstPath: viewDstPathDoc.data().path,
-          skipRunViewLogics: true,
         };
       });
       return {
@@ -80,7 +80,6 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
           dstPath: viewDstPathDoc.data().path,
           doc: viewDoc,
           instructions: viewInstructions,
-          skipRunViewLogics: true,
         };
       });
 
@@ -207,15 +206,8 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
 
     const srcAtViewsPath = formAtViewsPath(dstPath, srcPath);
 
-    let destProp = "";
-    let isArrayMap = false;
-    if (dstPath.includes("#")) {
-      destProp = dstPath.split("#")[1];
-      if (destProp.includes("[") && destProp.endsWith("]")) {
-        destProp = destProp.split("[")[0];
-        isArrayMap = true;
-      }
-    }
+    const {destProp, destPropId} = getDestPropAndDestPropId(dstPath);
+    const isArrayMap = !!destPropId;
 
     if (action === "delete") {
       logicResult.documents.push({

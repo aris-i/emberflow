@@ -483,13 +483,7 @@ export async function runViewLogics(logicResultDoc: LogicResultDoc): Promise<Log
     return [];
   }
 
-  let destProp = "";
-  if (dstPath.includes("#")) {
-    destProp = dstPath.split(("#"))[1];
-    if (destProp.includes("[") && destProp.endsWith("]")) {
-      destProp = destProp.split("[")[0];
-    }
-  }
+  const {destProp} = getDestPropAndDestPropId(dstPath);
 
   const matchingLogics = _mockable.getViewLogicsConfig().filter((viewLogicConfig) => {
     if (action === "delete") {
@@ -500,7 +494,8 @@ export async function runViewLogics(logicResultDoc: LogicResultDoc): Promise<Log
         (
           viewLogicConfig.modifiedFields === "all" ||
             viewLogicConfig.modifiedFields.some((field) => modifiedFields.includes(field))
-        ) && viewLogicConfig.entity === entity && (destProp ? viewLogicConfig.destProp === destProp : true)
+        ) &&
+        viewLogicConfig.entity === entity && (destProp ? viewLogicConfig.destProp === destProp : true)
     ;
   });
   // TODO: Handle errors
