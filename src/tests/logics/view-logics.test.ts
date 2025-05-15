@@ -143,6 +143,7 @@ describe("createViewLogicFn", () => {
           "@viewsAlreadyBuilt+friend": false,
         };
       },
+      exists: jest.fn().mockReturnValue(true),
     });
     docSpy = jest.spyOn(admin.firestore(), "doc").mockImplementation(() => {
       return {
@@ -740,6 +741,207 @@ describe("createViewLogicFn", () => {
     const result = await logicFn[1](logicResultDoc);
     expect(result.status).toBe("error");
     expect(result.message).toBe("srcPath should not have a placeholder");
+  });
+
+  it("should create delete logicDoc if viewDoc path doesn't exist anymore", async () => {
+    docGetMock.mockResolvedValue({
+      data: () => {
+        return {
+          "@viewsAlreadyBuilt+friend": false,
+        };
+      },
+      exists: false,
+    });
+    colGetMock.mockResolvedValueOnce({
+      docs: [{
+        id: "users+456+friends+1234",
+        ref: {
+          path: "users/1234/@views/users+456+friends+1234",
+        },
+        data: () => {
+          return {
+            "path": "users/456/friends/1234",
+            "srcProps": ["age", "avatar", "name"],
+          };
+        },
+      }, {
+        id: "users+789+friends+1234",
+        ref: {
+          path: "users/1234/@views/users+789+friends+1234",
+        },
+        data: () => {
+          return {
+            "path": "users/789/friends/1234",
+            "srcProps": ["age", "avatar", "name"],
+          };
+        },
+      }],
+    })
+      .mockResolvedValueOnce({
+        docs: [{
+          id: "users+1234+posts+987+followers[1234]",
+          ref: {
+            path: "users/1234/@views/users+1234+posts+987+followers",
+          },
+          data: () => {
+            return {
+              "path": "users/1234/posts/987+followers[1234]",
+              "srcProps": ["name", "avatar"],
+            };
+          },
+        }, {
+          id: "users+1234+posts+654+followers[1234]",
+          ref: {
+            path: "users/1234/@views/users+1234+posts+654+followers[1234]",
+          },
+          data: () => {
+            return {
+              "path": "users/1234/posts/654+followers[1234]",
+              "srcProps": ["name", "avatar"],
+            };
+          },
+        }, {
+          id: "users+890+posts+987+followers[1234]",
+          ref: {
+            path: "users/1234/@views/users+890+posts+987+followers[1234]",
+          },
+          data: () => {
+            return {
+              "path": "users/890/posts/987+followers[1234]",
+              "srcProps": ["name", "avatar"],
+            };
+          },
+        }, {
+          id: "users+890+posts+654+followers[1234]",
+          ref: {
+            path: "users/1234/@views/users+890+posts+654+followers[1234]",
+          },
+          data: () => {
+            return {
+              "path": "users/890/posts/654+followers[1234]",
+              "srcProps": ["name", "avatar"],
+            };
+          },
+        }],
+      })
+      .mockResolvedValueOnce({
+        docs: [{
+          id: "users+456+friends+1234",
+          ref: {
+            path: "users/1234/@views/users+456+friends+1234",
+          },
+          data: () => {
+            return {
+              "path": "users/456/friends/1234",
+              "srcProps": ["name", "avatarUrl"],
+            };
+          },
+        }, {
+          id: "users+789+friends+1234",
+          ref: {
+            path: "users/1234/@views/users+789+friends+1234",
+          },
+          data: () => {
+            return {
+              "path": "users/789/friends/1234",
+              "srcProps": ["name", "avatarUrl"],
+            };
+          },
+        }],
+      })
+      .mockResolvedValueOnce({
+        docs: [{
+          id: "servers+123+createdBy",
+          ref: {
+            path: "users/123/@views/servers+123+createdBy",
+          },
+          data: () => {
+            return {
+              "path": "servers/123+createdBy",
+              "srcProps": ["name", "avatarUrl"],
+            };
+          },
+        }, {
+          id: "servers+456+createdBy",
+          ref: {
+            path: "users/123/@views/servers+456+createdBy",
+          },
+          data: () => {
+            return {
+              "path": "servers/456+createdBy",
+              "srcProps": ["name", "avatarUrl"],
+            };
+          },
+        }],
+      });
+
+    const logicFn = viewLogics.createViewLogicFn(vd1);
+
+    const result = await logicFn[0](mergeLogicResultDoc);
+
+    expect(result).toBeDefined();
+    expect(result.documents).toBeDefined();
+    expect(result.documents.length).toEqual(2);
+
+    let document = result.documents[0];
+    expect(document).toHaveProperty("action", "delete");
+    expect(document).toHaveProperty("dstPath", "users/1234/@views/users+456+friends+1234");
+
+    document = result.documents[1];
+    expect(document).toHaveProperty("action", "delete");
+    expect(document).toHaveProperty("dstPath", "users/1234/@views/users+789+friends+1234");
+  });
+
+  it("should create delete logicDoc if viewDoc path destProp doesn't exist anymore", async () => {
+    docGetMock.mockResolvedValue({
+      data: () => {
+        return {
+          "@viewsAlreadyBuilt+friend": false,
+        };
+      },
+      exists: true,
+    });
+    colGetMock.mockResolvedValueOnce({
+      docs: [{
+        id: "users+456+friends+1234+prop1",
+        ref: {
+          path: "users/1234/@views/users+456+friends+1234",
+        },
+        data: () => {
+          return {
+            "path": "users/456/friends/1234#prop1",
+            "srcProps": ["age", "avatar", "name"],
+          };
+        },
+      }, {
+        id: "users+789+friends+1234+prop1[propId1]",
+        ref: {
+          path: "users/1234/@views/users+789+friends+1234",
+        },
+        data: () => {
+          return {
+            "path": "users/789/friends/1234#prop1[propId1]",
+            "srcProps": ["age", "avatar", "name"],
+          };
+        },
+      }],
+    });
+
+    const logicFn = viewLogics.createViewLogicFn(vd1);
+
+    const result = await logicFn[0](mergeLogicResultDoc);
+
+    expect(result).toBeDefined();
+    expect(result.documents).toBeDefined();
+    expect(result.documents.length).toEqual(2);
+
+    let document = result.documents[0];
+    expect(document).toHaveProperty("action", "delete");
+    expect(document).toHaveProperty("dstPath", "users/1234/@views/users+456+friends+1234");
+
+    document = result.documents[1];
+    expect(document).toHaveProperty("action", "delete");
+    expect(document).toHaveProperty("dstPath", "users/1234/@views/users+789+friends+1234");
   });
 });
 

@@ -47,8 +47,6 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
 
     function syncDeleteToViewDstPaths() {
       const documents: LogicResultDoc[] = viewDstPathDocs.map((viewDstPathDoc) => {
-        // Check if viewDstPathDoc.data.path exists
-        // If it doesn't, we should not proceed with creating delete logicResultDoc and just delete the viewDstPathDoc
         return {
           action: "delete",
           dstPath: viewDstPathDoc.data().path,
@@ -62,7 +60,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       } as LogicResult;
     }
 
-    function syncMergeToDestPaths() {
+    async function syncMergeToDestPaths() {
       const now = admin.firestore.Timestamp.now();
       const viewDoc: Record<string, any> = {
         "@updatedByViewDefinitionAt": now,
@@ -76,16 +74,51 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
           viewInstructions[srcProp] = instructions[srcProp];
         }
       }
-      const documents: LogicResultDoc[] = viewDstPathDocs.map((viewDstPathDoc) => {
-        // Check if viewDstPathDoc.data.path exists
-        // If it doesn't, we should not proceed with the creating merge logicResultDoc and just delete the viewDstPathDoc
-        return {
+
+      const documents: LogicResultDoc[] = [];
+      for (const viewDstPathDoc of viewDstPathDocs) {
+        const dstPath = viewDstPathDoc.data().path;
+        const {basePath, destProp, destPropId} = getDestPropAndDestPropId(dstPath);
+
+        const docSnap = await db.doc(basePath).get();
+
+        // If the doc doesn't exist, delete dstPath and skip creating logicDoc
+        if (!docSnap.exists) {
+          documents.push({
+            action: "delete",
+            dstPath: viewDstPathDoc.ref.path,
+          });
+          continue;
+        }
+
+        const docData = docSnap.data();
+        if (destProp) {
+          // If has destPropId but destPropId doesn't exist, delete dstPath and skip creating logicDoc
+          if (destPropId && !docData?.[destProp]?.[destPropId]) {
+            documents.push({
+              action: "delete",
+              dstPath: viewDstPathDoc.ref.path,
+            });
+            continue;
+          }
+
+          // If destProp only and doesn't exist, delete dstPath and skip creating logicDoc
+          if (!docData?.[destProp]) {
+            documents.push({
+              action: "delete",
+              dstPath: viewDstPathDoc.ref.path,
+            });
+            continue;
+          }
+        }
+
+        documents.push({
           action: "merge",
-          dstPath: viewDstPathDoc.data().path,
+          dstPath,
           doc: viewDoc,
           instructions: viewInstructions,
-        };
-      });
+        });
+      }
 
       return {
         name: `${logicName} ViewLogic`,
