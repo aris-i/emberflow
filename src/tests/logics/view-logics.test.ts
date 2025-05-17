@@ -709,12 +709,13 @@ describe("createViewLogicFn", () => {
       doc: {
         "name": "Sample Menu",
         "@id": "menuItem789",
+        "topicId": "topic22",
       },
     };
     const result = await logicFn[1](logicResultDoc);
 
     console.log(result);
-    expect(result.documents[0].dstPath).toBe("topics/topic21/prepAreas/prepArea2/menus/menuItem789/@views/topics+topic21+prepAreas+prepArea2+menus+prepAreaMenuItem34+orderItem");
+    expect(result.documents[0].dstPath).toBe("topics/topic22/prepAreas/prepArea2/menus/menuItem789/@views/topics+topic21+prepAreas+prepArea2+menus+prepAreaMenuItem34+orderItem");
   });
 
   it("should return an error if srcPath has a placeholder", async () => {
