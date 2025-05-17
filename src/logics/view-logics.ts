@@ -60,7 +60,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       } as LogicResult;
     }
 
-    function syncMergeToDestPaths() {
+    async function syncMergeToDestPaths() {
       const now = admin.firestore.Timestamp.now();
       const viewDoc: Record<string, any> = {
         "@updatedByViewDefinitionAt": now,
@@ -74,20 +74,57 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
           viewInstructions[srcProp] = instructions[srcProp];
         }
       }
-      const documents: LogicResultDoc[] = viewDstPathDocs.map((viewDstPathDoc) => {
-        return {
+
+      const viewLogicResultDocs: LogicResultDoc[] = [];
+      for (const viewDstPathDoc of viewDstPathDocs) {
+        const dstPath = viewDstPathDoc.data().path;
+        const {basePath, destProp, destPropId} = getDestPropAndDestPropId(dstPath);
+
+        const docSnap = await db.doc(basePath).get();
+
+        // If the doc doesn't exist, delete dstPath and skip creating logicDoc
+        if (!docSnap.exists) {
+          viewLogicResultDocs.push({
+            action: "delete",
+            dstPath: viewDstPathDoc.ref.path,
+          });
+          continue;
+        }
+
+        if (destProp) {
+          const docData = docSnap.data();
+          // If has destPropId but destPropId doesn't exist, delete dstPath and skip creating logicDoc
+          if (destPropId && !docData?.[destProp]?.[destPropId]) {
+            viewLogicResultDocs.push({
+              action: "delete",
+              dstPath: viewDstPathDoc.ref.path,
+            });
+            continue;
+          }
+
+          // If destProp only and doesn't exist, delete dstPath and skip creating logicDoc
+          if (!docData?.[destProp]) {
+            viewLogicResultDocs.push({
+              action: "delete",
+              dstPath: viewDstPathDoc.ref.path,
+            });
+            continue;
+          }
+        }
+
+        viewLogicResultDocs.push({
           action: "merge",
-          dstPath: viewDstPathDoc.data().path,
+          dstPath,
           doc: viewDoc,
           instructions: viewInstructions,
-        };
-      });
+        });
+      }
 
       return {
         name: `${logicName} ViewLogic`,
         status: "finished",
         timeFinished: now,
-        documents,
+        documents: viewLogicResultDocs,
       } as LogicResult;
     }
 

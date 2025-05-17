@@ -164,9 +164,10 @@ export function getDestPropAndDestPropId(dstPath: string) {
   let destProp;
   let destPropArg = "";
   let destPropId;
+  let basePath = dstPath;
 
   if (dstPath.includes("#")) {
-    destProp = dstPath.split("#")[1];
+    [basePath, destProp] = dstPath.split("#");
     if (destProp.includes("[") && destProp.endsWith("]")) {
       [destProp, destPropArg] = destProp.split("[");
       destPropId = destPropArg.slice(0, -1);
@@ -176,7 +177,7 @@ export function getDestPropAndDestPropId(dstPath: string) {
     }
   }
 
-  return {destProp, destPropId};
+  return {basePath, destProp, destPropId};
 }
 
 export function getBasePath(dstPath: string) {
