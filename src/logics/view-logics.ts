@@ -75,7 +75,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
         }
       }
 
-      const documents: LogicResultDoc[] = [];
+      const viewLogicResultDocs: LogicResultDoc[] = [];
       for (const viewDstPathDoc of viewDstPathDocs) {
         const dstPath = viewDstPathDoc.data().path;
         const {basePath, destProp, destPropId} = getDestPropAndDestPropId(dstPath);
@@ -84,18 +84,18 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
 
         // If the doc doesn't exist, delete dstPath and skip creating logicDoc
         if (!docSnap.exists) {
-          documents.push({
+          viewLogicResultDocs.push({
             action: "delete",
             dstPath: viewDstPathDoc.ref.path,
           });
           continue;
         }
 
-        const docData = docSnap.data();
         if (destProp) {
+          const docData = docSnap.data();
           // If has destPropId but destPropId doesn't exist, delete dstPath and skip creating logicDoc
           if (destPropId && !docData?.[destProp]?.[destPropId]) {
-            documents.push({
+            viewLogicResultDocs.push({
               action: "delete",
               dstPath: viewDstPathDoc.ref.path,
             });
@@ -104,7 +104,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
 
           // If destProp only and doesn't exist, delete dstPath and skip creating logicDoc
           if (!docData?.[destProp]) {
-            documents.push({
+            viewLogicResultDocs.push({
               action: "delete",
               dstPath: viewDstPathDoc.ref.path,
             });
@@ -112,7 +112,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
           }
         }
 
-        documents.push({
+        viewLogicResultDocs.push({
           action: "merge",
           dstPath,
           doc: viewDoc,
@@ -124,7 +124,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
         name: `${logicName} ViewLogic`,
         status: "finished",
         timeFinished: now,
-        documents,
+        documents: viewLogicResultDocs,
       } as LogicResult;
     }
 
