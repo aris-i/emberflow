@@ -224,7 +224,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       if (srcDocPathKeys) {
         for (const srcDocPathKey of srcDocPathKeys) {
           const key = srcDocPathKey.replace(/[{}]/g, "");
-          const value = dstPathKeyValuesMap[key] || doc?.[key];
+          const value = doc?.[key] || dstPathKeyValuesMap[key];
           if (value) {
             srcPath = srcPath.replace(srcDocPathKey, value);
           }
