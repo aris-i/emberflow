@@ -462,8 +462,11 @@ export async function onFormSubmit(
       return;
     }
 
+    // TODO: Call function that will call runViewLogics feeding the logicDocs collected in transaction
+
     const distributeNonTransactionalLogicResultsStart = performance.now();
     await distributeNonTransactionalLogicResults(runBusinessLogicStatus.logicResults, docPath);
+    // TODO: Call function that will call runViewLogics feeding the nonTransactional logicDocs
     const distributeNonTransactionalLogicResultsEnd = performance.now();
     const distributeNonTransactionalPerfLogicResults: LogicResult = {
       name: "distributeNonTransactionalLogicResults",
@@ -700,7 +703,7 @@ async function distributeFnTransactional(
           if (Object.keys(finalDoc).length > 0 && !skipRunViewLogics &&
               ["create", "merge"].includes(action)) {
             logicDoc.doc = finalDoc;
-            await queueRunViewLogics(logicDoc);
+            await queueRunViewLogics(logicDoc);// TODO: Add to collection of logicDoc for queueRunViewLogics
           }
 
           if (recordEntry) {
@@ -745,6 +748,7 @@ async function distributeFnTransactional(
     for (const [_, logicDocs] of transactionalDstPathLogicDocsMap) {
       for (const logicDoc of logicDocs) {
         await distributeDoc(logicDoc, undefined, txn);
+        // TODO: Add to collection of logicDoc for queueRunViewLogics
       }
     }
   }

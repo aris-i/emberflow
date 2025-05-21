@@ -95,6 +95,7 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
   const baseDstPath = getBasePath(dstPath);
   const {destProp, destPropId} = getDestPropAndDestPropId(dstPath);
 
+  // TODO: Move this entire block to after the index.ts runTransaction block
   const dstDocRef = db.doc(baseDstPath);
   if (!skipRunViewLogics && ["create", "merge", "delete"].includes(action)) {
     if (action === "delete") {
