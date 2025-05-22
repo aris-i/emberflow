@@ -19,7 +19,7 @@ import {
 import {
   _mockable as _pathMockable,
   expandAndGroupDocPathsByEntity,
-  findMatchingDocPathRegex, getBasePath, getDestPropAndDestPropId,
+  findMatchingDocPathRegex, getDestPropAndDestPropId,
 } from "./utils/paths";
 import {deepEqual, deleteCollection} from "./utils/misc";
 import {CloudFunctionsServiceClient} from "@google-cloud/functions";
@@ -33,7 +33,6 @@ import DocumentData = FirebaseFirestore.DocumentData;
 import Reference = database.Reference;
 import {FirestoreEvent} from "firebase-functions/lib/v2/providers/firestore";
 import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
-import {queueRunViewLogics} from "./logics/view-logics";
 import FieldValue = firestore.FieldValue;
 import Timestamp = firestore.Timestamp;
 import Transaction = firestore.Transaction;
@@ -44,7 +43,10 @@ export const _mockable = {
   createMetricExecution,
 };
 
-export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: BatchUtil, txn?: Transaction) {
+export async function distributeDoc(
+  logicResultDoc: LogicResultDoc,
+  batch?: BatchUtil,
+  txn?: Transaction) {
   async function _delete(dstDocRef: DocumentReference) {
     if (batch) {
       await batch.deleteDoc(dstDocRef);
@@ -89,29 +91,11 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
     doc,
     instructions,
     dstPath,
-    skipRunViewLogics,
   } = logicResultDoc;
 
-  const baseDstPath = getBasePath(dstPath);
-  const {destProp, destPropId} = getDestPropAndDestPropId(dstPath);
+  const {basePath, destProp, destPropId} = getDestPropAndDestPropId(dstPath);
 
-  const dstDocRef = db.doc(baseDstPath);
-  if (!skipRunViewLogics && ["create", "merge", "delete"].includes(action)) {
-    if (action === "delete") {
-      const data = (await dstDocRef.get()).data() || {};
-      if (destProp) {
-        if (destPropId) {
-          logicResultDoc.doc = {[destProp]: data[destProp]?.[destPropId] || {}};
-        } else {
-          logicResultDoc.doc = {[destProp]: data[destProp] || {}};
-        }
-      } else {
-        logicResultDoc.doc = data;
-      }
-    }
-    await queueRunViewLogics(logicResultDoc);
-  }
-
+  const dstDocRef = db.doc(basePath);
   console.debug(`Distributing doc with Action: ${action}`);
   if (action === "delete") {
     if (destProp) {
@@ -169,8 +153,7 @@ export async function distributeDoc(logicResultDoc: LogicResultDoc, batch?: Batc
   }
 }
 
-export async function distributeFnNonTransactional(
-  docsByDstPath: Map<string, LogicResultDoc[]> ) {
+export async function distributeFnNonTransactional(docsByDstPath: Map<string, LogicResultDoc[]>) {
   const batch = BatchUtil.getInstance();
   for (const dstPath of Array.from(docsByDstPath.keys()).sort()) {
     console.log(`Documents for path ${dstPath}:`);

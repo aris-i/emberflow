@@ -963,7 +963,13 @@ describe("queueRunViewLogics", () => {
       doc: {name: "test-doc-name-merge"},
       dstPath: "users/test-user-id/documents/doc1",
     };
-    await viewLogics.queueRunViewLogics(doc1);
+    const logicResults: LogicResult[] = [];
+    logicResults.push({
+      name: "test",
+      status: "finished",
+      documents: [doc1],
+    });
+    await viewLogics.queueRunViewLogics(logicResults);
 
     expect(publishMessageSpy).toHaveBeenCalledWith({json: doc1});
   });

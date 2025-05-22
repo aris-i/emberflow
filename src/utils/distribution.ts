@@ -19,7 +19,7 @@ import {pubsubUtils} from "./pubsub";
 import {reviveDateAndTimestamp} from "./misc";
 import FieldValue = firestore.FieldValue;
 import Transaction = firestore.Transaction;
-import {getBasePath, getDestPropAndDestPropId} from "./paths";
+import {getDestPropAndDestPropId} from "./paths";
 
 export const queueForDistributionLater = async (...logicResultDocs: LogicResultDoc[]) => {
   try {
@@ -222,14 +222,14 @@ export async function convertInstructionsToDbValues(txn: Transaction, instructio
 
 export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublishedData> | Map<string, Instructions>) {
   async function applyInstructions(txn: Transaction, instructions: Instructions, dstPath: string) {
-    const {destProp, destPropId} = getDestPropAndDestPropId(dstPath);
+    const {basePath, destProp, destPropId} = getDestPropAndDestPropId(dstPath);
     const {updateData, removeData} = await convertInstructionsToDbValues(
       txn,
       instructions,
       destProp,
       destPropId
     );
-    const dstDocRef = db.doc(getBasePath(dstPath));
+    const dstDocRef = db.doc(basePath);
     if (Object.keys(updateData).length > 0) {
       txn.set(dstDocRef, updateData, {merge: true});
     }

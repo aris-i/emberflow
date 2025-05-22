@@ -21,7 +21,7 @@ import {
   cleanMetricExecutions,
   createMetricComputation,
   createMetricLogicDoc,
-  delayFormSubmissionAndCheckIfCancelled, distributeDoc,
+  delayFormSubmissionAndCheckIfCancelled,
   distributeFnNonTransactional,
   distributeLater,
   expandConsolidateAndGroupByDstPath,
@@ -31,13 +31,14 @@ import {
   onDeleteFunction,
   runBusinessLogics,
   validateForm,
+  distributeDoc,
 } from "./index-utils";
 import {initDbStructure} from "./init-db-structure";
 import {createViewLogicFn, onMessageViewLogicsQueue, queueRunViewLogics} from "./logics/view-logics";
 import {resetUsageStats, stopBillingIfBudgetExceeded, useBillProtect} from "./utils/bill-protect";
 import {Firestore} from "firebase-admin/firestore";
 import {DatabaseEvent, DataSnapshot, onValueCreated} from "firebase-functions/v2/database";
-import {getBasePath, getDestPropAndDestPropId, parseEntity} from "./utils/paths";
+import {getDestPropAndDestPropId, parseEntity} from "./utils/paths";
 import {database, firestore} from "firebase-admin";
 import {initClient} from "emberflow-admin-client/lib";
 import {internalDbStructure, InternalEntity} from "./db-structure";
@@ -329,7 +330,10 @@ export async function onFormSubmit(
       }
     }
 
-    let runBusinessLogicStatus:RunBusinessLogicStatus = {status: "running", logicResults: []};
+    let runBusinessLogicStatus:RunBusinessLogicStatus = {
+      status: "running",
+      logicResults: [],
+    };
 
     const actionRef = _mockable.initActionRef(formId);
     const runTransactionStatus = await db.runTransaction(async (txn) => {
@@ -461,7 +465,6 @@ export async function onFormSubmit(
       console.warn("No User Data Error / Security Error in transaction");
       return;
     }
-
     const distributeNonTransactionalLogicResultsStart = performance.now();
     await distributeNonTransactionalLogicResults(runBusinessLogicStatus.logicResults, docPath);
     const distributeNonTransactionalLogicResultsEnd = performance.now();
@@ -474,6 +477,8 @@ export async function onFormSubmit(
     logicResults.push(distributeNonTransactionalPerfLogicResults);
 
     await formRef.update({"@status": "finished"});
+
+    await queueRunViewLogics(runBusinessLogicStatus.logicResults);
 
     const end = performance.now();
     const execTime = end - start;
@@ -507,7 +512,7 @@ export async function onFormSubmit(
 
 async function distributeNonTransactionalLogicResults(
   logicResults: LogicResult[],
-  docPath: string
+  docPath: string,
 ) {
   const nonTransactionalResults = logicResults.filter((result) => !result.transactional);
   console.info(`Group logic docs by priority: ${nonTransactionalResults.length}`);
@@ -563,7 +568,8 @@ async function distributeNonTransactionalLogicResults(
 
 async function distributeFnTransactional(
   txn: Transaction,
-  logicResults: LogicResult[]) {
+  logicResults: LogicResult[],
+) {
   async function writeJournalEntriesFirst() {
     // Gather all logicResultDoc with journalEntries
     const logicResultDocsWithJournalEntries = logicResults
@@ -646,12 +652,12 @@ async function distributeFnTransactional(
             continue;
           }
 
-          const docRef = db.doc(getBasePath(dstPath));
+          const {basePath, destProp, destPropId} = getDestPropAndDestPropId(dstPath);
+          const docRef = db.doc(basePath);
           const currData = (await txn.get(docRef)).data();
 
           let instructionsDbValues;
           if (instructions) {
-            const {destProp, destPropId} = getDestPropAndDestPropId(dstPath);
             instructionsDbValues = await convertInstructionsToDbValues(txn, instructions, destProp, destPropId);
           }
 
@@ -700,7 +706,6 @@ async function distributeFnTransactional(
           if (Object.keys(finalDoc).length > 0 && !skipRunViewLogics &&
               ["create", "merge"].includes(action)) {
             logicDoc.doc = finalDoc;
-            await queueRunViewLogics(logicDoc);
           }
 
           if (recordEntry) {

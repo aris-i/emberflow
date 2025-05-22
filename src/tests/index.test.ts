@@ -604,6 +604,7 @@ describe("onFormSubmit", () => {
   });
 
   it("should write journal entries first", async () => {
+    transactionSetMock.mockReset();
     const consoleErrorSpy = jest.spyOn(console, "error").mockImplementation();
     const consoleInfoSpy = jest.spyOn(console, "info").mockImplementation();
     const queueRunViewLogicsSpy = jest.spyOn(viewLogics, "queueRunViewLogics").mockResolvedValue();
@@ -656,7 +657,7 @@ describe("onFormSubmit", () => {
     await onFormSubmit(event);
     expect(consoleInfoSpy).toHaveBeenCalledWith("No journal entries to write");
     expect(transactionUpdateMock).not.toHaveBeenCalled();
-    expect(transactionSetMock).toHaveBeenCalledTimes(11);
+    expect(transactionSetMock).toHaveBeenCalledTimes(6);
     expect(txnGetFnMock).toBeCalledTimes(4);
     logicResults = [
       {
@@ -671,7 +672,7 @@ describe("onFormSubmit", () => {
     await onFormSubmit(event);
     expect(consoleErrorSpy).toHaveBeenCalledWith("Dst path has no docId");
     expect(transactionUpdateMock).not.toHaveBeenCalled();
-    expect(transactionSetMock).toHaveBeenCalledTimes(14);
+    expect(transactionSetMock).toHaveBeenCalledTimes(9);
     expect(txnGetFnMock).toHaveBeenCalledTimes(6);
 
     logicResults = [
@@ -687,7 +688,7 @@ describe("onFormSubmit", () => {
     await onFormSubmit(event);
     expect(consoleErrorSpy).toHaveBeenCalledWith("Doc cannot have keys that are the same as account names");
     expect(transactionUpdateMock).not.toHaveBeenCalled();
-    expect(transactionSetMock).toHaveBeenCalledTimes(17);
+    expect(transactionSetMock).toHaveBeenCalledTimes(12);
     expect(txnGetFnMock).toHaveBeenCalledTimes(8);
 
     logicResults = [
@@ -703,8 +704,9 @@ describe("onFormSubmit", () => {
     await onFormSubmit(event);
     expect(consoleErrorSpy).toHaveBeenCalledWith("Instructions cannot have keys that are the same as account names");
     expect(transactionUpdateMock).not.toHaveBeenCalled();
-    expect(transactionSetMock).toHaveBeenCalledTimes(20);
+    expect(transactionSetMock).toHaveBeenCalledTimes(15);
     expect(txnGetFnMock).toHaveBeenCalledTimes(10);
+
     const unbalancedJournalEntry: JournalEntry = {
       date: _mockable.createNowTimestamp(),
       ledgerEntries: [
@@ -739,12 +741,13 @@ describe("onFormSubmit", () => {
     await onFormSubmit(event);
     expect(consoleErrorSpy).toHaveBeenCalledWith("Debit and credit should be equal");
     expect(transactionUpdateMock).not.toHaveBeenCalled();
-    expect(transactionSetMock).toHaveBeenCalledTimes(23);
+    expect(transactionSetMock).toHaveBeenCalledTimes(18);
     expect(txnGetFnMock).toHaveBeenCalledTimes(12);
 
     txnGetFnMock.mockRestore();
     transactionSetMock.mockRestore();
     transactionUpdateMock.mockRestore();
+    queueRunViewLogicsSpy.mockReset();
     const docRef = db.doc("path1/doc1");
     logicResults = [
       {
@@ -781,14 +784,7 @@ describe("onFormSubmit", () => {
       "@forDeletionLater": FieldValue.delete(),
     });
     expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith({
-      ...logicResults[0].documents[0],
-      doc: {
-        field: "value",
-        totalTodos: 1,
-        notStartedCount: 1,
-      },
-    });
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResults);
 
     queueRunViewLogicsSpy.mockReset();
     txnGetFnMock.mockRestore();
@@ -828,14 +824,7 @@ describe("onFormSubmit", () => {
       "@forDeletionLater": FieldValue.delete(),
     });
     expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith({
-      ...logicResults[0].documents[0],
-      doc: {
-        field: "value",
-        totalTodos: 2,
-        notStartedCount: 2,
-      },
-    });
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResults);
 
     queueRunViewLogicsSpy.mockReset();
     txnGetFnMock.mockRestore();
@@ -941,6 +930,7 @@ describe("onFormSubmit", () => {
     expect(transactionUpdateMock).toHaveBeenCalledWith(docRef, {"@forDeletionLater": true});
     expect(errorMock).toHaveBeenCalledTimes(1);
     expect(errorMock).toHaveBeenCalledWith("Account value cannot be negative");
+    queueRunViewLogicsSpy.mockReset();
     errorMock.mockRestore();
     txnGetFnMock.mockRestore();
     transactionSetMock.mockRestore();
@@ -998,13 +988,7 @@ describe("onFormSubmit", () => {
       "equation": equation,
     });
     expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith({
-      ...logicResults[0].documents[0],
-      doc: {
-        inProgressCount: 0,
-        doneCount: 1,
-      },
-    });
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResults);
   }, 15000);
 
   it("should execute the sequence of operations correctly", async () => {
