@@ -253,7 +253,7 @@ export const runBusinessLogics = async (
   console.debug("Matching logics:", matchingLogics.map((logic) => logic.name));
   if (matchingLogics.length === 0) {
     console.log("No matching logics found");
-    return {status: "no-matching-logics", logicResults: [], logicDocsForQueuing: []};
+    return {status: "no-matching-logics", logicResults: []};
   }
 
   const sharedMap = new Map<string, any>();
@@ -282,7 +282,7 @@ export const runBusinessLogics = async (
     }
   }
 
-  return {status: "done", logicResults, logicDocsForQueuing: []};
+  return {status: "done", logicResults};
 };
 
 export function groupDocsByTargetDocPath(docsByDstPath: Map<string, LogicResultDoc[]>, docPath: string) {
