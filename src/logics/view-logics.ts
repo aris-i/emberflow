@@ -294,11 +294,13 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
   return [srcToDstLogicFn, dstToSrcLogicFn];
 }
 
-export async function queueRunViewLogics(logicResultDoc: LogicResultDoc) {
+export async function queueRunViewLogics(logicResultDocs: LogicResultDoc[]) {
   try {
-    const messageId = await VIEW_LOGICS_TOPIC.publishMessage({json: logicResultDoc});
-    console.log(`queueRunViewLogics: Message ${messageId} published.`);
-    console.debug(`queueRunViewLogics: ${logicResultDoc}`);
+    for (const logicResultDoc of logicResultDocs) {
+      const messageId = await VIEW_LOGICS_TOPIC.publishMessage({json: logicResultDoc});
+      console.log(`queueRunViewLogics: Message ${messageId} published.`);
+      console.debug(`queueRunViewLogics: ${logicResultDoc}`);
+    }
   } catch (error: unknown) {
     if (error instanceof Error) {
       console.error(`Received error while publishing: ${error.message}`);

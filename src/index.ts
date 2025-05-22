@@ -21,7 +21,7 @@ import {
   cleanMetricExecutions,
   createMetricComputation,
   createMetricLogicDoc,
-  delayFormSubmissionAndCheckIfCancelled, distributeDoc,
+  delayFormSubmissionAndCheckIfCancelled,
   distributeFnNonTransactional,
   distributeLater,
   expandConsolidateAndGroupByDstPath,
@@ -37,7 +37,7 @@ import {createViewLogicFn, onMessageViewLogicsQueue, queueRunViewLogics} from ".
 import {resetUsageStats, stopBillingIfBudgetExceeded, useBillProtect} from "./utils/bill-protect";
 import {Firestore} from "firebase-admin/firestore";
 import {DatabaseEvent, DataSnapshot, onValueCreated} from "firebase-functions/v2/database";
-import {getBasePath, getDestPropAndDestPropId, parseEntity} from "./utils/paths";
+import {getDestPropAndDestPropId, parseEntity} from "./utils/paths";
 import {database, firestore} from "firebase-admin";
 import {initClient} from "emberflow-admin-client/lib";
 import {internalDbStructure, InternalEntity} from "./db-structure";
@@ -329,7 +329,11 @@ export async function onFormSubmit(
       }
     }
 
-    let runBusinessLogicStatus:RunBusinessLogicStatus = {status: "running", logicResults: []};
+    let runBusinessLogicStatus:RunBusinessLogicStatus = {
+      status: "running",
+      logicResults: [],
+      logicDocsForQueuing: [],
+    };
 
     const actionRef = _mockable.initActionRef(formId);
     const runTransactionStatus = await db.runTransaction(async (txn) => {
@@ -445,7 +449,10 @@ export async function onFormSubmit(
       await saveLogicResults();
 
       const distributeTransactionalLogicResultsStart = performance.now();
-      await distributeFnTransactional(txn, runBusinessLogicStatus.logicResults);
+      runBusinessLogicStatus.logicDocsForQueuing = await distributeFnTransactional(
+        txn,
+        runBusinessLogicStatus.logicResults
+      );
       const distributeTransactionalLogicResultsEnd = performance.now();
       const distributeTransactionalLogicResults: LogicResult = {
         name: "distributeTransactionalLogicResults",
@@ -461,12 +468,14 @@ export async function onFormSubmit(
       console.warn("No User Data Error / Security Error in transaction");
       return;
     }
-
-    // TODO: Call function that will call runViewLogics feeding the logicDocs collected in transaction
+    await queueRunViewLogics(runBusinessLogicStatus.logicDocsForQueuing);
 
     const distributeNonTransactionalLogicResultsStart = performance.now();
-    await distributeNonTransactionalLogicResults(runBusinessLogicStatus.logicResults, docPath);
-    // TODO: Call function that will call runViewLogics feeding the nonTransactional logicDocs
+    const nonTransactionalLogicDocsForQueue = await distributeNonTransactionalLogicResults(
+      runBusinessLogicStatus.logicResults,
+      docPath
+    );
+    await runCollectedViewLogicDocs(nonTransactionalLogicDocsForQueue);
     const distributeNonTransactionalLogicResultsEnd = performance.now();
     const distributeNonTransactionalPerfLogicResults: LogicResult = {
       name: "distributeNonTransactionalLogicResults",
@@ -508,9 +517,38 @@ export async function onFormSubmit(
   }
 }
 
+async function runCollectedViewLogicDocs(collectedViewLogicDocs: LogicResultDoc[]) {
+  const logicResultDocs: LogicResultDoc[] = [];
+  for (const logicResultDoc of collectedViewLogicDocs) {
+    const {
+      action,
+      dstPath,
+      skipRunViewLogics,
+    } = logicResultDoc;
+    const {basePath, destProp, destPropId} = getDestPropAndDestPropId(dstPath);
+    const dstDocRef = db.doc(basePath);
+    if (!skipRunViewLogics && ["create", "merge", "delete"].includes(action)) {
+      if (action === "delete") {
+        const data = (await dstDocRef.get()).data() || {};
+        if (destProp) {
+          if (destPropId) {
+            logicResultDoc.doc = {[destProp]: data[destProp]?.[destPropId] || {}};
+          } else {
+            logicResultDoc.doc = {[destProp]: data[destProp] || {}};
+          }
+        } else {
+          logicResultDoc.doc = data;
+        }
+      }
+      logicResultDocs.push(logicResultDoc);
+    }
+  }
+  await queueRunViewLogics(logicResultDocs);
+}
+
 async function distributeNonTransactionalLogicResults(
   logicResults: LogicResult[],
-  docPath: string
+  docPath: string,
 ) {
   const nonTransactionalResults = logicResults.filter((result) => !result.transactional);
   console.info(`Group logic docs by priority: ${nonTransactionalResults.length}`);
@@ -533,6 +571,7 @@ async function distributeNonTransactionalLogicResults(
       lowPriorityDocs: [] as LogicResultDoc[],
     });
 
+  const logicDocsForQueuing: LogicResultDoc[] = [];
   console.info(`Consolidating and Distributing High Priority Logic Results: ${highPriorityDocs.length}`);
   const highPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
       await expandConsolidateAndGroupByDstPath(highPriorityDocs);
@@ -540,8 +579,8 @@ async function distributeNonTransactionalLogicResults(
     docsByDocPath: highPriorityDocsByDocPath,
     otherDocsByDocPath: highPriorityOtherDocsByDocPath,
   } = groupDocsByTargetDocPath(highPriorityDstPathLogicDocsMap, docPath);
-  await distributeFnNonTransactional(highPriorityDocsByDocPath);
-  await distributeFnNonTransactional(highPriorityOtherDocsByDocPath);
+  logicDocsForQueuing.push(...await distributeFnNonTransactional(highPriorityDocsByDocPath));
+  logicDocsForQueuing.push(...await distributeFnNonTransactional(highPriorityOtherDocsByDocPath));
 
   console.info(`Consolidating and Distributing Normal Priority Logic Results: ${normalPriorityDocs.length}`);
   const normalPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
@@ -550,7 +589,7 @@ async function distributeNonTransactionalLogicResults(
     docsByDocPath: normalPriorityDocsByDocPath,
     otherDocsByDocPath: normalPriorityOtherDocsByDocPath,
   } = groupDocsByTargetDocPath(normalPriorityDstPathLogicDocsMap, docPath);
-  await distributeFnNonTransactional(normalPriorityDocsByDocPath);
+  logicDocsForQueuing.push(...await distributeFnNonTransactional(normalPriorityDocsByDocPath));
   await distributeLater(normalPriorityOtherDocsByDocPath);
 
   console.info(`Consolidating and Distributing Low Priority Logic Results: ${lowPriorityDocs.length}`);
@@ -562,11 +601,15 @@ async function distributeNonTransactionalLogicResults(
   } = groupDocsByTargetDocPath(lowPriorityDstPathLogicDocsMap, docPath);
   await distributeLater(lowPriorityDocsByDocPath);
   await distributeLater(lowPriorityOtherDocsByDocPath);
+
+  return logicDocsForQueuing;
 }
 
 async function distributeFnTransactional(
   txn: Transaction,
-  logicResults: LogicResult[]) {
+  logicResults: LogicResult[],
+) {
+  const logicDocsForQueuing: LogicResultDoc[] = [];
   async function writeJournalEntriesFirst() {
     // Gather all logicResultDoc with journalEntries
     const logicResultDocsWithJournalEntries = logicResults
@@ -649,12 +692,12 @@ async function distributeFnTransactional(
             continue;
           }
 
-          const docRef = db.doc(getBasePath(dstPath));
+          const {basePath, destProp, destPropId} = getDestPropAndDestPropId(dstPath);
+          const docRef = db.doc(basePath);
           const currData = (await txn.get(docRef)).data();
 
           let instructionsDbValues;
           if (instructions) {
-            const {destProp, destPropId} = getDestPropAndDestPropId(dstPath);
             instructionsDbValues = await convertInstructionsToDbValues(txn, instructions, destProp, destPropId);
           }
 
@@ -703,7 +746,7 @@ async function distributeFnTransactional(
           if (Object.keys(finalDoc).length > 0 && !skipRunViewLogics &&
               ["create", "merge"].includes(action)) {
             logicDoc.doc = finalDoc;
-            await queueRunViewLogics(logicDoc);// TODO: Add to collection of logicDoc for queueRunViewLogics
+            logicDocsForQueuing.push(logicDoc);
           }
 
           if (recordEntry) {
@@ -747,12 +790,13 @@ async function distributeFnTransactional(
       // Write to firestore in one transaction
     for (const [_, logicDocs] of transactionalDstPathLogicDocsMap) {
       for (const logicDoc of logicDocs) {
-        await distributeDoc(logicDoc, undefined, txn);
-        // TODO: Add to collection of logicDoc for queueRunViewLogics
+        logicDocsForQueuing.push(logicDoc);
       }
     }
   }
   await distributeTransactionalLogicResults();
+
+  return logicDocsForQueuing;
 }
 
 const onUserRegister = async (user: UserRecord) => {

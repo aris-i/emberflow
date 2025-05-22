@@ -153,4 +153,5 @@ export interface EventContext {
 export type RunBusinessLogicStatus = {
     status: "running" | "done" | "no-matching-logics",
     logicResults: LogicResult[],
+    logicDocsForQueuing: LogicResultDoc[],
 };
