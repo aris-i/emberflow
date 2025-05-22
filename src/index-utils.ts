@@ -155,13 +155,11 @@ export async function distributeDoc(
 
 export async function distributeFnNonTransactional(docsByDstPath: Map<string, LogicResultDoc[]>) {
   const batch = BatchUtil.getInstance();
-  const logicDocsForQueuing: LogicResultDoc[] = [];
   for (const dstPath of Array.from(docsByDstPath.keys()).sort()) {
     console.log(`Documents for path ${dstPath}:`);
     const resultDocs = docsByDstPath.get(dstPath);
     if (!resultDocs) continue;
     for (const resultDoc of resultDocs) {
-      logicDocsForQueuing.push(resultDoc);
       await distributeDoc(resultDoc, batch);
     }
   }
@@ -170,8 +168,6 @@ export async function distributeFnNonTransactional(docsByDstPath: Map<string, Lo
     console.log(`Committing final batch of ${batch.writeCount} writes...`);
     await batch.commit();
   }
-
-  return logicDocsForQueuing;
 }
 
 export async function distributeLater(docsByDstPath: Map<string, LogicResultDoc[]>) {

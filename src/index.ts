@@ -539,7 +539,6 @@ async function distributeNonTransactionalLogicResults(
       lowPriorityDocs: [] as LogicResultDoc[],
     });
 
-  const logicDocsForQueuing: LogicResultDoc[] = [];
   console.info(`Consolidating and Distributing High Priority Logic Results: ${highPriorityDocs.length}`);
   const highPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
       await expandConsolidateAndGroupByDstPath(highPriorityDocs);
@@ -547,8 +546,8 @@ async function distributeNonTransactionalLogicResults(
     docsByDocPath: highPriorityDocsByDocPath,
     otherDocsByDocPath: highPriorityOtherDocsByDocPath,
   } = groupDocsByTargetDocPath(highPriorityDstPathLogicDocsMap, docPath);
-  logicDocsForQueuing.push(...await distributeFnNonTransactional(highPriorityDocsByDocPath));
-  logicDocsForQueuing.push(...await distributeFnNonTransactional(highPriorityOtherDocsByDocPath));
+  await distributeFnNonTransactional(highPriorityDocsByDocPath);
+  await distributeFnNonTransactional(highPriorityOtherDocsByDocPath);
 
   console.info(`Consolidating and Distributing Normal Priority Logic Results: ${normalPriorityDocs.length}`);
   const normalPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
@@ -557,7 +556,7 @@ async function distributeNonTransactionalLogicResults(
     docsByDocPath: normalPriorityDocsByDocPath,
     otherDocsByDocPath: normalPriorityOtherDocsByDocPath,
   } = groupDocsByTargetDocPath(normalPriorityDstPathLogicDocsMap, docPath);
-  logicDocsForQueuing.push(...await distributeFnNonTransactional(normalPriorityDocsByDocPath));
+  await distributeFnNonTransactional(normalPriorityDocsByDocPath);
   await distributeLater(normalPriorityOtherDocsByDocPath);
 
   console.info(`Consolidating and Distributing Low Priority Logic Results: ${lowPriorityDocs.length}`);
