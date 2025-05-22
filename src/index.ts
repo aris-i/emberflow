@@ -478,11 +478,7 @@ export async function onFormSubmit(
 
     await formRef.update({"@status": "finished"});
 
-    const logicDocsForQueueingToViewLogics = runBusinessLogicStatus.logicResults
-      .map(((result) => result.documents))
-      .flat()
-      .filter((doc) => !doc.skipRunViewLogics);
-    await queueRunViewLogics(logicDocsForQueueingToViewLogics);
+    await queueRunViewLogics(runBusinessLogicStatus.logicResults);
 
     const end = performance.now();
     const execTime = end - start;

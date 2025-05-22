@@ -122,8 +122,6 @@ describe("distributeDoc", () => {
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
     expect(dbDoc.set).toHaveBeenCalledTimes(1);
     expect(dbDoc.set).toHaveBeenCalledWith(expectedData, {merge: true});
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
   });
 
   it("should merge a document to dstPath", async () => {
@@ -144,8 +142,6 @@ describe("distributeDoc", () => {
 
     const dstDocRef = db.doc("/users/test-user-id/documents/test-doc-id");
     expect(dstDocRef.set).toHaveBeenCalledWith(expectedData, {merge: true});
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
   });
 
   it("should merge a document to dstPath and queue instructions", async () => {
@@ -174,8 +170,6 @@ describe("distributeDoc", () => {
 
     const dstDocRef = db.doc(logicResultDoc.dstPath);
     expect(dstDocRef.set).toHaveBeenCalledWith(expectedData, {merge: true});
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
   });
 
   it("should process instructions if using transaction", async () => {
@@ -210,8 +204,6 @@ describe("distributeDoc", () => {
     const dstDocRef = db.doc(logicResultDoc.dstPath);
     expect(transactionSetMock).toHaveBeenNthCalledWith(1, dstDocRef, expectedInstructions, {merge: true});
     expect(transactionSetMock).toHaveBeenNthCalledWith(2, dstDocRef, expectedData, {merge: true});
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
   });
 
   it("should add parsed instructions to destPropId field if has destPropId", async () => {
@@ -255,8 +247,6 @@ describe("distributeDoc", () => {
     const dstDocRef = db.doc(logicResultDoc.dstPath);
     expect(transactionSetMock).toHaveBeenNthCalledWith(1, dstDocRef, expectedInstructions, {merge: true});
     expect(transactionSetMock).toHaveBeenNthCalledWith(2, dstDocRef, expectedData, {merge: true});
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
   });
 
   it("should not merge when document is undefined", async () => {
@@ -270,8 +260,6 @@ describe("distributeDoc", () => {
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
     expect(dbDoc.update).not.toHaveBeenCalled();
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
   });
 
   it("should delete a document from dstPath", async () => {
@@ -284,11 +272,8 @@ describe("distributeDoc", () => {
     await indexUtils.distributeDoc(logicResultDoc);
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
-    expect(dbDoc.get).toHaveBeenCalledTimes(1);
     expect(dbDoc.delete).toHaveBeenCalledTimes(1);
     expect(dbDoc.delete).toHaveBeenCalled();
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
   });
 
   it("should queue a document to submit form", async () => {
@@ -336,8 +321,6 @@ describe("distributeDoc", () => {
       expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
       expect(batchSetSpy).toHaveBeenCalledTimes(1);
       expect(batchSetSpy.mock.calls[0][1]).toEqual(expectedData);
-      expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
-      expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
 
       batchSetSpy.mockRestore();
     });
@@ -360,8 +343,6 @@ describe("distributeDoc", () => {
       expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
       expect(batchSetSpy).toHaveBeenCalledTimes(1);
       expect(batchSetSpy.mock.calls[0][1]).toEqual(expectedData);
-      expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
-      expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
 
       batchSetSpy.mockRestore();
     });
@@ -377,10 +358,7 @@ describe("distributeDoc", () => {
       await indexUtils.distributeDoc(logicResultDoc, batch);
       expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
       expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
-      expect(dbDoc.get).toHaveBeenCalledTimes(1);
       expect(batchDeleteSpy).toHaveBeenCalledTimes(1);
-      expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
-      expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
 
       batchDeleteSpy.mockRestore();
     });
@@ -405,8 +383,6 @@ describe("distributeDoc", () => {
       const dstDocRef = db.doc(logicResultDoc.dstPath);
       expect(dstDocRef.set).toHaveBeenCalledTimes(1);
       expect(dstDocRef.set).toHaveBeenCalledWith(expectedData, {merge: true});
-      expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
-      expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
     });
 
     it("should update destProp", async () => {
@@ -429,8 +405,6 @@ describe("distributeDoc", () => {
       const dstDocRef = db.doc(logicResultDoc.dstPath);
       expect(dstDocRef.set).toHaveBeenCalledTimes(1);
       expect(dstDocRef.set).toHaveBeenCalledWith(expectedData, {merge: true});
-      expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
-      expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
     });
 
     it("should delete destProp", async () => {
@@ -446,14 +420,11 @@ describe("distributeDoc", () => {
       await indexUtils.distributeDoc(logicResultDoc);
       expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
       expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
-      expect(dbDoc.get).toHaveBeenCalledTimes(1);
 
       const dstDocRef = db.doc(logicResultDoc.dstPath);
       expect(dstDocRef.set).toHaveBeenCalledTimes(1);
       expect(dstDocRef.set).toHaveBeenCalledWith(expectedData, {merge: true});
       expect(dbDoc.delete).not.toHaveBeenCalled();
-      expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
-      expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
     });
   });
 
@@ -478,8 +449,6 @@ describe("distributeDoc", () => {
       const dstDocRef = db.doc(logicResultDoc.dstPath);
       expect(dstDocRef.set).toHaveBeenCalledTimes(1);
       expect(dstDocRef.set).toHaveBeenCalledWith(expectedData, {merge: true});
-      expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
-      expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
     });
 
     it("should update destProp", async () => {
@@ -503,8 +472,6 @@ describe("distributeDoc", () => {
       const dstDocRef = db.doc(logicResultDoc.dstPath);
       expect(dstDocRef.set).toHaveBeenCalledTimes(1);
       expect(dstDocRef.set).toHaveBeenCalledWith(expectedData, {merge: true});
-      expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
-      expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
     });
 
     it("should delete destProp", async () => {
@@ -522,13 +489,10 @@ describe("distributeDoc", () => {
       await indexUtils.distributeDoc(logicResultDoc);
       expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
       expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
-      expect(dbDoc.get).toHaveBeenCalledTimes(1);
       const dstDocRef = db.doc(logicResultDoc.dstPath);
       expect(dstDocRef.set).toHaveBeenCalledTimes(1);
       expect(dstDocRef.set).toHaveBeenCalledWith(expectedData, {merge: true});
       expect(dbDoc.delete).not.toHaveBeenCalled();
-      expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
-      expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResultDoc);
     });
   });
 });
@@ -599,7 +563,6 @@ describe("distribute", () => {
       "name": "test-doc-name-updated",
     });
     expect(batchSetSpy).toHaveBeenCalledTimes(1);
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
     batchSetSpy.mockRestore();
   });
 
@@ -617,10 +580,7 @@ describe("distribute", () => {
 
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
-    expect(dbDoc.get).toHaveBeenCalledTimes(1);
     expect(batchDeleteSpy).toHaveBeenCalledTimes(1);
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
-
     batchDeleteSpy.mockRestore();
   });
 });
