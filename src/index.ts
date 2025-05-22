@@ -468,8 +468,6 @@ export async function onFormSubmit(
       console.warn("No User Data Error / Security Error in transaction");
       return;
     }
-    await queueRunViewLogics(runBusinessLogicStatus.logicDocsForQueuing);
-
     const distributeNonTransactionalLogicResultsStart = performance.now();
     const nonTransactionalLogicDocsForQueue = await distributeNonTransactionalLogicResults(
       runBusinessLogicStatus.logicResults,
@@ -486,6 +484,12 @@ export async function onFormSubmit(
     logicResults.push(distributeNonTransactionalPerfLogicResults);
 
     await formRef.update({"@status": "finished"});
+
+    const logicDocsForQueueingToViewLogics = runBusinessLogicStatus.logicResults
+      .map(((result) => result.documents))
+      .flat()
+      .filter((doc) => !doc.skipRunViewLogics);
+    await queueRunViewLogics(logicDocsForQueueingToViewLogics);
 
     const end = performance.now();
     const execTime = end - start;
