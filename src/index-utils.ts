@@ -330,12 +330,6 @@ export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultD
         }
         existingDoc.instructions = {...existingDoc.instructions, ...logicResultDoc.instructions};
         existingDoc.doc = {...existingDoc.doc, ...logicResultDoc.doc};
-        if (logicResultDoc.journalEntries) {
-          if (!existingDoc.journalEntries) {
-            existingDoc.journalEntries = [];
-          }
-          existingDoc.journalEntries.push(...logicResultDoc.journalEntries);
-        }
 
         merged = true;
         break;
