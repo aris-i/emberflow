@@ -963,13 +963,7 @@ describe("queueRunViewLogics", () => {
       doc: {name: "test-doc-name-merge"},
       dstPath: "users/test-user-id/documents/doc1",
     };
-    const logicResults: LogicResult[] = [];
-    logicResults.push({
-      name: "test",
-      status: "finished",
-      documents: [doc1],
-    });
-    await viewLogics.queueRunViewLogics(logicResults);
+    await viewLogics.queueRunViewLogics(doc1);
 
     expect(publishMessageSpy).toHaveBeenCalledWith({json: doc1});
   });
@@ -1057,7 +1051,7 @@ describe("onMessageViewLogicsQueue", () => {
     createMetricExecutionSpy = jest.spyOn(indexUtils._mockable, "createMetricExecution").mockResolvedValue();
     runViewLogicsSpy = jest.spyOn(indexUtils, "runViewLogics").mockResolvedValue(viewLogicsResult);
     expandConsolidateAndGroupByDstPathSpy = jest.spyOn(indexUtils, "expandConsolidateAndGroupByDstPath").mockResolvedValue(expandConsolidateResult);
-    distributeSpy = jest.spyOn(indexUtils, "distributeFnNonTransactional").mockResolvedValue();
+    distributeSpy = jest.spyOn(indexUtils, "distributeFnNonTransactional").mockResolvedValue([]);
   });
 
   it("should skip duplicate message", async () => {

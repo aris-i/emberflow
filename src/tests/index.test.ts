@@ -784,8 +784,14 @@ describe("onFormSubmit", () => {
       "@forDeletionLater": FieldValue.delete(),
     });
     expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResults);
-
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith({
+      ...logicResults[0].documents[0],
+      doc: {
+        field: "value",
+        totalTodos: 1,
+        notStartedCount: 1,
+      },
+    });
     queueRunViewLogicsSpy.mockReset();
     txnGetFnMock.mockRestore();
     transactionSetMock.mockRestore();
@@ -824,7 +830,14 @@ describe("onFormSubmit", () => {
       "@forDeletionLater": FieldValue.delete(),
     });
     expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResults);
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith({
+      ...logicResults[0].documents[0],
+      doc: {
+        field: "value",
+        totalTodos: 2,
+        notStartedCount: 2,
+      },
+    });
 
     queueRunViewLogicsSpy.mockReset();
     txnGetFnMock.mockRestore();
@@ -988,7 +1001,13 @@ describe("onFormSubmit", () => {
       "equation": equation,
     });
     expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResults);
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith({
+      ...logicResults[0].documents[0],
+      doc: {
+        inProgressCount: 0,
+        doneCount: 1,
+      },
+    });
   }, 15000);
 
   it("should execute the sequence of operations correctly", async () => {
@@ -1000,7 +1019,7 @@ describe("onFormSubmit", () => {
     jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue({"field1": "value1", "field2": "value2"});
     jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() => Promise.resolve({status: "allowed"}));
     jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(false);
-    jest.spyOn(indexutils, "distributeFnNonTransactional").mockResolvedValue();
+    jest.spyOn(indexutils, "distributeFnNonTransactional").mockResolvedValue([]);
     jest.spyOn(indexutils, "distributeLater").mockResolvedValue();
     jest.spyOn(viewLogics, "queueRunViewLogics").mockResolvedValue();
     jest.spyOn(distribution, "convertInstructionsToDbValues").mockResolvedValue({

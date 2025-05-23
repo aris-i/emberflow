@@ -20,6 +20,7 @@ import {reviveDateAndTimestamp} from "./misc";
 import FieldValue = firestore.FieldValue;
 import Transaction = firestore.Transaction;
 import {getDestPropAndDestPropId} from "./paths";
+import {queueRunViewLogics} from "../logics/view-logics";
 
 export const queueForDistributionLater = async (...logicResultDocs: LogicResultDoc[]) => {
   try {
@@ -51,6 +52,7 @@ export async function onMessageForDistributionQueue(event: CloudEvent<MessagePub
     const {priority = "normal"} = logicResultDoc;
     if (priority === "high") {
       await distributeDoc(logicResultDoc);
+      await queueRunViewLogics(logicResultDoc);
     } else if (priority === "normal") {
       logicResultDoc.priority = "high";
       await queueForDistributionLater(logicResultDoc);
