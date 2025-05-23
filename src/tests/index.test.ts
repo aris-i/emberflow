@@ -1,4 +1,4 @@
-import {_mockable, db, initializeEmberFlow, onFormSubmit} from "../index";
+import {_mockable, initializeEmberFlow, onFormSubmit} from "../index";
 import * as indexutils from "../index-utils";
 import * as transactionutils from "../utils/transaction";
 import * as admin from "firebase-admin";
@@ -11,7 +11,7 @@ import {
   LogicResultDoc,
   ProjectConfig,
   SecurityResult,
-  ValidateFormResult, JournalEntry, RunBusinessLogicStatus,
+  ValidateFormResult, RunBusinessLogicStatus,
 } from "../types";
 import * as functions from "firebase-functions";
 import {dbStructure, Entity} from "../sample-custom/db-structure";
@@ -135,41 +135,6 @@ describe("onFormSubmit", () => {
       nestedField1: "oldValue",
       nestedField2: "oldValue",
     },
-  };
-  const equation = "totalTodos = notStartedCount + inProgressCount + toVerifyCount + requestChangesCount + doneCount";
-  const now = Timestamp.fromDate(new Date());
-  const journalEntry: JournalEntry = {
-    date: now,
-    ledgerEntries: [
-      {
-        account: "totalTodos",
-        debit: 1,
-        credit: 0,
-      },
-      {
-        account: "notStartedCount",
-        debit: 0,
-        credit: 1,
-      },
-    ],
-    equation: equation,
-  };
-  const recordedJournalEntry: JournalEntry = {
-    date: now,
-    ledgerEntries: [
-      {
-        account: "inProgressCount",
-        debit: 1,
-        credit: 0,
-      },
-      {
-        account: "doneCount",
-        debit: 0,
-        credit: 1,
-      },
-    ],
-    equation: equation,
-    recordEntry: true,
   };
 
   beforeEach(() => {
@@ -603,394 +568,6 @@ describe("onFormSubmit", () => {
     txnGetFnMock.mockClear();
   });
 
-  it("should write journal entries first", async () => {
-    transactionSetMock.mockReset();
-    const consoleErrorSpy = jest.spyOn(console, "error").mockImplementation();
-    const consoleInfoSpy = jest.spyOn(console, "info").mockImplementation();
-    const queueRunViewLogicsSpy = jest.spyOn(viewLogics, "queueRunViewLogics").mockResolvedValue();
-    jest.spyOn(indexutils, "runBusinessLogics").mockImplementation(
-      async (txnGet, action) => {
-        return {
-          status: "done",
-          logicResults,
-        };
-      },
-    );
-    const distributionMock = jest.spyOn(distribution, "queueForDistributionLater").mockImplementation(async ()=>{
-      console.log("distribute");
-    });
-    let logicResults: LogicResult[] = [
-      {
-        name: "logic 1",
-        timeFinished: _mockable.createNowTimestamp(),
-        status: "finished",
-        documents: [
-          {action: "merge", priority: "normal", dstPath: "path1/doc1"},
-        ],
-      },
-    ];
-    const docPath = "users/user-1";
-    const form = {
-      "formData": JSON.stringify({
-        "@actionType": "create",
-        "name": "test",
-        "@docPath": docPath,
-      }),
-      "@status": "submit",
-    };
-    const event = createEvent(form);
-    await onFormSubmit(event);
-    expect(consoleInfoSpy).toHaveBeenCalledWith("No journal entries to write");
-    expect(transactionUpdateMock).not.toHaveBeenCalled();
-    expect(txnGetFnMock).toBeCalledTimes(2);
-
-    logicResults = [
-      {
-        name: "logic 1",
-        timeFinished: _mockable.createNowTimestamp(),
-        status: "finished",
-        documents: [
-          {action: "delete", priority: "normal", dstPath: "path1/doc1", journalEntries: [journalEntry]},
-        ],
-      },
-    ];
-    await onFormSubmit(event);
-    expect(consoleInfoSpy).toHaveBeenCalledWith("No journal entries to write");
-    expect(transactionUpdateMock).not.toHaveBeenCalled();
-    expect(transactionSetMock).toHaveBeenCalledTimes(6);
-    expect(txnGetFnMock).toBeCalledTimes(4);
-    logicResults = [
-      {
-        name: "logic 1",
-        timeFinished: _mockable.createNowTimestamp(),
-        status: "finished",
-        documents: [
-          {action: "merge", priority: "normal", dstPath: "", journalEntries: [journalEntry]},
-        ],
-      },
-    ];
-    await onFormSubmit(event);
-    expect(consoleErrorSpy).toHaveBeenCalledWith("Dst path has no docId");
-    expect(transactionUpdateMock).not.toHaveBeenCalled();
-    expect(transactionSetMock).toHaveBeenCalledTimes(9);
-    expect(txnGetFnMock).toHaveBeenCalledTimes(6);
-
-    logicResults = [
-      {
-        name: "logic 1",
-        timeFinished: _mockable.createNowTimestamp(),
-        status: "finished",
-        documents: [
-          {action: "merge", priority: "high", dstPath: "path1/doc5", doc: {totalTodos: 1}, journalEntries: [journalEntry]},
-        ],
-      },
-    ];
-    await onFormSubmit(event);
-    expect(consoleErrorSpy).toHaveBeenCalledWith("Doc cannot have keys that are the same as account names");
-    expect(transactionUpdateMock).not.toHaveBeenCalled();
-    expect(transactionSetMock).toHaveBeenCalledTimes(12);
-    expect(txnGetFnMock).toHaveBeenCalledTimes(8);
-
-    logicResults = [
-      {
-        name: "logic 1",
-        timeFinished: _mockable.createNowTimestamp(),
-        status: "finished",
-        documents: [
-          {action: "merge", priority: "high", dstPath: "path1/doc5", instructions: {totalTodos: "+1"}, journalEntries: [journalEntry]},
-        ],
-      },
-    ];
-    await onFormSubmit(event);
-    expect(consoleErrorSpy).toHaveBeenCalledWith("Instructions cannot have keys that are the same as account names");
-    expect(transactionUpdateMock).not.toHaveBeenCalled();
-    expect(transactionSetMock).toHaveBeenCalledTimes(15);
-    expect(txnGetFnMock).toHaveBeenCalledTimes(10);
-
-    const unbalancedJournalEntry: JournalEntry = {
-      date: _mockable.createNowTimestamp(),
-      ledgerEntries: [
-        {
-          account: "totalTodos",
-          debit: 1,
-          credit: 0,
-        },
-        {
-          account: "notStartedCount",
-          debit: 0,
-          credit: 1,
-        },
-        {
-          account: "inProgressCount",
-          debit: 0,
-          credit: 1,
-        },
-      ],
-      equation: equation,
-    };
-    logicResults = [
-      {
-        name: "logic 1",
-        timeFinished: _mockable.createNowTimestamp(),
-        status: "finished",
-        documents: [
-          {action: "merge", priority: "high", dstPath: "path1/doc5", journalEntries: [unbalancedJournalEntry]},
-        ],
-      },
-    ];
-    await onFormSubmit(event);
-    expect(consoleErrorSpy).toHaveBeenCalledWith("Debit and credit should be equal");
-    expect(transactionUpdateMock).not.toHaveBeenCalled();
-    expect(transactionSetMock).toHaveBeenCalledTimes(18);
-    expect(txnGetFnMock).toHaveBeenCalledTimes(12);
-
-    txnGetFnMock.mockRestore();
-    transactionSetMock.mockRestore();
-    transactionUpdateMock.mockRestore();
-    queueRunViewLogicsSpy.mockReset();
-    const docRef = db.doc("path1/doc1");
-    logicResults = [
-      {
-        name: "logic 1",
-        timeFinished: _mockable.createNowTimestamp(),
-        status: "finished",
-        documents: [
-          {action: "merge", priority: "normal", dstPath: "path1/doc1", doc: {field: "value"}, journalEntries: [journalEntry]},
-        ],
-      },
-    ];
-
-    const user = {
-      "@id": "forDistribution",
-      "username": "forDistribution",
-    };
-    txnGetFnMock
-      .mockResolvedValueOnce({data: ()=> (document)})
-      .mockResolvedValueOnce({data: ()=> (user)})
-      .mockReturnValueOnce({data: () => undefined});
-
-    await onFormSubmit(event);
-    expect(txnGetFnMock).toHaveBeenCalledTimes(3);
-    expect(txnGetFnMock).toHaveBeenCalledWith(docRef);
-    expect(transactionSetMock).toHaveBeenCalledTimes(4);
-    expect(transactionSetMock).toHaveBeenCalledWith(docRef, {"field": "value", "@forDeletionLater": true});
-    expect(transactionUpdateMock).toHaveBeenCalledTimes(2);
-    expect(transactionUpdateMock).toHaveBeenNthCalledWith(1, docRef, {
-      "totalTodos": 1,
-      "@forDeletionLater": FieldValue.delete(),
-    });
-    expect(transactionUpdateMock).toHaveBeenNthCalledWith(2, docRef, {
-      "notStartedCount": 1,
-      "@forDeletionLater": FieldValue.delete(),
-    });
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResults);
-
-    queueRunViewLogicsSpy.mockReset();
-    txnGetFnMock.mockRestore();
-    transactionSetMock.mockRestore();
-    transactionUpdateMock.mockRestore();
-    logicResults = [
-      {
-        name: "logic 1",
-        timeFinished: _mockable.createNowTimestamp(),
-        status: "finished",
-        documents: [
-          {action: "merge", priority: "normal", dstPath: "path1/doc1", doc: {field: "value"}, journalEntries: [journalEntry]},
-        ],
-      },
-    ];
-    txnGetFnMock
-      .mockResolvedValueOnce({data: ()=> (document)})
-      .mockResolvedValueOnce({data: ()=> (user)})
-      .mockResolvedValueOnce({
-        data: () => ({
-          "totalTodos": 1,
-          "notStartedCount": 1,
-        }),
-      });
-    await onFormSubmit(event);
-    expect(txnGetFnMock).toHaveBeenCalledTimes(3);
-    expect(txnGetFnMock).toHaveBeenCalledWith(docRef);
-    expect(transactionSetMock).toHaveBeenCalledTimes(3);
-    expect(transactionUpdateMock).toHaveBeenCalledTimes(3);
-    expect(transactionUpdateMock).toHaveBeenNthCalledWith(1, docRef, {"field": "value", "@forDeletionLater": true});
-    expect(transactionUpdateMock).toHaveBeenNthCalledWith(2, docRef, {
-      "totalTodos": 2,
-      "@forDeletionLater": FieldValue.delete(),
-    });
-    expect(transactionUpdateMock).toHaveBeenNthCalledWith(3, docRef, {
-      "notStartedCount": 2,
-      "@forDeletionLater": FieldValue.delete(),
-    });
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResults);
-
-    queueRunViewLogicsSpy.mockReset();
-    txnGetFnMock.mockRestore();
-    transactionSetMock.mockRestore();
-    transactionUpdateMock.mockRestore();
-    txnGetFnMock
-      .mockResolvedValueOnce({data: ()=> (document)})
-      .mockResolvedValueOnce({data: ()=> (user)})
-      .mockResolvedValueOnce({
-        data: () => ({
-          "totalTodos": 2,
-          "notStartedCount": 0,
-          "inProgressCount": 2,
-        }),
-      });
-    const zeroJournalEntry: JournalEntry = {
-      date: _mockable.createNowTimestamp(),
-      ledgerEntries: [
-        {
-          account: "notStartedCount",
-          debit: 1,
-          credit: 1,
-        },
-        {
-          account: "inProgressCount",
-          debit: 1,
-          credit: 1,
-        },
-      ],
-      equation: equation,
-    };
-    logicResults = [
-      {
-        name: "logic 1",
-        timeFinished: _mockable.createNowTimestamp(),
-        status: "finished",
-        documents: [
-          {action: "merge", priority: "normal", dstPath: "path1/doc1", journalEntries: [zeroJournalEntry]},
-        ],
-      },
-    ];
-    await onFormSubmit(event);
-    expect(txnGetFnMock).toHaveBeenCalledTimes(3);
-    expect(txnGetFnMock).toHaveBeenCalledWith(docRef);
-    expect(transactionSetMock).toHaveBeenCalledTimes(3);
-    expect(transactionUpdateMock).toHaveBeenCalledTimes(3);
-    expect(transactionUpdateMock).toHaveBeenNthCalledWith(1, docRef, {"@forDeletionLater": true});
-    expect(transactionUpdateMock).toHaveBeenNthCalledWith(2, docRef, {"@forDeletionLater": FieldValue.delete()});
-    expect(transactionUpdateMock).toHaveBeenNthCalledWith(3, docRef, {"@forDeletionLater": FieldValue.delete()});
-
-    distributionMock.mockRestore();
-    const errorMock = jest.spyOn(global, "Error").mockImplementation();
-    txnGetFnMock.mockRestore();
-    transactionSetMock.mockRestore();
-    transactionUpdateMock.mockRestore();
-
-    txnGetFnMock
-      .mockResolvedValueOnce({data: ()=> (document)})
-      .mockResolvedValueOnce({data: ()=> (user)})
-      .mockResolvedValueOnce({
-        data: () => ({
-          "totalTodos": 2,
-          "notStartedCount": 0,
-          "inProgressCount": 2,
-        }),
-      });
-
-    const changeStatusJournalEntry: JournalEntry = {
-      date: _mockable.createNowTimestamp(),
-      ledgerEntries: [
-        {
-          account: "notStartedCount",
-          debit: 1,
-          credit: 0,
-        },
-        {
-          account: "inProgressCount",
-          debit: 0,
-          credit: 1,
-        },
-      ],
-      equation: equation,
-    };
-    logicResults = [
-      {
-        name: "logic 1",
-        timeFinished: _mockable.createNowTimestamp(),
-        status: "finished",
-        documents: [
-          {action: "merge", priority: "normal", dstPath: "path1/doc1", journalEntries: [changeStatusJournalEntry]},
-        ],
-      },
-    ];
-    try {
-      await onFormSubmit(event);
-    } catch (e) {
-      console.log("Expect this error");
-    }
-    expect(txnGetFnMock).toHaveBeenCalledTimes(3);
-    expect(txnGetFnMock).toHaveBeenCalledWith(docRef);
-    expect(transactionSetMock).toHaveBeenCalledTimes(3);
-    expect(transactionUpdateMock).toHaveBeenCalledTimes(1);
-    expect(transactionUpdateMock).toHaveBeenCalledWith(docRef, {"@forDeletionLater": true});
-    expect(errorMock).toHaveBeenCalledTimes(1);
-    expect(errorMock).toHaveBeenCalledWith("Account value cannot be negative");
-    queueRunViewLogicsSpy.mockReset();
-    errorMock.mockRestore();
-    txnGetFnMock.mockRestore();
-    transactionSetMock.mockRestore();
-    transactionUpdateMock.mockRestore();
-    txnGetFnMock
-      .mockResolvedValueOnce({data: ()=> (document)})
-      .mockResolvedValueOnce({data: ()=> (user)})
-      .mockResolvedValueOnce({
-        data: () => ({
-          "totalTodos": 2,
-          "notStartedCount": 1,
-          "inProgressCount": 1,
-          "doneCount": 0,
-        }),
-      });
-
-    logicResults = [
-      {
-        name: "logic 1",
-        timeFinished: _mockable.createNowTimestamp(),
-        status: "finished",
-        documents: [
-          {action: "merge", priority: "normal", dstPath: "path1/doc1", journalEntries: [recordedJournalEntry]},
-        ],
-      },
-    ];
-    await onFormSubmit(event);
-    expect(txnGetFnMock).toHaveBeenCalledTimes(3);
-    expect(txnGetFnMock).toHaveBeenCalledWith(docRef);
-    expect(transactionUpdateMock).toHaveBeenCalledTimes(3);
-    expect(transactionUpdateMock).toHaveBeenNthCalledWith(1, docRef, {"@forDeletionLater": true});
-    expect(transactionUpdateMock).toHaveBeenNthCalledWith(2, docRef, {
-      "inProgressCount": 0,
-      "@forDeletionLater": FieldValue.delete(),
-    });
-    expect(transactionUpdateMock).toHaveBeenNthCalledWith(3, docRef, {
-      "doneCount": 1,
-      "@forDeletionLater": FieldValue.delete(),
-    });
-    expect(transactionSetMock).toHaveBeenCalledTimes(5);
-    expect(transactionSetMock).toHaveBeenNthCalledWith(4, db.doc("path/doc1/@ledgers/doc100"), {
-      "journalEntryId": "doc10",
-      "account": "inProgressCount",
-      "debit": 1,
-      "credit": 0,
-      "date": expect.any(Timestamp),
-      "equation": equation,
-    });
-    expect(transactionSetMock).toHaveBeenNthCalledWith(5, db.doc("path/doc1/@ledgers/doc101"), {
-      "journalEntryId": "doc10",
-      "account": "doneCount",
-      "debit": 0,
-      "credit": 1,
-      "date": expect.any(Timestamp),
-      "equation": equation,
-    });
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(logicResults);
-  }, 15000);
-
   it("should execute the sequence of operations correctly", async () => {
     refUpdateMock.mockRestore();
     setMock.mockRestore();
@@ -1000,7 +577,7 @@ describe("onFormSubmit", () => {
     jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue({"field1": "value1", "field2": "value2"});
     jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() => Promise.resolve({status: "allowed"}));
     jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(false);
-    jest.spyOn(indexutils, "distributeFnNonTransactional").mockResolvedValue();
+    jest.spyOn(indexutils, "distributeFnNonTransactional").mockResolvedValue([]);
     jest.spyOn(indexutils, "distributeLater").mockResolvedValue();
     jest.spyOn(viewLogics, "queueRunViewLogics").mockResolvedValue();
     jest.spyOn(distribution, "convertInstructionsToDbValues").mockResolvedValue({
@@ -1108,38 +685,6 @@ describe("onFormSubmit", () => {
       },
     ];
 
-    const recordedJournalEntry: JournalEntry = {
-      date: _mockable.createNowTimestamp(),
-      ledgerEntries: [
-        {
-          account: "inProgressCount",
-          debit: 1,
-          credit: 0,
-        },
-        {
-          account: "doneCount",
-          debit: 0,
-          credit: 1,
-        },
-      ],
-      equation: equation,
-      recordEntry: true,
-    };
-    const journalDocs: LogicResultDoc[] = [
-      {
-        action: "merge",
-        priority: "normal",
-        dstPath: "journal/doc1",
-        journalEntries: [recordedJournalEntry, journalEntry],
-      },
-      {
-        action: "merge",
-        priority: "normal",
-        dstPath: "journal/doc2",
-        journalEntries: [journalEntry],
-      },
-    ];
-
     const logicResults: LogicResult[] = [
       {
         name: "testLogic",
@@ -1156,12 +701,6 @@ describe("onFormSubmit", () => {
         status: "finished",
         timeFinished: _mockable.createNowTimestamp(),
         documents: [...transactionalDocs],
-        transactional: true,
-      }, {
-        name: "journalLogic",
-        status: "finished",
-        timeFinished: _mockable.createNowTimestamp(),
-        documents: [...journalDocs],
         transactional: true,
       },
     ];
@@ -1213,9 +752,6 @@ describe("onFormSubmit", () => {
     const transactionalDstPathLogicDocsMap =
       await expandConsolidateAndGroupByDstPath(transactionalDocs);
 
-    const journalDstPathLogicDocsMap =
-      await expandConsolidateAndGroupByDstPath(journalDocs);
-
     const viewLogicResults: LogicResult[] = [{
       name: "User ViewLogic",
       status: "finished",
@@ -1224,7 +760,6 @@ describe("onFormSubmit", () => {
     }];
 
     jest.spyOn(indexutils, "expandConsolidateAndGroupByDstPath")
-      .mockResolvedValueOnce(journalDstPathLogicDocsMap)
       .mockResolvedValueOnce(transactionalDstPathLogicDocsMap)
       .mockResolvedValueOnce(highPriorityDstPathLogicDocsMap)
       .mockResolvedValueOnce(normalPriorityDstPathLogicDocsMap)
@@ -1256,31 +791,30 @@ describe("onFormSubmit", () => {
     expect(refMock.update).toHaveBeenNthCalledWith(3, {"@status": "finished"});
 
     // Test that the functions are called in the correct sequence
-    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(1, journalDocs);
     console.debug("set", transactionSetMock.mock.calls);
     console.debug("update", transactionUpdateMock.mock.calls);
-    expect(transactionMock.set).toHaveBeenCalledTimes(23);
-    expect(transactionMock.update).toHaveBeenCalledTimes(9);
+    expect(transactionMock.set).toHaveBeenCalledTimes(18);
+    expect(transactionMock.update).toHaveBeenCalledTimes(0);
 
-    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(2, transactionalDocs);
+    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(1, transactionalDocs);
     expect(transactionMock.delete).toHaveBeenCalledTimes(1);
 
-    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(3, highPriorityDocs);
+    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(2, highPriorityDocs);
     expect(indexutils.groupDocsByTargetDocPath).toHaveBeenNthCalledWith(1, highPriorityDstPathLogicDocsMap, docPath);
     expect(indexutils.distributeFnNonTransactional).toHaveBeenNthCalledWith(1, highPriorityDocsByDocPath);
     expect(indexutils.distributeFnNonTransactional).toHaveBeenNthCalledWith(2, highPriorityOtherDocsByDocPath);
 
-    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(4, [...normalPriorityDocs, ...additionalNormalPriorityDocs]);
+    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(3, [...normalPriorityDocs, ...additionalNormalPriorityDocs]);
     expect(indexutils.groupDocsByTargetDocPath).toHaveBeenNthCalledWith(2, normalPriorityDstPathLogicDocsMap, docPath);
     expect(indexutils.distributeFnNonTransactional).toHaveBeenNthCalledWith(3, normalPriorityDocsByDocPath);
     expect(indexutils.distributeLater).toHaveBeenNthCalledWith(1, normalPriorityOtherDocsByDocPath);
 
-    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(5, lowPriorityDocs);
+    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(4, lowPriorityDocs);
     expect(indexutils.groupDocsByTargetDocPath).toHaveBeenNthCalledWith(3, lowPriorityDstPathLogicDocsMap, docPath);
     expect(indexutils.distributeLater).toHaveBeenNthCalledWith(2, lowPriorityDocsByDocPath);
     expect(indexutils.distributeLater).toHaveBeenNthCalledWith(3, lowPriorityOtherDocsByDocPath);
 
-    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenCalledTimes(5);
+    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenCalledTimes(4);
     expect(updateMock).toHaveBeenCalledTimes(1);
     expect(updateMock.mock.calls[0][0]).toEqual({
       execTime: expect.any(Number),

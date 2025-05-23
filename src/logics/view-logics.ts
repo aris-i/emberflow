@@ -294,34 +294,33 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
   return [srcToDstLogicFn, dstToSrcLogicFn];
 }
 
-export async function queueRunViewLogics(logicResults: LogicResult[]) {
+export async function queueRunViewLogics(...logicResultDocs: LogicResultDoc[]) {
   try {
-    const logicResultDocs = logicResults
-      .flatMap((result) => result.documents)
-      .filter((doc) => !doc.skipRunViewLogics && ["create", "merge", "delete"].includes(doc.action));
-
     for (const logicResultDoc of logicResultDocs) {
       const {
         action,
         dstPath,
+        skipRunViewLogics,
       } = logicResultDoc;
       const {basePath, destProp, destPropId} = getDestPropAndDestPropId(dstPath);
       const dstDocRef = db.doc(basePath);
-      if (action === "delete") {
-        const data = (await dstDocRef.get()).data() || {};
-        if (destProp) {
-          if (destPropId) {
-            logicResultDoc.doc = {[destProp]: data[destProp]?.[destPropId] || {}};
+      if (!skipRunViewLogics && ["create", "merge", "delete"].includes(action)) {
+        if (action === "delete") {
+          const data = (await dstDocRef.get()).data() || {};
+          if (destProp) {
+            if (destPropId) {
+              logicResultDoc.doc = {[destProp]: data[destProp]?.[destPropId] || {}};
+            } else {
+              logicResultDoc.doc = {[destProp]: data[destProp] || {}};
+            }
           } else {
-            logicResultDoc.doc = {[destProp]: data[destProp] || {}};
+            logicResultDoc.doc = data;
           }
-        } else {
-          logicResultDoc.doc = data;
         }
+        const messageId = await VIEW_LOGICS_TOPIC.publishMessage({json: logicResultDoc});
+        console.log(`queueRunViewLogics: Message ${messageId} published.`);
+        console.debug(`queueRunViewLogics: ${logicResultDoc}`);
       }
-      const messageId = await VIEW_LOGICS_TOPIC.publishMessage({json: logicResultDoc});
-      console.log(`queueRunViewLogics: Message ${messageId} published.`);
-      console.debug(`queueRunViewLogics: ${logicResultDoc}`);
     }
   } catch (error: unknown) {
     if (error instanceof Error) {

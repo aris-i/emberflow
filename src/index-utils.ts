@@ -154,12 +154,14 @@ export async function distributeDoc(
 }
 
 export async function distributeFnNonTransactional(docsByDstPath: Map<string, LogicResultDoc[]>) {
+  const forRunViewLogicQueuing: LogicResultDoc[] = [];
   const batch = BatchUtil.getInstance();
   for (const dstPath of Array.from(docsByDstPath.keys()).sort()) {
     console.log(`Documents for path ${dstPath}:`);
     const resultDocs = docsByDstPath.get(dstPath);
     if (!resultDocs) continue;
     for (const resultDoc of resultDocs) {
+      forRunViewLogicQueuing.push(resultDoc);
       await distributeDoc(resultDoc, batch);
     }
   }
@@ -168,6 +170,8 @@ export async function distributeFnNonTransactional(docsByDstPath: Map<string, Lo
     console.log(`Committing final batch of ${batch.writeCount} writes...`);
     await batch.commit();
   }
+
+  return forRunViewLogicQueuing;
 }
 
 export async function distributeLater(docsByDstPath: Map<string, LogicResultDoc[]>) {
@@ -326,12 +330,6 @@ export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultD
         }
         existingDoc.instructions = {...existingDoc.instructions, ...logicResultDoc.instructions};
         existingDoc.doc = {...existingDoc.doc, ...logicResultDoc.doc};
-        if (logicResultDoc.journalEntries) {
-          if (!existingDoc.journalEntries) {
-            existingDoc.journalEntries = [];
-          }
-          existingDoc.journalEntries.push(...logicResultDoc.journalEntries);
-        }
 
         merged = true;
         break;

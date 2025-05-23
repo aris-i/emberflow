@@ -38,7 +38,7 @@ import {createViewLogicFn, onMessageViewLogicsQueue, queueRunViewLogics} from ".
 import {resetUsageStats, stopBillingIfBudgetExceeded, useBillProtect} from "./utils/bill-protect";
 import {Firestore} from "firebase-admin/firestore";
 import {DatabaseEvent, DataSnapshot, onValueCreated} from "firebase-functions/v2/database";
-import {getDestPropAndDestPropId, parseEntity} from "./utils/paths";
+import {parseEntity} from "./utils/paths";
 import {database, firestore} from "firebase-admin";
 import {initClient} from "emberflow-admin-client/lib";
 import {internalDbStructure, InternalEntity} from "./db-structure";
@@ -50,7 +50,7 @@ import Database = database.Database;
 import {
   onMessageForDistributionQueue,
   onMessageInstructionsQueue,
-  instructionsReducer, convertInstructionsToDbValues,
+  instructionsReducer,
 } from "./utils/distribution";
 import {cleanPubSubProcessedIds} from "./utils/pubsub";
 import {onSchedule} from "firebase-functions/v2/scheduler";
@@ -58,8 +58,6 @@ import {onDocumentCreated} from "firebase-functions/v2/firestore";
 import {onRequest} from "firebase-functions/v2/https";
 import {UserRecord} from "firebase-admin/lib/auth";
 import {debounce} from "./utils/functions";
-import {DocumentData} from "firebase-admin/lib/firestore";
-import FieldValue = firestore.FieldValue;
 import Transaction = firestore.Transaction;
 import {extractTransactionGetOnly} from "./utils/transaction";
 
@@ -335,6 +333,7 @@ export async function onFormSubmit(
       logicResults: [],
     };
 
+    const forRunViewLogicQueuing: LogicResultDoc[] = [];
     const actionRef = _mockable.initActionRef(formId);
     const runTransactionStatus = await db.runTransaction(async (txn) => {
       const docRef = db.doc(docPath);
@@ -449,7 +448,7 @@ export async function onFormSubmit(
       await saveLogicResults();
 
       const distributeTransactionalLogicResultsStart = performance.now();
-      await distributeFnTransactional(txn, runBusinessLogicStatus.logicResults);
+      forRunViewLogicQueuing.push(...await distributeFnTransactional(txn, runBusinessLogicStatus.logicResults));
       const distributeTransactionalLogicResultsEnd = performance.now();
       const distributeTransactionalLogicResults: LogicResult = {
         name: "distributeTransactionalLogicResults",
@@ -466,7 +465,7 @@ export async function onFormSubmit(
       return;
     }
     const distributeNonTransactionalLogicResultsStart = performance.now();
-    await distributeNonTransactionalLogicResults(runBusinessLogicStatus.logicResults, docPath);
+    forRunViewLogicQueuing.push(...await distributeNonTransactionalLogicResults(runBusinessLogicStatus.logicResults, docPath));
     const distributeNonTransactionalLogicResultsEnd = performance.now();
     const distributeNonTransactionalPerfLogicResults: LogicResult = {
       name: "distributeNonTransactionalLogicResults",
@@ -478,7 +477,7 @@ export async function onFormSubmit(
 
     await formRef.update({"@status": "finished"});
 
-    await queueRunViewLogics(runBusinessLogicStatus.logicResults);
+    await queueRunViewLogics(...forRunViewLogicQueuing);
 
     const end = performance.now();
     const execTime = end - start;
@@ -513,13 +512,13 @@ export async function onFormSubmit(
 async function distributeNonTransactionalLogicResults(
   logicResults: LogicResult[],
   docPath: string,
-) {
+): Promise<LogicResultDoc[]> {
+  const forRunViewLogicQueuing: LogicResultDoc[] = [];
   const nonTransactionalResults = logicResults.filter((result) => !result.transactional);
   console.info(`Group logic docs by priority: ${nonTransactionalResults.length}`);
   const {highPriorityDocs, normalPriorityDocs, lowPriorityDocs} = nonTransactionalResults
     .map((result) => result.documents)
     .flat()
-    .filter((doc) => !doc.journalEntries || doc.journalEntries && doc.action === "delete")
     .reduce((acc, doc) => {
       if (doc.priority === "high") {
         acc.highPriorityDocs.push(doc);
@@ -542,8 +541,8 @@ async function distributeNonTransactionalLogicResults(
     docsByDocPath: highPriorityDocsByDocPath,
     otherDocsByDocPath: highPriorityOtherDocsByDocPath,
   } = groupDocsByTargetDocPath(highPriorityDstPathLogicDocsMap, docPath);
-  await distributeFnNonTransactional(highPriorityDocsByDocPath);
-  await distributeFnNonTransactional(highPriorityOtherDocsByDocPath);
+  forRunViewLogicQueuing.push(...await distributeFnNonTransactional(highPriorityDocsByDocPath));
+  forRunViewLogicQueuing.push(...await distributeFnNonTransactional(highPriorityOtherDocsByDocPath));
 
   console.info(`Consolidating and Distributing Normal Priority Logic Results: ${normalPriorityDocs.length}`);
   const normalPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
@@ -552,7 +551,7 @@ async function distributeNonTransactionalLogicResults(
     docsByDocPath: normalPriorityDocsByDocPath,
     otherDocsByDocPath: normalPriorityOtherDocsByDocPath,
   } = groupDocsByTargetDocPath(normalPriorityDstPathLogicDocsMap, docPath);
-  await distributeFnNonTransactional(normalPriorityDocsByDocPath);
+  forRunViewLogicQueuing.push(...await distributeFnNonTransactional(normalPriorityDocsByDocPath));
   await distributeLater(normalPriorityOtherDocsByDocPath);
 
   console.info(`Consolidating and Distributing Low Priority Logic Results: ${lowPriorityDocs.length}`);
@@ -564,177 +563,15 @@ async function distributeNonTransactionalLogicResults(
   } = groupDocsByTargetDocPath(lowPriorityDstPathLogicDocsMap, docPath);
   await distributeLater(lowPriorityDocsByDocPath);
   await distributeLater(lowPriorityOtherDocsByDocPath);
+
+  return forRunViewLogicQueuing;
 }
 
 async function distributeFnTransactional(
   txn: Transaction,
   logicResults: LogicResult[],
-) {
-  async function writeJournalEntriesFirst() {
-    // Gather all logicResultDoc with journalEntries
-    const logicResultDocsWithJournalEntries = logicResults
-      .map((result) => result.documents).flat()
-      .filter((logicResultDoc) => logicResultDoc.journalEntries &&
-            logicResultDoc.action !== "delete");
-    if (logicResultDocsWithJournalEntries.length === 0) {
-      console.info("No journal entries to write");
-      return;
-    }
-
-    const dstPathLogicDocsWithJournalEntriesMap =
-        await expandConsolidateAndGroupByDstPath(logicResultDocsWithJournalEntries);
-    for (const [dstPath, logicDocs] of dstPathLogicDocsWithJournalEntriesMap) {
-      const docId = dstPath.split("/").pop();
-      if (!docId) {
-        console.error("Dst path has no docId");
-        continue;
-      }
-
-      for (const logicDoc of logicDocs) {
-        const {
-          doc,
-          instructions,
-          journalEntries,
-          action,
-          skipRunViewLogics,
-        } = logicDoc;
-
-        if (!journalEntries) {
-          continue;
-        }
-
-        const accounts = new Set(
-          journalEntries.map((entry) => entry.ledgerEntries).flat()
-            .map((entry) => entry.account)
-        );
-        if (Object.keys(doc || {}).some((key) => accounts.has(key))) {
-          console.error("Doc cannot have keys that are the same as account names");
-          continue;
-        }
-        if (Object.keys(instructions || {}).some((key) => accounts.has(key))) {
-          console.error("Instructions cannot have keys that are the same as account names");
-          continue;
-        }
-
-        for (let i= 0; i < journalEntries.length; i++) {
-          const {
-            ledgerEntries,
-            recordEntry,
-            equation,
-            date,
-          } = journalEntries[i];
-
-          const consolidatedPerAccount = ledgerEntries
-            .reduce((acc, entry) => {
-              const {account} = entry;
-              if (acc[account]) {
-                acc[account].debit += entry.debit;
-                acc[account].credit += entry.credit;
-              } else {
-                acc[account] = {
-                  debit: entry.debit,
-                  credit: entry.credit,
-                };
-              }
-              return acc;
-            }, {} as {[key: string]: {debit: number, credit: number}});
-
-          // loop through keys of consolidatedPerAccount
-          const totalCreditDebit = Object.entries(consolidatedPerAccount)
-            .reduce((acc, [account, {debit, credit}]) => {
-              return {
-                debit: acc.debit + debit,
-                credit: acc.credit + credit,
-              };
-            }, {debit: 0, credit: 0});
-          if (totalCreditDebit.debit !== totalCreditDebit.credit) {
-            console.error("Debit and credit should be equal");
-            continue;
-          }
-
-          const {basePath, destProp, destPropId} = getDestPropAndDestPropId(dstPath);
-          const docRef = db.doc(basePath);
-          const currData = (await txn.get(docRef)).data();
-
-          let instructionsDbValues;
-          if (instructions) {
-            instructionsDbValues = await convertInstructionsToDbValues(txn, instructions, destProp, destPropId);
-          }
-
-          const finalDoc: DocumentData = {
-            ...(doc ? doc : {}),
-            ...(instructionsDbValues ? instructionsDbValues : {}),
-          };
-          if (currData) {
-            txn.update(docRef, {
-              ...finalDoc,
-              "@forDeletionLater": true,
-            });
-          } else {
-            txn.set(docRef, {
-              ...finalDoc,
-              "@forDeletionLater": true,
-            });
-          }
-
-          const [leftSide, ..._] = equation.split("=");
-
-          Object.entries(consolidatedPerAccount).forEach(([account, {debit, credit}]) => {
-            const increment = leftSide.includes(account) ? debit - credit : credit - debit;
-            if (increment === 0) {
-              txn.update(
-                docRef,
-                {
-                  "@forDeletionLater": FieldValue.delete(),
-                });
-              return;
-            }
-            const accountVal = (currData?.[account] || 0) + increment;
-            if (accountVal < 0) {
-              throw new Error("Account value cannot be negative");
-            }
-
-            finalDoc[account] = accountVal;
-            txn.update(
-              docRef,
-              {
-                [account]: accountVal,
-                "@forDeletionLater": FieldValue.delete(),
-              });
-          });
-
-          if (Object.keys(finalDoc).length > 0 && !skipRunViewLogics &&
-              ["create", "merge"].includes(action)) {
-            logicDoc.doc = finalDoc;
-          }
-
-          if (recordEntry) {
-            for (let j = 0; j < ledgerEntries.length; j++) {
-              const {account, debit, credit, description} = ledgerEntries[j];
-              const journalEntryId = docId + i;
-              const ledgerEntryId = journalEntryId + j;
-              const ledgerEntryDoc: DocumentData = {
-                journalEntryId,
-                account,
-                credit,
-                debit,
-                equation,
-                date,
-                ...(description && {description}),
-              };
-              const entryRef = docRef.collection("@ledgers").doc(ledgerEntryId);
-              txn.set(
-                entryRef,
-                ledgerEntryDoc,
-              );
-            }
-          }
-        }
-      }
-    }
-  }
-  await writeJournalEntriesFirst();
-
+): Promise<LogicResultDoc[]> {
+  const forRunViewLogicQueuing: LogicResultDoc[] = [];
   async function distributeTransactionalLogicResults() {
     const transactionalResults = logicResults.filter((result) => result.transactional);
     if (transactionalResults.length === 0) {
@@ -744,16 +581,18 @@ async function distributeFnTransactional(
     // We always distribute transactional results first
     const transactionalDstPathLogicDocsMap =
         await expandConsolidateAndGroupByDstPath(transactionalResults.map(
-          (result) => result.documents).flat().filter((doc) =>
-          !doc.journalEntries || doc.journalEntries && doc.action === "delete"));
+          (result) => result.documents).flat());
       // Write to firestore in one transaction
     for (const [_, logicDocs] of transactionalDstPathLogicDocsMap) {
       for (const logicDoc of logicDocs) {
+        forRunViewLogicQueuing.push(logicDoc);
         await distributeDoc(logicDoc, undefined, txn);
       }
     }
   }
   await distributeTransactionalLogicResults();
+
+  return forRunViewLogicQueuing;
 }
 
 const onUserRegister = async (user: UserRecord) => {
