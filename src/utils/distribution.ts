@@ -110,14 +110,14 @@ export async function convertInstructionsToDbValues(txn: Transaction, instructio
     } else if (instruction === "--") {
       updateData[property] = admin.firestore.FieldValue.increment(-1);
     } else if (instruction.startsWith("+")) {
-      const incrementValue = parseInt(instruction.slice(1));
+      const incrementValue = parseFloat(instruction.slice(1));
       if (isNaN(incrementValue)) {
         console.log(`Invalid increment value ${instruction} for property ${property}`);
       } else {
         updateData[property] = admin.firestore.FieldValue.increment(incrementValue);
       }
     } else if (instruction.startsWith("-")) {
-      const decrementValue = parseInt(instruction.slice(1));
+      const decrementValue = parseFloat(instruction.slice(1));
       if (isNaN(decrementValue)) {
         console.log(`Invalid decrement value ${instruction} for property ${property}`);
       } else {
@@ -276,9 +276,9 @@ export const mergeInstructions = (existingInstructions: Instructions, instructio
     } else if (instruction === "--") {
       return -1;
     } else if (instruction.startsWith("+")) {
-      return parseInt(instruction.slice(1));
+      return parseFloat(instruction.slice(1));
     } else if (instruction.startsWith("-")) {
-      return -parseInt(instruction.slice(1));
+      return -parseFloat(instruction.slice(1));
     } else {
       return 0;
     }

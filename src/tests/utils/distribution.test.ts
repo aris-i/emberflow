@@ -297,14 +297,14 @@ describe("convertInstructionsToDbValues", () => {
     const {destProp, destPropId} = getDestPropAndDestPropId(dstPath);
 
     const instructions = {
-      "salesCount": "+1",
+      "salesCount": "+12.6",
       "staffCount": "-1",
     };
     const result = await distribution.convertInstructionsToDbValues(transactionMock, instructions, destProp, destPropId);
 
     const expectedInstructions = {
       "counters": {
-        "salesCount": FieldValue.increment(1),
+        "salesCount": FieldValue.increment(12.6),
         "staffCount": FieldValue.increment(-1),
       },
     };
@@ -318,7 +318,7 @@ describe("convertInstructionsToDbValues", () => {
     const {destProp, destPropId} = getDestPropAndDestPropId(dstPath);
 
     const instructions = {
-      "salesCount": "+1",
+      "salesCount": "+12.6",
       "staffCount": "-1",
     };
     const result = await distribution.convertInstructionsToDbValues(transactionMock, instructions, destProp, destPropId);
@@ -326,7 +326,7 @@ describe("convertInstructionsToDbValues", () => {
     const expectedInstructions = {
       "counters": {
         "nestedCount": {
-          "salesCount": FieldValue.increment(1),
+          "salesCount": FieldValue.increment(12.6),
           "staffCount": FieldValue.increment(-1),
         },
       },
@@ -341,7 +341,7 @@ describe("convertInstructionsToDbValues", () => {
     const {destProp, destPropId} = getDestPropAndDestPropId(dstPath);
 
     const instructions = {
-      "salesCount": "+1",
+      "salesCount": "+12.6",
       "staffCount": "-1",
       "minusCount": "--",
       "plusCount": "++",
@@ -353,7 +353,7 @@ describe("convertInstructionsToDbValues", () => {
     const expectedUpdateData = {
       "counters": {
         "nestedCount": {
-          "salesCount": FieldValue.increment(1),
+          "salesCount": FieldValue.increment(12.6),
           "staffCount": FieldValue.increment(-1),
           "minusCount": admin.firestore.FieldValue.increment(-1),
           "plusCount": admin.firestore.FieldValue.increment(+1),
@@ -811,18 +811,21 @@ describe("mergeInstructions", () => {
       "score": "+5",
       "minusCount": "--",
       "minusScore": "-3",
+      "withDecimal": "+12.6",
     };
     const instructions2 = {
       "count": "--",
       "score": "-5",
       "minusCount": "++",
       "minusScore": "+3",
+      "withDecimal": "-12.6",
     };
     const instructions3 = {
       "count": "-1",
       "score": "-5",
       "minusCount": "+1",
       "minusScore": "+3",
+      "withDecimal": "-12.6",
     };
     const existingInstructions = {};
 
@@ -832,6 +835,7 @@ describe("mergeInstructions", () => {
       "score": "+5",
       "minusCount": "--",
       "minusScore": "-3",
+      "withDecimal": "+12.6",
     });
 
     distribution.mergeInstructions(existingInstructions, instructions1);
@@ -840,6 +844,7 @@ describe("mergeInstructions", () => {
       "score": "+10",
       "minusCount": "-2",
       "minusScore": "-6",
+      "withDecimal": "+25.2",
     });
 
     distribution.mergeInstructions(existingInstructions, instructions2);
@@ -848,6 +853,7 @@ describe("mergeInstructions", () => {
       "score": "+5",
       "minusCount": "-1",
       "minusScore": "-3",
+      "withDecimal": "+12.6",
     });
 
     distribution.mergeInstructions(existingInstructions, instructions3);
