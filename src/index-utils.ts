@@ -26,7 +26,12 @@ import {CloudFunctionsServiceClient} from "@google-cloud/functions";
 import {FormData} from "emberflow-admin-client/lib/types";
 import {BatchUtil} from "./utils/batch";
 import {queueSubmitForm} from "./utils/forms";
-import {convertInstructionsToDbValues, queueForDistributionLater, queueInstructions} from "./utils/distribution";
+import {
+  convertInstructionsToDbValues,
+  mergeInstructions,
+  queueForDistributionLater,
+  queueInstructions,
+} from "./utils/distribution";
 import QueryDocumentSnapshot = firestore.QueryDocumentSnapshot;
 import DocumentReference = FirebaseFirestore.DocumentReference;
 import DocumentData = FirebaseFirestore.DocumentData;
@@ -323,12 +328,21 @@ export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultD
       }
       if (existingDoc.action === "merge" || existingDoc.action === "create") {
         warnOverwritingKeys(existingDoc.doc, logicResultDoc.doc, "doc", dstPath);
-        warnOverwritingKeys(existingDoc.instructions, logicResultDoc.instructions, "instructions", dstPath);
         if (existingDoc.action === "merge" && logicResultDoc.action === "create") {
           console.info(`Existing doc Action "merge" for dstPath "${dstPath}" is being converted to "create"`);
           existingDoc.action = "create";
         }
-        existingDoc.instructions = {...existingDoc.instructions, ...logicResultDoc.instructions};
+        if (logicResultDoc.instructions) {
+          if (!existingDoc.instructions) {
+            existingDoc.instructions = {...logicResultDoc.instructions};
+          } else {
+            console.info(`merging multiple instructions for dstPath "${dstPath}"`);
+            mergeInstructions(
+              existingDoc.instructions as Instructions,
+              logicResultDoc.instructions as Instructions
+            );
+          }
+        }
         existingDoc.doc = {...existingDoc.doc, ...logicResultDoc.doc};
 
         merged = true;

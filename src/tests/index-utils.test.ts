@@ -1066,9 +1066,10 @@ describe("expandConsolidateAndGroupByDstPath", () => {
         timeFinished: firestore.Timestamp.now(),
         status: "finished",
         documents: [
-          {action: "create", priority: "normal", dstPath: "path8/doc8", doc: {field1: "value1"}, instructions: {}},
-          {action: "merge", priority: "normal", dstPath: "path1/doc1", doc: {field1: "value1"}, instructions: {field2: "++"}},
-          {action: "delete", priority: "normal", dstPath: "path2/doc2"},
+          {action: "create", priority: "normal", dstPath: "path8/doc8", doc: {field1: "value1"},
+            instructions: {numberField: "-23", arrayField: "arr(+entry2)", toBeDeleted: "+24"},
+          },
+          {action: "merge", priority: "normal", dstPath: "path1/doc1", doc: {field1: "value1"}},
           {action: "merge", priority: "normal", dstPath: "path11/doc11", doc: {field3: "value3"}},
         ],
       },
@@ -1077,13 +1078,14 @@ describe("expandConsolidateAndGroupByDstPath", () => {
         timeFinished: firestore.Timestamp.now(),
         status: "finished",
         documents: [
-          {action: "merge", priority: "normal", dstPath: "path8/doc8", doc: {field3: "value3"}, instructions: {field4: "--"}},
-          {action: "merge", priority: "normal", dstPath: "path1/doc1", doc: {field1: "value1a"}, instructions: {field2: "--"}},
-          {action: "merge", priority: "normal", dstPath: "path1/doc1", doc: {field3: "value3"}, instructions: {field4: "--"}},
+          {action: "merge", priority: "normal", dstPath: "path8/doc8", doc: {field3: "value3"},
+            instructions: {numberField: "+25", arrayField: "arr(-entry1)", toBeDeleted: "del"}},
+          {action: "merge", priority: "normal", dstPath: "path1/doc1", doc: {field1: "value1a"}},
+          {action: "merge", priority: "normal", dstPath: "path1/doc1", doc: {field3: "value3"}},
           {action: "copy", priority: "normal", srcPath: "path3/doc3", dstPath: "path4/doc4"},
           {action: "merge", priority: "normal", dstPath: "path2/doc2", doc: {field4: "value4"}},
           {action: "merge", priority: "normal", dstPath: "path7/doc7", doc: {field6: "value7"}},
-          {action: "create", priority: "normal", dstPath: "path10/doc10", doc: {field10: "value10"}, instructions: {field6: "++"}},
+          {action: "create", priority: "normal", dstPath: "path10/doc10", doc: {field10: "value10"}},
         ],
       },
       {
@@ -1095,8 +1097,8 @@ describe("expandConsolidateAndGroupByDstPath", () => {
           {action: "delete", priority: "normal", dstPath: "path7/doc7"},
           {action: "delete", priority: "normal", dstPath: "path7/doc7"},
           {action: "copy", priority: "normal", srcPath: "path3/doc3", dstPath: "path4/doc4"},
-          {action: "create", priority: "normal", dstPath: "path9/doc9", instructions: {field4: "++"}},
-          {action: "create", priority: "normal", dstPath: "path10/doc10", instructions: {field3: "--"}},
+          {action: "create", priority: "normal", dstPath: "path9/doc9"},
+          {action: "create", priority: "normal", dstPath: "path10/doc10"},
         ],
       },
       {
@@ -1107,7 +1109,7 @@ describe("expandConsolidateAndGroupByDstPath", () => {
           {action: "delete", priority: "normal", dstPath: "path2/doc2"},
           {action: "copy", priority: "normal", srcPath: "path3/doc3", dstPath: "path7/doc7"},
           {action: "merge", priority: "normal", dstPath: "path9/doc9", doc: {field9: "value9"}},
-          {action: "merge", priority: "normal", dstPath: "path11/doc11", doc: {field1: "value1"}, instructions: {field6: "++"}},
+          {action: "merge", priority: "normal", dstPath: "path11/doc11", doc: {field1: "value1"}},
         ],
       },
     ];
@@ -1118,30 +1120,27 @@ describe("expandConsolidateAndGroupByDstPath", () => {
 
     // Assert
     const expectedResult = new Map<string, LogicResultDoc[]>([
-      ["path1/doc1", [{action: "merge", priority: "normal", dstPath: "path1/doc1", doc: {field1: "value1a", field3: "value3"}, instructions: {field2: "--", field4: "--"}}]],
+      ["path1/doc1", [{action: "merge", priority: "normal", dstPath: "path1/doc1", doc: {field1: "value1a", field3: "value3"}}]],
       ["path2/doc2", [{action: "delete", priority: "normal", dstPath: "path2/doc2"}]],
-      ["path4/doc4", [{action: "merge", priority: "normal", dstPath: "path4/doc4", doc: {}, instructions: {}}]],
+      ["path4/doc4", [{action: "merge", priority: "normal", dstPath: "path4/doc4", doc: {}}]],
       ["path7/doc7", [{action: "delete", priority: "normal", dstPath: "path7/doc7"}]],
       ["path6/doc6", [{action: "merge", priority: "normal", dstPath: "path6/doc6", doc: {}}]],
-      ["path8/doc8", [{action: "create", priority: "normal", dstPath: "path8/doc8", doc: {field1: "value1", field3: "value3"}, instructions: {field4: "--"}}]],
-      ["path9/doc9", [{action: "create", priority: "normal", dstPath: "path9/doc9", doc: {field9: "value9"}, instructions: {field4: "++"}}]],
-      ["path10/doc10", [{action: "create", priority: "normal", dstPath: "path10/doc10", doc: {field10: "value10"}, instructions: {field3: "--", field6: "++"}}]],
-      ["path11/doc11", [{action: "merge", priority: "normal", dstPath: "path11/doc11", doc: {field3: "value3", field1: "value1"}, instructions: {field6: "++"}}]],
+      ["path8/doc8", [{action: "create", priority: "normal", dstPath: "path8/doc8", doc: {field1: "value1", field3: "value3"},
+        instructions: {numberField: "+2", arrayField: "arr(+entry2,-entry1)", toBeDeleted: "del"}}]],
+      ["path9/doc9", [{action: "create", priority: "normal", dstPath: "path9/doc9", doc: {field9: "value9"}}]],
+      ["path10/doc10", [{action: "create", priority: "normal", dstPath: "path10/doc10", doc: {field10: "value10"}}]],
+      ["path11/doc11", [{action: "merge", priority: "normal", dstPath: "path11/doc11", doc: {field3: "value3", field1: "value1"}}]],
     ]);
 
     expect(result).toEqual(expectedResult);
 
     // Verify that console.warn was called
-    expect(consoleWarnSpy).toHaveBeenCalledTimes(7);
-
-    // Verify that console.warn was called with the correct message
+    expect(consoleWarnSpy).toHaveBeenCalledTimes(5);
     expect(consoleWarnSpy.mock.calls[0][0]).toBe("Overwriting key \"field1\" in doc for dstPath \"path1/doc1\"");
-    expect(consoleWarnSpy.mock.calls[1][0]).toBe("Overwriting key \"field2\" in instructions for dstPath \"path1/doc1\"");
-    expect(consoleWarnSpy.mock.calls[2][0]).toBe("Action merge ignored because a \"delete\" for dstPath \"path2/doc2\" already exists");
-    expect(consoleWarnSpy.mock.calls[3][0]).toBe("Action merge for dstPath \"path7/doc7\" is being overwritten by action \"delete\"");
-    expect(consoleWarnSpy.mock.calls[4][0]).toBe("Action delete for dstPath \"path7/doc7\" is being overwritten by action \"delete\"");
-    expect(consoleWarnSpy.mock.calls[5][0]).toBe("Action delete for dstPath \"path2/doc2\" is being overwritten by action \"delete\"");
-    expect(consoleWarnSpy.mock.calls[6][0]).toBe("Action merge ignored because a \"delete\" for dstPath \"path7/doc7\" already exists");
+    expect(consoleWarnSpy.mock.calls[1][0]).toBe("Action merge for dstPath \"path7/doc7\" is being overwritten by action \"delete\"");
+    expect(consoleWarnSpy.mock.calls[2][0]).toBe("Action delete for dstPath \"path7/doc7\" is being overwritten by action \"delete\"");
+    expect(consoleWarnSpy.mock.calls[3][0]).toBe("Action merge for dstPath \"path2/doc2\" is being overwritten by action \"delete\"");
+    expect(consoleWarnSpy.mock.calls[4][0]).toBe("Action merge ignored because a \"delete\" for dstPath \"path7/doc7\" already exists");
   });
 
   it("should expand recursive-copy logic results documents to merge logic results", async () => {
