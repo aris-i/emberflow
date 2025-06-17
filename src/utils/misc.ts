@@ -2,7 +2,7 @@ import {firestore} from "firebase-admin";
 import {rtdb} from "../index";
 import Timestamp = firestore.Timestamp;
 import GeoPoint = firestore.GeoPoint;
-import {Request, Response} from "firebase-functions";
+import {Request, Response} from "firebase-functions/v1";
 import Query = firestore.Query;
 import {BatchUtil} from "./batch";
 
