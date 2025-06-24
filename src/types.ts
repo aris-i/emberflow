@@ -23,6 +23,7 @@ export interface Action{
     status: "new" | "processing" | "processed" | "processed-with-errors";
     timeCreated: Timestamp;
     message?: string
+    metadata?: Record<string, any>;
 }
 
 export type TxnGet = Readonly<Pick<firestore.Transaction, "get">>;
@@ -81,6 +82,7 @@ export type LogicConfigFilterFn = (
     modifiedFields: FirebaseFirestore.DocumentData,
     document: FirebaseFirestore.DocumentData,
     entity: string,
+    metadata: Record<string, any>,
 ) => boolean;
 export interface LogicConfig{
     name: string;

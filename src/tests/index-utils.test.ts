@@ -714,6 +714,7 @@ describe("runBusinessLogics", () => {
     id: "user123",
     name: "John Doe",
   };
+  const metadata = {version: "1.0"};
   const action:Action = {
     user,
     eventContext: {
@@ -733,6 +734,7 @@ describe("runBusinessLogics", () => {
     status: "processing",
     timeCreated: firestore.Timestamp.now(),
     modifiedFields: formModifiedFields,
+    metadata,
   };
 
   let distributeFn: jest.Mock;
@@ -742,6 +744,7 @@ describe("runBusinessLogics", () => {
   let logicFn4: jest.Mock;
   let logicFn5: jest.Mock;
   let logicFn6: jest.Mock;
+  let logicFn7: jest.Mock;
 
   let dbSpy: jest.SpyInstance;
   let actionRef: DocumentReference;
@@ -754,6 +757,7 @@ describe("runBusinessLogics", () => {
     logicFn4 = jest.fn().mockResolvedValue({status: "finished"});
     logicFn5 = jest.fn().mockResolvedValue({status: "finished"});
     logicFn6 = jest.fn().mockResolvedValue({status: "finished"});
+    logicFn7 = jest.fn().mockResolvedValue({status: "finished"});
 
     const dbDoc = ({
       get: jest.fn().mockResolvedValue({
@@ -842,6 +846,16 @@ describe("runBusinessLogics", () => {
           return !Object.prototype.hasOwnProperty.call(document, "field3");
         },
       },
+      {
+        name: "Logic 7",
+        actionTypes: ["create"],
+        modifiedFields: ["field2"],
+        entities: ["user"],
+        logicFn: logicFn7,
+        addtlFilterFn(actionType, modifiedFields, document, entity, metadata) {
+          return metadata.version === "2.0";
+        },
+      },
     ];
     initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
     const runStatus = await indexUtils.runBusinessLogics(txnGet, action);
@@ -852,6 +866,7 @@ describe("runBusinessLogics", () => {
     expect(logicFn4).not.toHaveBeenCalled();
     expect(logicFn5).not.toHaveBeenCalled();
     expect(logicFn6).not.toHaveBeenCalled();
+    expect(logicFn7).not.toHaveBeenCalled();
     expect(runStatus).toEqual({
       status: "done",
       logicResults: [{

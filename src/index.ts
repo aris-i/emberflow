@@ -391,6 +391,7 @@ export async function onFormSubmit(
         entity,
       };
 
+      const metadata = form["@metadata"];
       const action: Action = {
         eventContext,
         actionType,
@@ -399,6 +400,7 @@ export async function onFormSubmit(
         timeCreated,
         modifiedFields: formModifiedFields,
         user,
+        metadata,
       };
 
       await formRef.update({"@status": "submitted"});
