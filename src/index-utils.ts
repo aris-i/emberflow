@@ -236,14 +236,14 @@ export async function delayFormSubmissionAndCheckIfCancelled(delay: number, form
 }
 
 function getMatchingLogics(actionType: ActionType, modifiedFields: DocumentData,
-  document: DocumentData, entity: string) {
+  document: DocumentData, entity: string, metadata: Record<string, any>) {
   return logicConfigs.filter((logic) => {
     return (
       (logic.actionTypes === "all" || logic.actionTypes.includes(actionType as LogicActionType)) &&
         (logic.modifiedFields === "all" ||
             logic.modifiedFields.some((field) => field in modifiedFields)) &&
         (logic.entities === "all" || logic.entities.includes(entity)) &&
-      (logic.addtlFilterFn ? logic.addtlFilterFn(actionType, modifiedFields, document, entity) : true)
+      (logic.addtlFilterFn ? logic.addtlFilterFn(actionType, modifiedFields, document, entity, metadata) : true)
     );
   });
 }
@@ -252,9 +252,9 @@ export const runBusinessLogics = async (
   txnGet: TxnGet,
   action: Action,
 ): Promise<RunBusinessLogicStatus> => {
-  const {actionType, modifiedFields, document, eventContext: {entity}} = action;
+  const {actionType, modifiedFields, document, eventContext: {entity}, metadata = {}} = action;
 
-  const matchingLogics = getMatchingLogics(actionType, modifiedFields, document, entity);
+  const matchingLogics = getMatchingLogics(actionType, modifiedFields, document, entity, metadata);
   console.debug("Matching logics:", matchingLogics.map((logic) => logic.name));
   if (matchingLogics.length === 0) {
     console.log("No matching logics found");
