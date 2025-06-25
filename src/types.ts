@@ -22,8 +22,8 @@ export interface Action{
     user: DocumentData;
     status: "new" | "processing" | "processed" | "processed-with-errors";
     timeCreated: Timestamp;
+    metadata: Record<string, any>;
     message?: string
-    metadata?: Record<string, any>;
 }
 
 export type TxnGet = Readonly<Pick<firestore.Transaction, "get">>;

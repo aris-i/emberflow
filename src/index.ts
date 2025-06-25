@@ -391,7 +391,7 @@ export async function onFormSubmit(
         entity,
       };
 
-      const metadata = form["@metadata"];
+      const metadata = form["@metadata"] || {};
       const action: Action = {
         eventContext,
         actionType,

@@ -252,7 +252,7 @@ export const runBusinessLogics = async (
   txnGet: TxnGet,
   action: Action,
 ): Promise<RunBusinessLogicStatus> => {
-  const {actionType, modifiedFields, document, eventContext: {entity}, metadata = {}} = action;
+  const {actionType, modifiedFields, document, eventContext: {entity}, metadata} = action;
 
   const matchingLogics = getMatchingLogics(actionType, modifiedFields, document, entity, metadata);
   console.debug("Matching logics:", matchingLogics.map((logic) => logic.name));

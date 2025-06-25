@@ -537,6 +537,7 @@ describe("onFormSubmit", () => {
         name: "test",
       },
       status: "processed-with-errors",
+      metadata: {},
     };
 
     // Test that the runBusinessLogics function was called with the correct parameters
