@@ -102,6 +102,7 @@ export function mapViewDefinitions(
         destType = "array-map";
       }
 
+      // TODO: handle options in view definition
       const [_, srcEntity, srcPropsStr] = viewDefinitionStr.split(":");
       const srcProps = srcPropsStr.split(",");
 

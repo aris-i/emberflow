@@ -19,9 +19,11 @@ export enum Entity {
     PrepAreaMenuItem = "prepAreaMenuItem",
 }
 
-// Map your custom entities to dbStructure below.
+// Map your custom ent  ities to dbStructure below.
 // Do not remove users and [Entity.User]
 // by default, view matches the id attribute of the view so make the sure that a view has an id
+
+// TODO: Add an example here where syncCreate option makes sense like for example ingredients of a recipe
 export const dbStructure = {
   servers: {
     [Entity.Server]: {

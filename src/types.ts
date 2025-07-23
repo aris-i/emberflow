@@ -120,6 +120,9 @@ export type ValidatorConfig = Record<string, ValidatorFn>;
 export type ValidateFormResult = [hasValidationErrors: boolean, validationResult: ValidationResult];
 
 export type DestPropType = "map"|"array-map";
+export interface ViewDefinitionOptions {
+    syncCreate?: true | false;
+}
 export interface ViewDefinition {
     destEntity: string;
     destProp? : {
@@ -128,6 +131,7 @@ export interface ViewDefinition {
     }
     srcProps: string[];
     srcEntity: string;
+    options?: ViewDefinitionOptions;
 }
 
 export type IdGenerator = (collectionPath: string) => Promise<string[]>;

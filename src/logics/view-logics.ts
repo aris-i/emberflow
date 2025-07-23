@@ -19,6 +19,9 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     srcProps,
     destEntity,
     destProp,
+    options: {
+      syncCreate = false,
+    },
   } = viewDefinition;
 
   const logicName = `${destEntity}${destProp ? `#${destProp.name}` : ""}`;
@@ -152,6 +155,14 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
 
         await db.doc(srcAtViewsPath).update({srcProps: sortedSrcProps});
       }
+    }
+
+    async function syncCreateToDstPaths(): Promise<LogicResult> {
+      // TODO: Get dstPath from destEntity and destProp using docPaths then create a new document in dstPath containing
+      //  srcProps.  Next is to create an entry in @views collection for future syncs.
+    }
+    if (action === "create" && !syncCreate) {
+      return syncCreateToDstPaths();
     }
 
     const modifiedFields = [
