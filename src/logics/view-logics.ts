@@ -275,6 +275,11 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       return srcPath;
     }
 
+    function isPathLengthEven(path: string): boolean {
+      const pathParts = path.split(/[/#]/).filter(Boolean);
+      return pathParts.length % 2 === 0;
+    }
+
     const srcPath = formSrcPath();
     if (srcPath.includes("{")) {
       console.error("srcPath should not have a placeholder");
@@ -333,9 +338,17 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       if (syncCreate) {
         const srcParentPath = getParentPath(srcPath);
         const dstParentPath = getParentPath(dstPath);
-        // TODO check if dstParentPath is a valid path
 
         if (srcParentPath && dstParentPath) {
+          if (isPathLengthEven(srcParentPath) || isPathLengthEven(dstParentPath)) {
+            console.error(
+              isPathLengthEven(srcParentPath) ?
+                `invalid syncCreate srcPath, ${srcPath}` :
+                `invalid syncCreate dstPath, ${dstPath}`
+            );
+            return logicResult;
+          }
+
           const docId = formViewDocId(dstParentPath);
           const syncCreateDocPath = `@syncCreateViews/${docId}`;
           const isAlreadyCreated = await pathsMockable.doesPathExists(syncCreateDocPath);

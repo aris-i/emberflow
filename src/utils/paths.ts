@@ -187,9 +187,8 @@ export function getParentPath(path: string) {
   if (destProp) {
     if (isArrayMap) {
       return `${basePath}#${destProp}`;
-    } else {
-      return basePath;
     }
+    return basePath;
   }
   return path.split("/").slice(0, -1).join("/");
 }
