@@ -119,13 +119,13 @@ export function mapViewDefinitions(
           destEntity,
           srcProps,
           srcEntity,
-          ...( destProp && {
+          ...( destProp ? {
             destProp: {
               name: destProp,
               type: destType as DestPropType,
             },
-          }),
-          ...(optionsArray.length > 0 && {options: optionsObj}),
+          } : {}),
+          ...(optionsArray.length > 0 ? {options: optionsObj}: {}),
         });
       }
     }

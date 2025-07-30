@@ -158,7 +158,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
 
     async function syncCreateToDstPaths() {
       const viewLogicResultDocs: LogicResultDoc[] = [];
-      const LogicResult: LogicResult = {
+      const logicResult: LogicResult = {
         name: `${logicName} ViewLogic`,
         status: "finished",
         timeFinished: admin.firestore.Timestamp.now(),
@@ -166,20 +166,16 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       };
 
       const srcParentPath = getParentPath(srcPath);
-      if (!srcParentPath) {
-        console.error("Invalid parent of srcPath", srcPath);
-        return LogicResult;
-      }
 
       const collectionRef = db.collection("@syncCreateViews")
-        .where("dstPath", "==", srcPath);
+        .where("srcPath", "==", srcParentPath);
       const syncCreateViewSnapshot = await collectionRef.get();
       const syncCreateViewDocs = syncCreateViewSnapshot.docs;
 
       const docId = srcPath.split("/").pop();
       if (!docId) {
         console.error("docId could not be determined from srcPath", srcPath);
-        return LogicResult;
+        return logicResult;
       }
 
       for (const syncCreateViewDoc of syncCreateViewDocs) {
@@ -193,7 +189,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
         });
       }
 
-      return LogicResult;
+      return logicResult;
     }
 
     if (action === "create" && syncCreate) {
@@ -337,6 +333,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       if (syncCreate) {
         const srcParentPath = getParentPath(srcPath);
         const dstParentPath = getParentPath(dstPath);
+        // TODO check if dstParentPath is a valid path
 
         if (srcParentPath && dstParentPath) {
           const docId = formViewDocId(dstParentPath);

@@ -181,22 +181,15 @@ export function getDestPropAndDestPropId(dstPath: string) {
 }
 
 export function getParentPath(path: string) {
-  const {destProp, destPropId} = getDestPropAndDestPropId(path);
+  const {basePath, destProp, destPropId} = getDestPropAndDestPropId(path);
   const isArrayMap = !!destPropId;
 
   if (destProp) {
     if (isArrayMap) {
-      const basePath = path.split("#")[0];
       return `${basePath}#${destProp}`;
+    } else {
+      return basePath;
     }
-  } else {
-    if (path.endsWith("/")) {
-      path = path.slice(0, -1);
-    }
-    const segments = path.split("/");
-    segments.pop();
-    return segments.join("/");
   }
-
-  return undefined;
+  return path.split("/").slice(0, -1).join("/");
 }
