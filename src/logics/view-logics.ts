@@ -275,11 +275,6 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       return srcPath;
     }
 
-    function isPathLengthEven(path: string): boolean {
-      const pathParts = path.split(/[/#]/).filter(Boolean);
-      return pathParts.length % 2 === 0;
-    }
-
     const srcPath = formSrcPath();
     if (srcPath.includes("{")) {
       console.error("srcPath should not have a placeholder");
@@ -340,12 +335,10 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
         const dstParentPath = getParentPath(dstPath);
 
         if (srcParentPath && dstParentPath) {
-          if (isPathLengthEven(srcParentPath) || isPathLengthEven(dstParentPath)) {
-            console.error(
-              isPathLengthEven(srcParentPath) ?
-                `invalid syncCreate srcPath, ${srcPath}` :
-                `invalid syncCreate dstPath, ${dstPath}`
-            );
+          const dstParentPathParts = dstParentPath.split(/[/#]/).filter(Boolean);
+          const isDstParentPathPartsEven = dstParentPathParts.length % 2 === 0;
+          if (isDstParentPathPartsEven) {
+            console.error(`invalid syncCreate dstPath, ${dstPath}`);
             return logicResult;
           }
 
@@ -360,16 +353,11 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
               doc: {
                 dstPath: dstParentPath,
                 srcPath: srcParentPath,
-                destEntity,
                 ...(destProp ? {destProp} : {}),
               },
             });
           } else {
             console.info(`${syncCreateDocPath} already exists — skipping creation.`);
-          }
-        } else {
-          if (!srcParentPath || !dstParentPath) {
-            console.error("Invalid parent of", !srcParentPath ? "srcPath" : "dstPath");
           }
         }
       }

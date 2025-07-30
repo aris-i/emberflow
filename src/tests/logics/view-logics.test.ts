@@ -954,114 +954,117 @@ describe("createViewLogicFn", () => {
     expect(document).toHaveProperty("dstPath", "users/1234/@views/users+789+friends+1234");
   });
 
-  it("should create @syncCreateView in global collection", async () => {
-    const logicFn = viewLogics.createViewLogicFn( {
-      srcEntity: "recipeIngredient",
-      srcProps: ["amount", "ingredient"],
-      destEntity: "menuItemIngredient",
-      options: {syncCreate: true},
-    });
-
-    const dstPath = "topics/topic21/menus/menu1/ingredients/ingredient1";
-    const logicResultDoc: LogicResultDoc = {
-      action: "create",
-      dstPath,
-      doc: {
-        "@id": "ingredientId",
-        "amount": 2,
-        "ingredient": "ingredientName",
-        "topicId": "topic22",
-      },
-    };
-
-    const doesPathExistsMock = jest.fn()
-      .mockResolvedValueOnce(false);
-    pathsMockable.doesPathExists = doesPathExistsMock;
-
-    const result = await logicFn[1](logicResultDoc);
-    expect(result.documents[1].dstPath).toBe("@syncCreateViews/topics+topic21+menus+menu1+ingredients");
-  });
-
-  it("should not create @syncCreateView in global collection if the same doc is already created", async () => {
-    const logicFn = viewLogics.createViewLogicFn( {
-      srcEntity: "recipeIngredient",
-      srcProps: ["amount", "ingredient"],
-      destEntity: "menuItemIngredient",
-      options: {syncCreate: true},
-    });
-
-    const dstPath = "topics/topic21/menus/menu1/ingredients/ingredient1";
-    const logicResultDoc: LogicResultDoc = {
-      action: "create",
-      dstPath,
-      doc: {
-        "@id": "ingredientId",
-        "amount": 2,
-        "ingredient": "ingredientName",
-        "topicId": "topic22",
-      },
-    };
-
-    const doesPathExistsMock = jest.fn()
-      .mockResolvedValueOnce(true);
-    pathsMockable.doesPathExists = doesPathExistsMock;
-
-    const result = await logicFn[1](logicResultDoc);
-    expect(result.documents[0].dstPath).not.toBe("@syncCreateViews/topics+topic21+menus+menu1+ingredients");
-  });
-
-  it("should auto create source document if there is a matching doc in @syncCreateViews", async () => {
-    const logicFn = viewLogics.createViewLogicFn( {
-      srcEntity: "recipeIngredient",
-      srcProps: ["amount", "ingredient"],
-      destEntity: "menuItemIngredient",
-      options: {syncCreate: true},
-    });
-
-    const dstPath = "topics/topic22/ingredients/ingredient1";
-    const logicResultDoc: LogicResultDoc = {
-      action: "create",
-      dstPath,
-      doc: {
-        "@id": "ingredientId",
-        "amount": 2,
-        "ingredient": "ingredientName",
-        "topicId": "topic22",
-      },
-    };
-
-    colGetMock.mockResolvedValue({
-      docs: [{
-        id: "topics+topic21+menus+menu1+ingredients",
-        data: () => {
-          return {
-            "dstPath": "topics/topic21/menus/menu1/ingredients",
-            "srcPath": "topics/topic22/ingredients",
-          };
+  describe("SyncCreate ViewLogic", () => {
+    describe("srcToDstLogicFn", () => {
+      const dstPath = "topics/topic21/menus/menu1/ingredients/ingredient1";
+      const logicFn = viewLogics.createViewLogicFn( {
+        srcEntity: "recipeIngredient",
+        srcProps: ["amount", "ingredient"],
+        destEntity: "menuItemIngredient",
+        options: {syncCreate: true},
+      });
+      const logicResultDoc: LogicResultDoc = {
+        action: "create",
+        dstPath,
+        doc: {
+          "@id": "ingredientId",
+          "amount": 2,
+          "ingredient": "ingredientName",
+          "topicId": "topic22",
         },
-      }, {
-        id: "topics+topic21+preparationAreas+menu1+ingredients",
-        data: () => {
-          return {
-            "dstPath": "topics/topic21/preparationAreas/prepArea1/menus/menu1/ingredients",
-            "srcPath": "topics/topic22/ingredients",
-          };
-        },
-      }],
+      };
+
+      afterEach(() => {
+        jest.clearAllMocks();
+      });
+
+      it("should create @syncCreateView in global collection", async () => {
+        jest.spyOn(pathsMockable, "doesPathExists").mockResolvedValue(false);
+
+        const result = await logicFn[1](logicResultDoc);
+        expect(result.documents[1].dstPath).toBe("@syncCreateViews/topics+topic21+menus+menu1+ingredients");
+      });
+
+      it("should not create syncView if dstPath is invalid", async () => {
+        const invalidPath = "topics/topic21/menus/menu1#ingredients";
+        const invalidLogicResultDoc: LogicResultDoc = {
+          ...logicResultDoc,
+          dstPath: invalidPath,
+        };
+        jest.spyOn(pathsMockable, "doesPathExists").mockResolvedValue(false);
+        const errorSpy = jest.spyOn(console, "error").mockImplementation();
+
+        const result = await logicFn[1](invalidLogicResultDoc);
+        expect(errorSpy).toHaveBeenCalledWith("invalid syncCreate dstPath, topics/topic21/menus/menu1#ingredients");
+        expect(result.documents[0].dstPath).not.toBe("@syncCreateViews/topics+topic21+menus+menu1+ingredients");
+      });
+
+      it("should not create @syncCreateView in global collection if the a doc with same docId is already created", async () => {
+        const infoSpy = jest.spyOn(console, "info").mockImplementation();
+        jest.spyOn(pathsMockable, "doesPathExists").mockResolvedValue(true);
+
+        const result = await logicFn[1](logicResultDoc);
+        expect(infoSpy).toHaveBeenCalledWith("@syncCreateViews/topics+topic21+menus+menu1+ingredients already exists — skipping creation.");
+        expect(result.documents[0].dstPath).not.toBe("@syncCreateViews/topics+topic21+menus+menu1+ingredients");
+      });
     });
 
-    const doesPathExistsMock = jest.fn()
-      .mockResolvedValueOnce(true);
-    pathsMockable.doesPathExists = doesPathExistsMock;
+    describe("dstToSrcLogicFn", () => {
+      it("should auto create source document if there is a matching path in @syncCreateViews", async () => {
+        const logicFn = viewLogics.createViewLogicFn( {
+          srcEntity: "recipeIngredient",
+          srcProps: ["amount", "ingredient"],
+          destEntity: "menuItemIngredient",
+          options: {syncCreate: true},
+        });
 
-    const result = await logicFn[0](logicResultDoc);
-    expect(result.documents.length).toBe(2);
+        const dstPath = "topics/topic22/ingredients/ingredient1";
+        const logicResultDoc: LogicResultDoc = {
+          action: "create",
+          dstPath,
+          doc: {
+            "@id": "ingredientId",
+            "amount": 2,
+            "ingredient": "ingredientName",
+            "topicId": "topic22",
+          },
+        };
 
-    expect(result.documents[0].dstPath).toBe("topics/topic21/menus/menu1/ingredients/ingredient1");
-    expect(result.documents[0].doc).toBe(logicResultDoc.doc);
+        colGetMock.mockResolvedValue({
+          docs: [{
+            id: "topics+topic21+menus+menu1+ingredients",
+            data: () => {
+              return {
+                "dstPath": "topics/topic21/menus/menu1/ingredients",
+                "srcPath": "topics/topic22/ingredients",
+              };
+            },
+          }, {
+            id: "topics+topic21+preparationAreas+menu1+ingredients",
+            data: () => {
+              return {
+                "dstPath": "topics/topic21/preparationAreas/prepArea1/menus/menu1#ingredients",
+                "destProp": "ingredients",
+                "srcPath": "topics/topic22/ingredients",
+              };
+            },
+          }],
+        });
 
-    expect(result.documents[1].dstPath).toBe("topics/topic21/preparationAreas/prepArea1/menus/menu1/ingredients/ingredient1");
-    expect(result.documents[1].doc).toBe(logicResultDoc.doc);
+        const doesPathExistsMock = jest.fn()
+          .mockResolvedValueOnce(true);
+        pathsMockable.doesPathExists = doesPathExistsMock;
+
+        const result = await logicFn[0](logicResultDoc);
+        expect(result.documents.length).toBe(2);
+
+        expect(result.documents[0].dstPath).toBe("topics/topic21/menus/menu1/ingredients/ingredient1");
+        expect(result.documents[0].doc).toBe(logicResultDoc.doc);
+
+        expect(result.documents[1].dstPath).toBe("topics/topic21/preparationAreas/prepArea1/menus/menu1#ingredients[ingredient1]");
+        expect(result.documents[1].doc).toBe(logicResultDoc.doc);
+      });
+    });
   });
 });
 
