@@ -1,4 +1,4 @@
-import {DestPropType, ViewDefinition} from "./types";
+import {DestPropType, ViewDefinition, ViewDefinitionOptions} from "./types";
 
 export function traverseBFS(obj: Record<string, object>): string[] {
   const paths: string[] = [];
@@ -102,9 +102,16 @@ export function mapViewDefinitions(
         destType = "array-map";
       }
 
-      // TODO: handle options in view definition
-      const [_, srcEntity, srcPropsStr] = viewDefinitionStr.split(":");
+      const [_, srcEntity, srcPropsStr, optionsStr] = viewDefinitionStr.split(":");
       const srcProps = srcPropsStr.split(",");
+      const optionsArray = optionsStr === "" ? [] :
+        optionsStr.split(",").map((pair: string) => {
+          const [key, rawValue] = pair.split("=");
+          const value = rawValue === "true" ? true : rawValue === "false" ? false : rawValue;
+          return [key, value];
+        });
+      const optionsObj: ViewDefinitionOptions = optionsArray.length > 0 ? Object.fromEntries(optionsArray): {};
+
 
       // if srcEntity in Entity and destEntity exists
       if (Object.values(Entity).includes(srcEntity) && destEntity) {
@@ -112,13 +119,13 @@ export function mapViewDefinitions(
           destEntity,
           srcProps,
           srcEntity,
-          ...( destProp ? {
+          ...( destProp && {
             destProp: {
               name: destProp,
               type: destType as DestPropType,
             },
-          } :
-            {}),
+          }),
+          ...(optionsArray.length > 0 && {options: optionsObj}),
         });
       }
     }

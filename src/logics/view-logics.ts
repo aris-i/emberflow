@@ -11,7 +11,7 @@ import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
 import {_mockable, distributeFnNonTransactional, expandConsolidateAndGroupByDstPath, runViewLogics} from "../index-utils";
 import {pubsubUtils} from "../utils/pubsub";
 import {reviveDateAndTimestamp} from "../utils/misc";
-import {getDestPropAndDestPropId} from "../utils/paths";
+import {_mockable as pathsMockable, getDestPropAndDestPropId, getParentPath} from "../utils/paths";
 
 export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[] {
   const {
@@ -19,10 +19,9 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     srcProps,
     destEntity,
     destProp,
-    options: {
-      syncCreate = false,
-    },
+    options,
   } = viewDefinition;
+  const {syncCreate = false} = options || {};
 
   const logicName = `${destEntity}${destProp ? `#${destProp.name}` : ""}`;
 
@@ -46,7 +45,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       dstPath: srcPath,
       action,
     } = logicResultDoc;
-    console.log(`Executing ViewLogic on document at ${srcPath}...`);
+    console.info(`Executing ViewLogic on document at ${srcPath}...`);
 
     function syncDeleteToViewDstPaths() {
       const documents: LogicResultDoc[] = viewDstPathDocs.map((viewDstPathDoc) => {
@@ -157,11 +156,47 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       }
     }
 
-    async function syncCreateToDstPaths(): Promise<LogicResult> {
-      // TODO: Get dstPath from destEntity and destProp using docPaths then create a new document in dstPath containing
-      //  srcProps.  Next is to create an entry in @views collection for future syncs.
+    async function syncCreateToDstPaths() {
+      const viewLogicResultDocs: LogicResultDoc[] = [];
+      const LogicResult: LogicResult = {
+        name: `${logicName} ViewLogic`,
+        status: "finished",
+        timeFinished: admin.firestore.Timestamp.now(),
+        documents: viewLogicResultDocs,
+      };
+
+      const srcParentPath = getParentPath(srcPath);
+      if (!srcParentPath) {
+        console.error("Invalid parent of srcPath", srcPath);
+        return LogicResult;
+      }
+
+      const collectionRef = db.collection("@syncCreateViews")
+        .where("dstPath", "==", srcPath);
+      const syncCreateViewSnapshot = await collectionRef.get();
+      const syncCreateViewDocs = syncCreateViewSnapshot.docs;
+
+      const docId = srcPath.split("/").pop();
+      if (!docId) {
+        console.error("docId could not be determined from srcPath", srcPath);
+        return LogicResult;
+      }
+
+      for (const syncCreateViewDoc of syncCreateViewDocs) {
+        const baseViewPath = syncCreateViewDoc.data().dstPath;
+        const dstPath = destProp ? `${baseViewPath}[${docId}]` : `${baseViewPath}/${docId}`;
+
+        viewLogicResultDocs.push({
+          action: "create",
+          dstPath,
+          doc: doc,
+        });
+      }
+
+      return LogicResult;
     }
-    if (action === "create" && !syncCreate) {
+
+    if (action === "create" && syncCreate) {
       return syncCreateToDstPaths();
     }
 
@@ -279,13 +314,14 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
         action: "create",
         dstPath: srcAtViewsPath,
         doc: {
-          path: logicResultDoc.dstPath,
+          path: dstPath,
           srcProps: srcProps.sort(),
           destEntity,
           ...(destProp ? {destProp} : {}),
         },
         skipRunViewLogics: true,
       });
+
       if (destProp && isArrayMap) {
         const dstBasePath = dstPath.split("#")[0];
         logicResult.documents.push({
@@ -296,6 +332,36 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
           },
           skipRunViewLogics: true,
         });
+      }
+
+      if (syncCreate) {
+        const srcParentPath = getParentPath(srcPath);
+        const dstParentPath = getParentPath(dstPath);
+
+        if (srcParentPath && dstParentPath) {
+          const docId = formViewDocId(dstParentPath);
+          const syncCreateDocPath = `@syncCreateViews/${docId}`;
+          const isAlreadyCreated = await pathsMockable.doesPathExists(syncCreateDocPath);
+
+          if (!isAlreadyCreated) {
+            logicResult.documents.push({
+              action: "create",
+              dstPath: syncCreateDocPath,
+              doc: {
+                dstPath: dstParentPath,
+                srcPath: srcParentPath,
+                destEntity,
+                ...(destProp ? {destProp} : {}),
+              },
+            });
+          } else {
+            console.info(`${syncCreateDocPath} already exists — skipping creation.`);
+          }
+        } else {
+          if (!srcParentPath || !dstParentPath) {
+            console.error("Invalid parent of", !srcParentPath ? "srcPath" : "dstPath");
+          }
+        }
       }
     }
 

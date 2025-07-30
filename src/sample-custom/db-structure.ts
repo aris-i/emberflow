@@ -15,15 +15,17 @@ export enum Entity {
     Topic = "topic",
     Order = "order",
     MenuItem = "menuItem",
+    OrderMenuItem = "orderMenuItem",
     PrepArea = "prepArea",
     PrepAreaMenuItem = "prepAreaMenuItem",
+    RecipeIngredient = "recipeIngredient",
+    MenuItemIngredient = "menuItemIngredient",
 }
 
 // Map your custom ent  ities to dbStructure below.
 // Do not remove users and [Entity.User]
 // by default, view matches the id attribute of the view so make the sure that a view has an id
 
-// TODO: Add an example here where syncCreate option makes sense like for example ingredients of a recipe
 export const dbStructure = {
   servers: {
     [Entity.Server]: {
@@ -46,12 +48,25 @@ export const dbStructure = {
   },
   topics: {
     [Entity.Topic]: {
+      ingredients: {
+        [Entity.RecipeIngredient]: {},
+      },
+      menuItems: {
+        [Entity.MenuItem]: {
+          recipe: view(Entity.Topic, []),
+          ingredients: {
+            [Entity.MenuItemIngredient]: {
+              [view(Entity.RecipeIngredient, [], {syncCreate: true})]: {},
+            },
+          },
+        },
+      },
       createdBy: view(Entity.User, ["name", "email"]),
       orders: {
         [Entity.Order]: {
           createdBy: view(Entity.User, ["name", "email"]),
           menus: {
-            [Entity.MenuItem]: {
+            [Entity.OrderMenuItem]: {
               createdBy: view(Entity.User, ["name", "email"]),
             },
           },
