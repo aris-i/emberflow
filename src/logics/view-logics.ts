@@ -180,6 +180,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
 
       for (const syncCreateViewDoc of syncCreateViewDocs) {
         const baseViewPath = syncCreateViewDoc.data().dstPath;
+        const {destProp} = getDestPropAndDestPropId(baseViewPath);
         const dstPath = destProp ? `${baseViewPath}[${docId}]` : `${baseViewPath}/${docId}`;
 
         viewLogicResultDocs.push({
@@ -353,7 +354,6 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
               doc: {
                 dstPath: dstParentPath,
                 srcPath: srcParentPath,
-                ...(destProp ? {destProp} : {}),
               },
             });
           } else {

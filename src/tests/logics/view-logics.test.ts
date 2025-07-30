@@ -983,6 +983,10 @@ describe("createViewLogicFn", () => {
 
         const result = await logicFn[1](logicResultDoc);
         expect(result.documents[1].dstPath).toBe("@syncCreateViews/topics+topic21+menus+menu1+ingredients");
+        expect(result.documents[1].doc).toEqual({
+          "dstPath": "topics/topic21/menus/menu1/ingredients",
+          "srcPath": "topics/topic22/ingredients",
+        });
       });
 
       it("should not create syncView if dstPath is invalid", async () => {
@@ -996,6 +1000,7 @@ describe("createViewLogicFn", () => {
 
         const result = await logicFn[1](invalidLogicResultDoc);
         expect(errorSpy).toHaveBeenCalledWith("invalid syncCreate dstPath, topics/topic21/menus/menu1#ingredients");
+        expect(result.documents.length).toEqual(1);
         expect(result.documents[0].dstPath).not.toBe("@syncCreateViews/topics+topic21+menus+menu1+ingredients");
       });
 
@@ -1005,6 +1010,7 @@ describe("createViewLogicFn", () => {
 
         const result = await logicFn[1](logicResultDoc);
         expect(infoSpy).toHaveBeenCalledWith("@syncCreateViews/topics+topic21+menus+menu1+ingredients already exists — skipping creation.");
+        expect(result.documents.length).toEqual(1);
         expect(result.documents[0].dstPath).not.toBe("@syncCreateViews/topics+topic21+menus+menu1+ingredients");
       });
     });
@@ -1044,7 +1050,6 @@ describe("createViewLogicFn", () => {
             data: () => {
               return {
                 "dstPath": "topics/topic21/preparationAreas/prepArea1/menus/menu1#ingredients",
-                "destProp": "ingredients",
                 "srcPath": "topics/topic22/ingredients",
               };
             },
