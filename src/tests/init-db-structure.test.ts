@@ -75,15 +75,18 @@ describe("mapViewDefinitions", () => {
       "hs",
       "as/a",
       "as/a/bs/b",
-      "as/a/bs/b#f=View:a:prop1,prop2",
-      "as/a/ds/d=View:a:prop1,prop2",
-      "a/d#g=[View:b:prop1,prop2]",
+      "as/a/bs/b#f=View:a:prop1,prop2:",
+      "as/a/ds/d=View:a:prop1,prop2:",
+      "a/d#g=[View:b:prop1,prop2:]",
+      "as/c=View:b:prop1,prop2:syncCreate=true,type=topic",
+      "as/c#f=View:b:prop1,prop2:syncCreate=true,type=topic",
     ];
 
     const Entity = {
       Entity1: "a",
       Entity2: "b",
       Entity3: "d",
+      Entity4: "c",
     };
 
     const expectedOutput = [
@@ -106,6 +109,28 @@ describe("mapViewDefinitions", () => {
         destProp: {
           name: "g",
           type: "array-map",
+        },
+        srcProps: ["prop1", "prop2"],
+        srcEntity: "b",
+      },
+      {
+        destEntity: "c",
+        options: {
+          "syncCreate": true,
+          "type": "topic",
+        },
+        srcProps: ["prop1", "prop2"],
+        srcEntity: "b",
+      },
+      {
+        destEntity: "c",
+        destProp: {
+          name: "f",
+          type: "map",
+        },
+        options: {
+          "syncCreate": true,
+          "type": "topic",
         },
         srcProps: ["prop1", "prop2"],
         srcEntity: "b",
