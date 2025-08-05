@@ -102,6 +102,7 @@ describe("distributeDoc", () => {
     dbSpy.mockRestore();
     queueInstructionsSpy.mockRestore();
     queueRunViewLogicsSpy.mockRestore();
+    transactionSetMock.mockRestore();
   });
 
   it("should create a document to dstPath", async () => {
@@ -170,40 +171,6 @@ describe("distributeDoc", () => {
 
     const dstDocRef = db.doc(logicResultDoc.dstPath);
     expect(dstDocRef.set).toHaveBeenCalledWith(expectedData, {merge: true});
-  });
-
-  it("should process instructions if using transaction", async () => {
-    const logicResultDoc: LogicResultDoc = {
-      action: "merge",
-      priority: "normal",
-      doc: {name: "test-doc-name-updated"},
-      instructions: {
-        "count": "++",
-        "score": "+5",
-        "minusCount": "--",
-        "minusScore": "-3",
-      },
-      dstPath: "/users/test-user-id/documents/test-doc-id",
-    };
-    const expectedData = {
-      ...logicResultDoc.doc,
-      "@id": "test-doc-id",
-    };
-
-    await indexUtils.distributeDoc(logicResultDoc, undefined, transactionMock);
-    expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
-    expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
-    expect(queueInstructionsSpy).not.toHaveBeenCalled();
-
-    const expectedInstructions = {
-      "count": admin.firestore.FieldValue.increment(1),
-      "score": admin.firestore.FieldValue.increment(5),
-      "minusCount": admin.firestore.FieldValue.increment(-1),
-      "minusScore": admin.firestore.FieldValue.increment(-3),
-    };
-    const dstDocRef = db.doc(logicResultDoc.dstPath);
-    expect(transactionSetMock).toHaveBeenNthCalledWith(1, dstDocRef, expectedInstructions, {merge: true});
-    expect(transactionSetMock).toHaveBeenNthCalledWith(2, dstDocRef, expectedData, {merge: true});
   });
 
   it("should add parsed instructions to destPropId field if has destPropId", async () => {
@@ -299,6 +266,59 @@ describe("distributeDoc", () => {
     expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(0);
 
     queueSubmitFormSpy.mockRestore();
+  });
+
+  describe("transactional", () => {
+    it("should process instructions if using transaction", async () => {
+      const logicResultDoc: LogicResultDoc = {
+        action: "merge",
+        priority: "normal",
+        doc: {name: "test-doc-name-updated"},
+        instructions: {
+          "count": "++",
+          "score": "+5",
+          "minusCount": "--",
+          "minusScore": "-3",
+        },
+        dstPath: "/users/test-user-id/documents/test-doc-id",
+      };
+      const expectedData = {
+        ...logicResultDoc.doc,
+        "@id": "test-doc-id",
+      };
+
+      await indexUtils.distributeDoc(logicResultDoc, undefined, transactionMock);
+      expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
+      expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
+      expect(queueInstructionsSpy).not.toHaveBeenCalled();
+
+      const expectedInstructions = {
+        "count": admin.firestore.FieldValue.increment(1),
+        "score": admin.firestore.FieldValue.increment(5),
+        "minusCount": admin.firestore.FieldValue.increment(-1),
+        "minusScore": admin.firestore.FieldValue.increment(-3),
+      };
+      const dstDocRef = db.doc(logicResultDoc.dstPath);
+      expect(transactionSetMock).toHaveBeenNthCalledWith(1, dstDocRef, expectedInstructions, {merge: true});
+      expect(transactionSetMock).toHaveBeenNthCalledWith(2, dstDocRef, expectedData, {merge: true});
+    });
+
+    it("should not allow submit-form logicResultDoc in transaction", async () => {
+      const logicResultDoc: LogicResultDoc = {
+        action: "submit-form",
+        priority: "normal",
+        doc: {
+          "@actionType": "merge",
+          "name": "test-doc-name-updated",
+        },
+        dstPath: "/users/test-user-id/documents/test-doc-id",
+      };
+
+      const errorSpy = jest.spyOn(console, "error").mockImplementation();
+      await indexUtils.distributeDoc(logicResultDoc, undefined, transactionMock);
+      expect(errorSpy).toHaveBeenCalledWith("Submit-form is not supported in transactional logic result");
+      expect(transactionSetMock).toHaveBeenCalledTimes(0);
+    });
   });
 
   describe("batched", () => {
