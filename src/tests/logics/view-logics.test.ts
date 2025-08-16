@@ -978,6 +978,16 @@ describe("createViewLogicFn", () => {
         jest.clearAllMocks();
       });
 
+      it("should return finished logicResult with 2 documents", async () => {
+        jest.spyOn(pathsMockable, "doesPathExists").mockResolvedValue(false);
+
+        const result = await logicFn[1](logicResultDoc);
+        expect(result.name).toBe("menuItemIngredient Dst-to-Src");
+        expect(result.status).toBe("finished");
+        expect(result.timeFinished).toBe(undefined);
+        expect(result.documents.length).toBe(2);
+      });
+
       it("should create @syncCreateView in global collection", async () => {
         jest.spyOn(pathsMockable, "doesPathExists").mockResolvedValue(false);
 
