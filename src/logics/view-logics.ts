@@ -57,7 +57,6 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       return {
         name: `${logicName} ViewLogic`,
         status: "finished",
-        timeFinished: admin.firestore.Timestamp.now(),
         documents,
       } as LogicResult;
     }
@@ -125,7 +124,6 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       return {
         name: `${logicName} ViewLogic`,
         status: "finished",
-        timeFinished: now,
         documents: viewLogicResultDocs,
       } as LogicResult;
     }
@@ -161,7 +159,6 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       const logicResult: LogicResult = {
         name: `${logicName} ViewLogic`,
         status: "finished",
-        timeFinished: admin.firestore.Timestamp.now(),
         documents: viewLogicResultDocs,
       };
 
@@ -175,13 +172,19 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       const docId = srcPath.split("/").pop();
       if (!docId) {
         console.error("docId could not be determined from srcPath", srcPath);
-        return logicResult;
+        return {
+          name: `${logicName} ViewLogic`,
+          status: "error",
+          message: "docId could not be determined from srcPath",
+          documents: [],
+        } as LogicResult;
       }
 
       for (const syncCreateViewDoc of syncCreateViewDocs) {
-        const baseViewPath = syncCreateViewDoc.data().dstPath;
-        const {destProp} = getDestPropAndDestPropId(baseViewPath);
-        const dstPath = destProp ? `${baseViewPath}[${docId}]` : `${baseViewPath}/${docId}`;
+        const syncCreateViewData = syncCreateViewDoc.data();
+        const {dstPath: baseDstPath} = syncCreateViewData;
+        const {destProp} = getDestPropAndDestPropId(baseDstPath);
+        const dstPath = destProp ? `${baseDstPath}[${docId}]` : `${baseDstPath}/${docId}`;
 
         viewLogicResultDocs.push({
           action: "create",
@@ -276,6 +279,36 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       return srcPath;
     }
 
+    async function rememberForSyncCreate() {
+      const srcParentPath = getParentPath(srcPath);
+      const dstParentPath = getParentPath(dstPath);
+
+      const dstParentPathParts = dstParentPath.split(/[/#]/).filter(Boolean);
+      const isDstParentPathPartsEven = dstParentPathParts.length % 2 === 0;
+      if (isDstParentPathPartsEven) {
+        console.error(`invalid syncCreate dstPath, ${dstPath}`);
+        return;
+      }
+
+      const docId = formViewDocId(dstParentPath);
+      const syncCreateDocPath = `@syncCreateViews/${docId}`;
+      const isAlreadyCreated = await pathsMockable.doesPathExists(syncCreateDocPath);
+
+      if (!isAlreadyCreated) {
+        logicResult.documents.push({
+          action: "create",
+          dstPath: syncCreateDocPath,
+          doc: {
+            dstPath: dstParentPath,
+            srcPath: srcParentPath,
+          },
+        });
+      } else {
+        console.info(`${syncCreateDocPath} already exists — skipping creation.`);
+      }
+      return;
+    }
+
     const srcPath = formSrcPath();
     if (srcPath.includes("{")) {
       console.error("srcPath should not have a placeholder");
@@ -332,34 +365,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       }
 
       if (syncCreate) {
-        const srcParentPath = getParentPath(srcPath);
-        const dstParentPath = getParentPath(dstPath);
-
-        if (srcParentPath && dstParentPath) {
-          const dstParentPathParts = dstParentPath.split(/[/#]/).filter(Boolean);
-          const isDstParentPathPartsEven = dstParentPathParts.length % 2 === 0;
-          if (isDstParentPathPartsEven) {
-            console.error(`invalid syncCreate dstPath, ${dstPath}`);
-            return logicResult;
-          }
-
-          const docId = formViewDocId(dstParentPath);
-          const syncCreateDocPath = `@syncCreateViews/${docId}`;
-          const isAlreadyCreated = await pathsMockable.doesPathExists(syncCreateDocPath);
-
-          if (!isAlreadyCreated) {
-            logicResult.documents.push({
-              action: "create",
-              dstPath: syncCreateDocPath,
-              doc: {
-                dstPath: dstParentPath,
-                srcPath: srcParentPath,
-              },
-            });
-          } else {
-            console.info(`${syncCreateDocPath} already exists — skipping creation.`);
-          }
-        }
+        await rememberForSyncCreate();
       }
     }
 

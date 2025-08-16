@@ -1,4 +1,4 @@
-import {DestPropType, ViewDefinition, ViewDefinitionOptions} from "./types";
+import {DestPropType, ViewDefinition} from "./types";
 
 export function traverseBFS(obj: Record<string, object>): string[] {
   const paths: string[] = [];
@@ -104,13 +104,32 @@ export function mapViewDefinitions(
 
       const [_, srcEntity, srcPropsStr, optionsStr] = viewDefinitionStr.split(":");
       const srcProps = srcPropsStr.split(",");
-      const optionsArray = optionsStr === "" ? [] :
-        optionsStr.split(",").map((pair: string) => {
+
+      const options = optionsStr.split(",")
+        .reduce<Record<string, any>>((acc, pair) => {
+          if (pair === "") return acc;
           const [key, rawValue] = pair.split("=");
-          const value = rawValue === "true" ? true : rawValue === "false" ? false : rawValue;
-          return [key, value];
-        });
-      const optionsObj: ViewDefinitionOptions = optionsArray.length > 0 ? Object.fromEntries(optionsArray): {};
+
+          switch (key) {
+          case "syncCreate": {
+            if (rawValue === "true") {
+              acc.syncCreate = true;
+            } else if (rawValue === "false") {
+              acc.syncCreate = false;
+            } else {
+              console.error(`SyncCreate option must be a boolean, got "${rawValue}"`);
+            }
+            return acc;
+          }
+
+          // Add other case for future options here
+
+          default: {
+            console.error(`Unsupported view option: ${key}`);
+            return acc;
+          }
+          }
+        }, {});
 
 
       // if srcEntity in Entity and destEntity exists
@@ -125,7 +144,7 @@ export function mapViewDefinitions(
               type: destType as DestPropType,
             },
           } : {}),
-          ...(optionsArray.length > 0 ? {options: optionsObj}: {}),
+          ...(Object.values(options).length > 0 ? {options}: {}),
         });
       }
     }

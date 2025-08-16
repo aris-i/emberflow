@@ -505,7 +505,11 @@ export async function runViewLogics(logicResultDoc: LogicResultDoc): Promise<Log
     const viewLogicResult = await logic.viewLogicFn(logicResultDoc);
     const end = performance.now();
     const execTime = end - start;
-    logicResults.push({...viewLogicResult, execTime});
+    logicResults.push({
+      ...viewLogicResult,
+      execTime,
+      timeFinished: admin.firestore.Timestamp.now(),
+    });
   }
   return logicResults;
 }
