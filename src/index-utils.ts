@@ -148,13 +148,17 @@ export async function distributeDoc(
       console.log(`Document merged to ${dstPath}`);
     }
   } else if (action === "submit-form") {
-    console.debug("Queuing submit form...");
-    const formData: FormData = {
-      "@docPath": dstPath,
-      "@actionType": "create",
-      ...doc,
-    };
-    await queueSubmitForm(formData);
+    if (txn) {
+      console.error("Submit-form is not supported in transactional logic result");
+    } else {
+      console.debug("Queuing submit form...");
+      const formData: FormData = {
+        "@docPath": dstPath,
+        "@actionType": "create",
+        ...doc,
+      };
+      await queueSubmitForm(formData);
+    }
   }
 }
 
