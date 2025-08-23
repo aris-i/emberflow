@@ -102,8 +102,35 @@ export function mapViewDefinitions(
         destType = "array-map";
       }
 
-      const [_, srcEntity, srcPropsStr] = viewDefinitionStr.split(":");
+      const [_, srcEntity, srcPropsStr, optionsStr] = viewDefinitionStr.split(":");
       const srcProps = srcPropsStr.split(",");
+
+      const options = optionsStr.split(",")
+        .reduce<Record<string, any>>((acc, pair) => {
+          if (pair === "") return acc;
+          const [key, rawValue] = pair.split("=");
+
+          switch (key) {
+          case "syncCreate": {
+            if (rawValue === "true") {
+              acc.syncCreate = true;
+            } else if (rawValue === "false") {
+              acc.syncCreate = false;
+            } else {
+              console.error(`SyncCreate option must be a boolean, got "${rawValue}"`);
+            }
+            return acc;
+          }
+
+          // Add other case for future options here
+
+          default: {
+            console.error(`Unsupported view option: ${key}`);
+            return acc;
+          }
+          }
+        }, {});
+
 
       // if srcEntity in Entity and destEntity exists
       if (Object.values(Entity).includes(srcEntity) && destEntity) {
@@ -116,8 +143,8 @@ export function mapViewDefinitions(
               name: destProp,
               type: destType as DestPropType,
             },
-          } :
-            {}),
+          } : {}),
+          ...(Object.values(options).length > 0 ? {options}: {}),
         });
       }
     }

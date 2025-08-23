@@ -179,3 +179,16 @@ export function getDestPropAndDestPropId(dstPath: string) {
 
   return {basePath, destProp, destPropId};
 }
+
+export function getParentPath(path: string) {
+  const {basePath, destProp, destPropId} = getDestPropAndDestPropId(path);
+  const isArrayMap = !!destPropId;
+
+  if (destProp) {
+    if (isArrayMap) {
+      return `${basePath}#${destProp}`;
+    }
+    return basePath;
+  }
+  return path.split("/").slice(0, -1).join("/");
+}

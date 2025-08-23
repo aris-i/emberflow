@@ -75,15 +75,18 @@ describe("mapViewDefinitions", () => {
       "hs",
       "as/a",
       "as/a/bs/b",
-      "as/a/bs/b#f=View:a:prop1,prop2",
-      "as/a/ds/d=View:a:prop1,prop2",
-      "a/d#g=[View:b:prop1,prop2]",
+      "as/a/bs/b#f=View:a:prop1,prop2:",
+      "as/a/ds/d=View:a:prop1,prop2:",
+      "a/d#g=[View:b:prop1,prop2:]",
+      "as/c=View:b:prop1,prop2:syncCreate=true",
+      "as/c#f=View:b:prop1,prop2:syncCreate=true,type=topic",
     ];
 
     const Entity = {
       Entity1: "a",
       Entity2: "b",
       Entity3: "d",
+      Entity4: "c",
     };
 
     const expectedOutput = [
@@ -110,9 +113,80 @@ describe("mapViewDefinitions", () => {
         srcProps: ["prop1", "prop2"],
         srcEntity: "b",
       },
+      {
+        destEntity: "c",
+        options: {
+          "syncCreate": true,
+        },
+        srcProps: ["prop1", "prop2"],
+        srcEntity: "b",
+      },
+      {
+        destEntity: "c",
+        destProp: {
+          name: "f",
+          type: "map",
+        },
+        options: {
+          "syncCreate": true,
+        },
+        srcProps: ["prop1", "prop2"],
+        srcEntity: "b",
+      },
     ];
 
     const result = mapViewDefinitions(paths, Entity);
+    expect(result).toEqual(expectedOutput);
+  });
+
+  it("should log an error if SyncCreate option has a non-boolean value", () => {
+    const paths = [
+      "as/c=View:b:prop1,prop2:syncCreate=string",
+    ];
+
+    const Entity = {
+      Entity4: "c",
+      Entity2: "b",
+    };
+
+    const expectedOutput = [
+      {
+        destEntity: "c",
+        srcProps: ["prop1", "prop2"],
+        srcEntity: "b",
+      },
+    ];
+
+    const errorSpy = jest.spyOn(console, "error").mockImplementation();
+    const result = mapViewDefinitions(paths, Entity);
+    expect(errorSpy).toHaveBeenCalledWith("SyncCreate option must be a boolean, got \"string\"");
+    expect(result).toEqual(expectedOutput);
+  });
+
+  it("should log an error if there are unsupported options", () => {
+    const paths = [
+      "as/c=View:b:prop1,prop2:syncCreate=true,type=topic",
+    ];
+
+    const Entity = {
+      Entity4: "c",
+      Entity2: "b",
+    };
+
+    const expectedOutput = [
+      {
+        destEntity: "c",
+        options: {
+          "syncCreate": true,
+        },
+        srcProps: ["prop1", "prop2"],
+        srcEntity: "b",
+      },
+    ];
+
+    const errorSpy = jest.spyOn(console, "error").mockImplementation();
+    const result = mapViewDefinitions(paths, Entity);
+    expect(errorSpy).toHaveBeenCalledWith("Unsupported view option: type");
     expect(result).toEqual(expectedOutput);
   });
 });

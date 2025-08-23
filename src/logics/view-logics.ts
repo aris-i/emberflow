@@ -11,7 +11,7 @@ import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
 import {_mockable, distributeFnNonTransactional, expandConsolidateAndGroupByDstPath, runViewLogics} from "../index-utils";
 import {pubsubUtils} from "../utils/pubsub";
 import {reviveDateAndTimestamp} from "../utils/misc";
-import {getDestPropAndDestPropId} from "../utils/paths";
+import {_mockable as pathsMockable, getDestPropAndDestPropId, getParentPath} from "../utils/paths";
 
 export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[] {
   const {
@@ -19,7 +19,9 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     srcProps,
     destEntity,
     destProp,
+    options,
   } = viewDefinition;
+  const {syncCreate = false} = options || {};
 
   const logicName = `${destEntity}${destProp ? `#${destProp.name}` : ""}`;
 
@@ -43,7 +45,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       dstPath: srcPath,
       action,
     } = logicResultDoc;
-    console.log(`Executing ViewLogic on document at ${srcPath}...`);
+    console.info(`Executing ViewLogic on document at ${srcPath}...`);
 
     function syncDeleteToViewDstPaths() {
       const documents: LogicResultDoc[] = viewDstPathDocs.map((viewDstPathDoc) => {
@@ -55,7 +57,6 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       return {
         name: `${logicName} ViewLogic`,
         status: "finished",
-        timeFinished: admin.firestore.Timestamp.now(),
         documents,
       } as LogicResult;
     }
@@ -123,7 +124,6 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       return {
         name: `${logicName} ViewLogic`,
         status: "finished",
-        timeFinished: now,
         documents: viewLogicResultDocs,
       } as LogicResult;
     }
@@ -152,6 +152,52 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
 
         await db.doc(srcAtViewsPath).update({srcProps: sortedSrcProps});
       }
+    }
+
+    async function syncCreateToDstPaths() {
+      const viewLogicResultDocs: LogicResultDoc[] = [];
+      const logicResult: LogicResult = {
+        name: `${logicName} ViewLogic`,
+        status: "finished",
+        documents: viewLogicResultDocs,
+      };
+
+      const srcParentPath = getParentPath(srcPath);
+
+      const collectionRef = db.collection("@syncCreateViews")
+        .where("srcPath", "==", srcParentPath);
+      const syncCreateViewSnapshot = await collectionRef.get();
+      const syncCreateViewDocs = syncCreateViewSnapshot.docs;
+
+      const docId = srcPath.split("/").pop();
+      if (!docId) {
+        console.error("docId could not be determined from srcPath", srcPath);
+        return {
+          name: `${logicName} ViewLogic`,
+          status: "error",
+          message: "docId could not be determined from srcPath",
+          documents: [],
+        } as LogicResult;
+      }
+
+      for (const syncCreateViewDoc of syncCreateViewDocs) {
+        const syncCreateViewData = syncCreateViewDoc.data();
+        const {dstPath: baseDstPath} = syncCreateViewData;
+        const {destProp} = getDestPropAndDestPropId(baseDstPath);
+        const dstPath = destProp ? `${baseDstPath}[${docId}]` : `${baseDstPath}/${docId}`;
+
+        viewLogicResultDocs.push({
+          action: "create",
+          dstPath,
+          doc: doc,
+        });
+      }
+
+      return logicResult;
+    }
+
+    if (action === "create" && syncCreate) {
+      return syncCreateToDstPaths();
     }
 
     const modifiedFields = [
@@ -233,6 +279,36 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       return srcPath;
     }
 
+    async function rememberForSyncCreate() {
+      const srcParentPath = getParentPath(srcPath);
+      const dstParentPath = getParentPath(dstPath);
+
+      const dstParentPathParts = dstParentPath.split(/[/#]/).filter(Boolean);
+      const isDstParentPathPartsEven = dstParentPathParts.length % 2 === 0;
+      if (isDstParentPathPartsEven) {
+        console.error(`invalid syncCreate dstPath, ${dstPath}`);
+        return;
+      }
+
+      const docId = formViewDocId(dstParentPath);
+      const syncCreateDocPath = `@syncCreateViews/${docId}`;
+      const isAlreadyCreated = await pathsMockable.doesPathExists(syncCreateDocPath);
+
+      if (!isAlreadyCreated) {
+        logicResult.documents.push({
+          action: "create",
+          dstPath: syncCreateDocPath,
+          doc: {
+            dstPath: dstParentPath,
+            srcPath: srcParentPath,
+          },
+        });
+      } else {
+        console.info(`${syncCreateDocPath} already exists — skipping creation.`);
+      }
+      return;
+    }
+
     const srcPath = formSrcPath();
     if (srcPath.includes("{")) {
       console.error("srcPath should not have a placeholder");
@@ -268,13 +344,14 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
         action: "create",
         dstPath: srcAtViewsPath,
         doc: {
-          path: logicResultDoc.dstPath,
+          path: dstPath,
           srcProps: srcProps.sort(),
           destEntity,
           ...(destProp ? {destProp} : {}),
         },
         skipRunViewLogics: true,
       });
+
       if (destProp && isArrayMap) {
         const dstBasePath = dstPath.split("#")[0];
         logicResult.documents.push({
@@ -285,6 +362,10 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
           },
           skipRunViewLogics: true,
         });
+      }
+
+      if (syncCreate) {
+        await rememberForSyncCreate();
       }
     }
 
