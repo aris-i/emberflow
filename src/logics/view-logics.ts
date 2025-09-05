@@ -182,15 +182,30 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
 
       for (const syncCreateViewDoc of syncCreateViewDocs) {
         const syncCreateViewData = syncCreateViewDoc.data();
-        const {dstPath: baseDstPath} = syncCreateViewData;
+        const {dstPath: baseDstPath, destEntity} = syncCreateViewData;
         const {destProp} = getDestPropAndDestPropId(baseDstPath);
         const dstPath = destProp ? `${baseDstPath}[${docId}]` : `${baseDstPath}/${docId}`;
 
-        viewLogicResultDocs.push({
+        const autoCreateDstDoc: LogicResultDoc = {
           action: "create",
           dstPath,
           doc: doc,
-        });
+        };
+        viewLogicResultDocs.push(autoCreateDstDoc);
+
+        const srcAtViewsPath = formAtViewsPath(dstPath, srcPath);
+        const autoCreateDstDocAtView : LogicResultDoc = {
+          action: "create",
+          dstPath: srcAtViewsPath,
+          doc: {
+            path: dstPath,
+            srcProps: srcProps.sort(),
+            destEntity,
+            ...(destProp ? {destProp} : {}),
+          },
+          skipRunViewLogics: true,
+        };
+        viewLogicResultDocs.push(autoCreateDstDocAtView);
       }
 
       return logicResult;
@@ -299,6 +314,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
           action: "create",
           dstPath: syncCreateDocPath,
           doc: {
+            destEntity,
             dstPath: dstParentPath,
             srcPath: srcParentPath,
           },
