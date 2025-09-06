@@ -33,6 +33,40 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     return viewDocId;
   }
 
+  function createAtViewsLogicResultDoc(dstPath: string, srcPath: string, destEntity: string,) {
+    const logicResultDocs: LogicResultDoc[] = [];
+
+    const {destProp, destPropId} = getDestPropAndDestPropId(dstPath);
+    const isArrayMap = !!destPropId;
+    const srcDocId = srcPath.split("/").pop();
+
+    const srcAtViewsPath = formAtViewsPath(dstPath, srcPath);
+    logicResultDocs.push({
+      action: "create",
+      dstPath: srcAtViewsPath,
+      doc: {
+        path: dstPath,
+        srcProps: srcProps.sort(),
+        destEntity,
+        ...(destProp ? {destProp} : {}),
+      },
+    });
+
+    if (destProp && isArrayMap) {
+      const dstBasePath = dstPath.split("#")[0];
+      logicResultDocs.push({
+        action: "merge",
+        dstPath: dstBasePath,
+        instructions: {
+          [`@${destProp}`]: `arr+(${srcDocId})`,
+        },
+        skipRunViewLogics: true,
+      });
+    }
+
+    return logicResultDocs;
+  }
+
   function formAtViewsPath(viewDstPath: string, srcPath: string) {
     const viewDocId = formViewDocId(viewDstPath);
     return `${srcPath}/@views/${viewDocId}`;
@@ -186,26 +220,11 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
         const {destProp} = getDestPropAndDestPropId(baseDstPath);
         const dstPath = destProp ? `${baseDstPath}[${docId}]` : `${baseDstPath}/${docId}`;
 
-        const autoCreateDstDoc: LogicResultDoc = {
+        viewLogicResultDocs.push({
           action: "create",
           dstPath,
           doc: doc,
-        };
-        viewLogicResultDocs.push(autoCreateDstDoc);
-
-        const srcAtViewsPath = formAtViewsPath(dstPath, srcPath);
-        const autoCreateDstDocAtView : LogicResultDoc = {
-          action: "create",
-          dstPath: srcAtViewsPath,
-          doc: {
-            path: dstPath,
-            srcProps: srcProps.sort(),
-            destEntity,
-            ...(destProp ? {destProp} : {}),
-          },
-          skipRunViewLogics: true,
-        };
-        viewLogicResultDocs.push(autoCreateDstDocAtView);
+        }, ...createAtViewsLogicResultDoc(dstPath, srcPath, destEntity));
       }
 
       return logicResult;
@@ -356,29 +375,9 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
         });
       }
     } else {
-      logicResult.documents.push({
-        action: "create",
-        dstPath: srcAtViewsPath,
-        doc: {
-          path: dstPath,
-          srcProps: srcProps.sort(),
-          destEntity,
-          ...(destProp ? {destProp} : {}),
-        },
-        skipRunViewLogics: true,
-      });
-
-      if (destProp && isArrayMap) {
-        const dstBasePath = dstPath.split("#")[0];
-        logicResult.documents.push({
-          action: "merge",
-          dstPath: dstBasePath,
-          instructions: {
-            [`@${destProp}`]: `arr+(${srcDocId})`,
-          },
-          skipRunViewLogics: true,
-        });
-      }
+      logicResult.documents.push(
+        ...createAtViewsLogicResultDoc(dstPath, srcPath, destEntity)
+      );
 
       if (syncCreate) {
         await rememberForSyncCreate();

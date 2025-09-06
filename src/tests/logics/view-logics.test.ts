@@ -1078,7 +1078,8 @@ describe("createViewLogicFn", () => {
 
       it("should auto create source document if there is a matching path in @syncCreateViews", async () => {
         const result = await logicFn[0](logicResultDoc);
-        expect(result.documents.length).toBe(4);
+        expect(result.documents.length).toBe(5);
+        console.log(result.documents);
 
         expect(result.documents[0].dstPath).toBe(`${dstPath1}/ingredient1`);
         expect(result.documents[0].doc).toBe(logicResultDoc.doc);
@@ -1106,6 +1107,17 @@ describe("createViewLogicFn", () => {
           "path": `${dstPath2}[ingredient1]`,
           "srcProps": ["amount", "ingredient"],
         });
+      });
+
+      it("should add the docId in the @{field} if there is a destProp", async () => {
+        const result = await logicFn[0](logicResultDoc);
+
+        expect(result.documents[4].dstPath).toBe(
+          "topics/topic21/preparationAreas/prepArea1/menus/menu1");
+        expect(result.documents[4].instructions).toEqual({
+          "@ingredients": "arr+(ingredient1)",
+        });
+        expect(result.documents[4].skipRunViewLogics).toBe(true);
       });
     });
   });
