@@ -38,7 +38,6 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
 
     const {destProp, destPropId} = getDestPropAndDestPropId(dstPath);
     const isArrayMap = !!destPropId;
-    const srcDocId = srcPath.split("/").pop();
 
     const srcAtViewsPath = formAtViewsPath(dstPath, srcPath);
     logicResultDocs.push({
@@ -58,7 +57,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
         action: "merge",
         dstPath: dstBasePath,
         instructions: {
-          [`@${destProp}`]: `arr+(${srcDocId})`,
+          [`@${destProp}`]: `arr+(${destPropId})`,
         },
         skipRunViewLogics: true,
       });
