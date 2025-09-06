@@ -313,7 +313,7 @@ export async function onFormSubmit(
     };
     logicResults.push(validateFormLogicResult);
     if (hasValidationError) {
-      await formRef.update({"@status": "validation-error", "@messages": validationResult});
+      await formRef.update({"@status": "validation-error", "@messages": JSON.stringify(validationResult)});
       return;
     }
 
