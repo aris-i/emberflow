@@ -405,63 +405,6 @@ describe("createViewLogicFn", () => {
     expect(result.documents.length).toEqual(2);
   });
 
-  it("should recreate @views doc when id is incorrect", async () => {
-    const deleteMock = jest.fn();
-    colGetMock.mockResolvedValue({
-      docs: [{
-        id: "users+456+friends+1234",
-        ref: {
-          path: "users/1234/@views/users+456+friends+1234",
-        },
-        data: () => {
-          return {
-            "path": "users/456/friends/1234",
-            "srcProps": ["name", "avatar"],
-          };
-        },
-      }, {
-        id: "1234+friend",
-        ref: {
-          delete: deleteMock,
-        },
-        data: () => {
-          return {
-            "path": "users/789/friends/1234",
-            "srcProps": ["name", "avatar"],
-          };
-        },
-      }],
-    });
-
-    // Create the logic function using the viewDefinition
-    const logicFn = viewLogics.createViewLogicFn(vd1);
-
-    // Call the logic function with the test action
-    const result = await logicFn[0](mergeLogicResultDoc);
-
-    expect(colGetMock).toHaveBeenCalledTimes(1);
-    expect(docSpy).toHaveBeenCalledWith("users/1234/@views/users+456+friends+1234");
-    expect(docUpdateMock).toHaveBeenCalledTimes(1);
-    expect(docUpdateMock).toHaveBeenCalledWith({
-      "srcProps": [
-        "age", "avatar", "name",
-      ],
-    });
-
-    expect(deleteMock).toHaveBeenCalledTimes(1);
-    expect(docSpy).toHaveBeenCalledWith("users/1234/@views/users+789+friends+1234");
-    expect(docSetMock).toHaveBeenCalledTimes(1);
-    expect(docSetMock).toHaveBeenCalledWith({
-      "path": "users/789/friends/1234",
-      "srcProps": ["age", "avatar", "name"],
-      "destEntity": "friend",
-    });
-
-    expect(result).toBeDefined();
-    expect(result.documents).toBeDefined();
-    expect(result.documents.length).toEqual(2);
-  });
-
   it("should create a logic function that processes the given logicResultDoc and view definition", async () => {
     colGetMock.mockResolvedValueOnce({
       docs: [{
@@ -1102,7 +1045,7 @@ describe("createViewLogicFn", () => {
         expect(result.documents[3].dstPath).toBe(
           `${atViewsCollectionPath}/topics+topic21+preparationAreas+prepArea1+menus+menu1+ingredients[ingredient1]`);
         expect(result.documents[3].doc).toEqual({
-          "destEntity": "preparationAreaIngredient",
+          "destEntity": "menuItemIngredient",
           "destProp": "ingredients",
           "path": `${dstPath2}[ingredient1]`,
           "srcProps": ["amount", "ingredient"],

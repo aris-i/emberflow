@@ -165,24 +165,26 @@ export function getDestPropAndDestPropId(dstPath: string) {
   let destPropArg = "";
   let destPropId;
   let basePath = dstPath;
+  let isArrayMap = false;
 
   if (dstPath.includes("#")) {
     [basePath, destProp] = dstPath.split("#");
     if (destProp.includes("[") && destProp.endsWith("]")) {
       [destProp, destPropArg] = destProp.split("[");
       destPropId = destPropArg.slice(0, -1);
-      if (!destPropId) {
+      if (destPropId) {
+        isArrayMap = true;
+      } else {
         destPropId = undefined;
       }
     }
   }
 
-  return {basePath, destProp, destPropId};
+  return {basePath, destProp, destPropId, isArrayMap};
 }
 
 export function getParentPath(path: string) {
-  const {basePath, destProp, destPropId} = getDestPropAndDestPropId(path);
-  const isArrayMap = !!destPropId;
+  const {basePath, destProp, isArrayMap} = getDestPropAndDestPropId(path);
 
   if (destProp) {
     if (isArrayMap) {
