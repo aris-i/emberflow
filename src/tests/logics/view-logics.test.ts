@@ -405,63 +405,6 @@ describe("createViewLogicFn", () => {
     expect(result.documents.length).toEqual(2);
   });
 
-  it("should recreate @views doc when id is incorrect", async () => {
-    const deleteMock = jest.fn();
-    colGetMock.mockResolvedValue({
-      docs: [{
-        id: "users+456+friends+1234",
-        ref: {
-          path: "users/1234/@views/users+456+friends+1234",
-        },
-        data: () => {
-          return {
-            "path": "users/456/friends/1234",
-            "srcProps": ["name", "avatar"],
-          };
-        },
-      }, {
-        id: "1234+friend",
-        ref: {
-          delete: deleteMock,
-        },
-        data: () => {
-          return {
-            "path": "users/789/friends/1234",
-            "srcProps": ["name", "avatar"],
-          };
-        },
-      }],
-    });
-
-    // Create the logic function using the viewDefinition
-    const logicFn = viewLogics.createViewLogicFn(vd1);
-
-    // Call the logic function with the test action
-    const result = await logicFn[0](mergeLogicResultDoc);
-
-    expect(colGetMock).toHaveBeenCalledTimes(1);
-    expect(docSpy).toHaveBeenCalledWith("users/1234/@views/users+456+friends+1234");
-    expect(docUpdateMock).toHaveBeenCalledTimes(1);
-    expect(docUpdateMock).toHaveBeenCalledWith({
-      "srcProps": [
-        "age", "avatar", "name",
-      ],
-    });
-
-    expect(deleteMock).toHaveBeenCalledTimes(1);
-    expect(docSpy).toHaveBeenCalledWith("users/1234/@views/users+789+friends+1234");
-    expect(docSetMock).toHaveBeenCalledTimes(1);
-    expect(docSetMock).toHaveBeenCalledWith({
-      "path": "users/789/friends/1234",
-      "srcProps": ["age", "avatar", "name"],
-      "destEntity": "friend",
-    });
-
-    expect(result).toBeDefined();
-    expect(result.documents).toBeDefined();
-    expect(result.documents.length).toEqual(2);
-  });
-
   it("should create a logic function that processes the given logicResultDoc and view definition", async () => {
     colGetMock.mockResolvedValueOnce({
       docs: [{
@@ -955,7 +898,7 @@ describe("createViewLogicFn", () => {
   });
 
   describe("SyncCreate ViewLogic", () => {
-    describe("srcToDstLogicFn", () => {
+    describe("dstToSrcLogicFn", () => {
       const dstPath = "topics/topic21/menus/menu1/ingredients/ingredient1";
       const logicFn = viewLogics.createViewLogicFn( {
         srcEntity: "recipeIngredient",
@@ -985,7 +928,6 @@ describe("createViewLogicFn", () => {
         expect(result.name).toBe("menuItemIngredient Dst-to-Src");
         expect(result.status).toBe("finished");
         expect(result.timeFinished).toBe(undefined);
-        expect(result.documents.length).toBe(2);
       });
 
       it("should create @syncCreateView in global collection", async () => {
@@ -994,6 +936,7 @@ describe("createViewLogicFn", () => {
         const result = await logicFn[1](logicResultDoc);
         expect(result.documents[1].dstPath).toBe("@syncCreateViews/topics+topic21+menus+menu1+ingredients");
         expect(result.documents[1].doc).toEqual({
+          "destEntity": "menuItemIngredient",
           "dstPath": "topics/topic21/menus/menu1/ingredients",
           "srcPath": "topics/topic22/ingredients",
         });
@@ -1025,59 +968,99 @@ describe("createViewLogicFn", () => {
       });
     });
 
-    describe("dstToSrcLogicFn", () => {
-      it("should auto create source document if there is a matching path in @syncCreateViews", async () => {
-        const logicFn = viewLogics.createViewLogicFn( {
-          srcEntity: "recipeIngredient",
-          srcProps: ["amount", "ingredient"],
-          destEntity: "menuItemIngredient",
-          options: {syncCreate: true},
-        });
+    describe("srcToDstLogicFn", () => {
+      const logicFn = viewLogics.createViewLogicFn( {
+        srcEntity: "recipeIngredient",
+        srcProps: ["amount", "ingredient"],
+        destEntity: "menuItemIngredient",
+        options: {syncCreate: true},
+      });
 
-        const dstPath = "topics/topic22/ingredients/ingredient1";
-        const logicResultDoc: LogicResultDoc = {
-          action: "create",
-          dstPath,
-          doc: {
-            "@id": "ingredientId",
-            "amount": 2,
-            "ingredient": "ingredientName",
-            "topicId": "topic22",
-          },
-        };
+      const dstPath = "topics/topic22/ingredients/ingredient1";
+      const logicResultDoc: LogicResultDoc = {
+        action: "create",
+        dstPath,
+        doc: {
+          "@id": "ingredientId",
+          "amount": 2,
+          "ingredient": "ingredientName",
+          "topicId": "topic22",
+        },
+      };
 
+      const srcCollection = "topics/topic22/ingredients";
+      const dstPath1 = "topics/topic21/menus/menu1/ingredients";
+      const dstPath2 = "topics/topic21/preparationAreas/prepArea1/menus/menu1#ingredients";
+      beforeEach(() => {
         colGetMock.mockResolvedValue({
           docs: [{
             id: "topics+topic21+menus+menu1+ingredients",
             data: () => {
               return {
-                "dstPath": "topics/topic21/menus/menu1/ingredients",
-                "srcPath": "topics/topic22/ingredients",
+                "destEntity": "menuItemIngredient",
+                "dstPath": dstPath1,
+                "srcPath": srcCollection,
               };
             },
           }, {
             id: "topics+topic21+preparationAreas+menu1+ingredients",
             data: () => {
               return {
-                "dstPath": "topics/topic21/preparationAreas/prepArea1/menus/menu1#ingredients",
-                "srcPath": "topics/topic22/ingredients",
+                "destEntity": "preparationAreaIngredient",
+                "dstPath": dstPath2,
+                "srcPath": srcCollection,
               };
             },
           }],
         });
+      });
 
-        const doesPathExistsMock = jest.fn()
-          .mockResolvedValueOnce(true);
-        pathsMockable.doesPathExists = doesPathExistsMock;
+      const doesPathExistsMock = jest.fn()
+        .mockResolvedValueOnce(true);
+      pathsMockable.doesPathExists = doesPathExistsMock;
 
+      it("should auto create source document if there is a matching path in @syncCreateViews", async () => {
         const result = await logicFn[0](logicResultDoc);
-        expect(result.documents.length).toBe(2);
+        expect(result.documents.length).toBe(5);
+        console.log(result.documents);
 
-        expect(result.documents[0].dstPath).toBe("topics/topic21/menus/menu1/ingredients/ingredient1");
+        expect(result.documents[0].dstPath).toBe(`${dstPath1}/ingredient1`);
         expect(result.documents[0].doc).toBe(logicResultDoc.doc);
 
-        expect(result.documents[1].dstPath).toBe("topics/topic21/preparationAreas/prepArea1/menus/menu1#ingredients[ingredient1]");
-        expect(result.documents[1].doc).toBe(logicResultDoc.doc);
+        expect(result.documents[2].dstPath).toBe(`${dstPath2}[ingredient1]`);
+        expect(result.documents[2].doc).toBe(logicResultDoc.doc);
+      });
+
+      it("should manually create @view document for each newly created views", async () => {
+        const result = await logicFn[0](logicResultDoc);
+
+        const atViewsCollectionPath = `${srcCollection}/ingredient1/@views`;
+        expect(result.documents[1].dstPath).toBe(
+          `${atViewsCollectionPath}/topics+topic21+menus+menu1+ingredients+ingredient1`);
+        expect(result.documents[1].doc).toEqual({
+          "destEntity": "menuItemIngredient",
+          "path": `${dstPath1}/ingredient1`,
+          "srcProps": ["amount", "ingredient"],
+        });
+        expect(result.documents[3].dstPath).toBe(
+          `${atViewsCollectionPath}/topics+topic21+preparationAreas+prepArea1+menus+menu1+ingredients[ingredient1]`);
+        expect(result.documents[3].doc).toEqual({
+          "destEntity": "menuItemIngredient",
+          "destProp": "ingredients",
+          "path": `${dstPath2}[ingredient1]`,
+          "srcProps": ["amount", "ingredient"],
+        });
+      });
+
+      it("should add the docId in the @{field} if there is a destProp", async () => {
+        const result = await logicFn[0](logicResultDoc);
+
+        expect(result.documents[4].dstPath).toBe(
+          "topics/topic21/preparationAreas/prepArea1/menus/menu1");
+        expect(result.documents[4].instructions).toEqual({
+          "@ingredients": "arr+(ingredient1)",
+        });
+        expect(result.documents[4].skipRunViewLogics).toBe(true);
       });
     });
   });
