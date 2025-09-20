@@ -1385,7 +1385,7 @@ describe("runViewLogics", () => {
   ];
 
   beforeEach(() => {
-    jest.spyOn(indexUtils._mockable, "getViewLogicsConfig").mockReturnValue(customViewLogicsConfig);
+    jest.spyOn(indexUtils._mockable, "getViewLogicConfigs").mockReturnValue(customViewLogicsConfig);
   });
 
   it("should run view logics properly", async () => {

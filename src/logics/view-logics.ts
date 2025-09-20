@@ -103,7 +103,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
         "@updatedByViewDefinitionAt": now,
       };
       const viewInstructions: Record<string, string> = {};
-      for (const srcProp of defSrcProps) {
+      for (const srcProp of [...defSrcProps, "@dataVersion"]) {
         if (srcDoc?.[srcProp] !== undefined) {
           viewDoc[srcProp] = srcDoc[srcProp];
         }

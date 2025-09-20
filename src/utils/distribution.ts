@@ -21,6 +21,7 @@ import FieldValue = firestore.FieldValue;
 import Transaction = firestore.Transaction;
 import {getDestPropAndDestPropId} from "./paths";
 import {queueRunViewLogics} from "../logics/view-logics";
+import {queueRunPatchLogics} from "../logics/patch-logics";
 
 export const queueForDistributionLater = async (...logicResultDocs: LogicResultDoc[]) => {
   try {
@@ -53,6 +54,7 @@ export async function onMessageForDistributionQueue(event: CloudEvent<MessagePub
     if (priority === "high") {
       await distributeDoc(logicResultDoc);
       await queueRunViewLogics(logicResultDoc);
+      await queueRunPatchLogics(logicResultDoc.dstPath);
     } else if (priority === "normal") {
       logicResultDoc.priority = "high";
       await queueForDistributionLater(logicResultDoc);
