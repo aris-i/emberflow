@@ -9,14 +9,12 @@ describe("traverseBFS", () => {
           d: {},
         },
         e: {
-          f: "View:b:prop1,prop2",
-          g: ["View:b:prop1,prop2"],
+          f: ["ViewMap@00.01.20:b:prop1,prop2", "ViewMap@00.01.21:b:prop1,prop2,prop3"],
+          g: ["ViewArrayMap@00.01.20:b:prop1,prop2"],
         },
       },
       h: {
-        i: {
-          "View:b:prop1,prop2": {},
-        },
+        i: ["View@00.01.21:b:prop1,prop2"],
       },
     };
 
@@ -25,12 +23,12 @@ describe("traverseBFS", () => {
       "h",
       "a/b",
       "a/e",
-      "h/i",
+      "h/i=View@00.01.21:b:prop1,prop2",
       "a/b/c",
       "a/b/d",
-      "a/e#f=View:b:prop1,prop2",
-      "a/e#g=[View:b:prop1,prop2]",
-      "h/i=View:b:prop1,prop2",
+      "a/e#f=ViewMap@00.01.20:b:prop1,prop2",
+      "a/e#f=ViewMap@00.01.21:b:prop1,prop2,prop3",
+      "a/e#g=ViewArrayMap@00.01.20:b:prop1,prop2",
     ];
 
     const result = traverseBFS(input);
@@ -75,11 +73,12 @@ describe("mapViewDefinitions", () => {
       "hs",
       "as/a",
       "as/a/bs/b",
-      "as/a/bs/b#f=View:a:prop1,prop2:",
-      "as/a/ds/d=View:a:prop1,prop2:",
-      "a/d#g=[View:b:prop1,prop2:]",
-      "as/c=View:b:prop1,prop2:syncCreate=true",
-      "as/c#f=View:b:prop1,prop2:syncCreate=true,type=topic",
+      "as/a/bs/b#f=ViewMap@0.0.0:a:prop1,prop2",
+      "as/a/bs/b#f=ViewMap@0.0.2:a:prop1,prop2,prop3",
+      "as/a/ds/d=View@0.0.0:a:prop1,prop2",
+      "a/d#g=ViewArrayMap@0.0.0:b:prop1,prop2",
+      "as/c=View@0.0.0:b:prop1,prop2:syncCreate=true",
+      "as/c#f=ViewMap@0.0.2:b:prop1,prop2:syncCreate=true,type=topic",
     ];
 
     const Entity = {
@@ -98,11 +97,23 @@ describe("mapViewDefinitions", () => {
         },
         srcProps: ["prop1", "prop2"],
         srcEntity: "a",
+        version: "0.0.0",
+      },
+      {
+        destEntity: "b",
+        destProp: {
+          name: "f",
+          type: "map",
+        },
+        srcProps: ["prop1", "prop2", "prop3"],
+        srcEntity: "a",
+        version: "0.0.2",
       },
       {
         destEntity: "d",
         srcProps: ["prop1", "prop2"],
         srcEntity: "a",
+        version: "0.0.0",
       },
       {
         destEntity: "d",
@@ -112,6 +123,7 @@ describe("mapViewDefinitions", () => {
         },
         srcProps: ["prop1", "prop2"],
         srcEntity: "b",
+        version: "0.0.0",
       },
       {
         destEntity: "c",
@@ -120,6 +132,7 @@ describe("mapViewDefinitions", () => {
         },
         srcProps: ["prop1", "prop2"],
         srcEntity: "b",
+        version: "0.0.0",
       },
       {
         destEntity: "c",
@@ -132,6 +145,7 @@ describe("mapViewDefinitions", () => {
         },
         srcProps: ["prop1", "prop2"],
         srcEntity: "b",
+        version: "0.0.2",
       },
     ];
 
@@ -141,7 +155,7 @@ describe("mapViewDefinitions", () => {
 
   it("should log an error if SyncCreate option has a non-boolean value", () => {
     const paths = [
-      "as/c=View:b:prop1,prop2:syncCreate=string",
+      "as/c=View@0.0.0:b:prop1,prop2:syncCreate=string",
     ];
 
     const Entity = {
@@ -154,6 +168,7 @@ describe("mapViewDefinitions", () => {
         destEntity: "c",
         srcProps: ["prop1", "prop2"],
         srcEntity: "b",
+        version: "0.0.0",
       },
     ];
 
@@ -165,7 +180,7 @@ describe("mapViewDefinitions", () => {
 
   it("should log an error if there are unsupported options", () => {
     const paths = [
-      "as/c=View:b:prop1,prop2:syncCreate=true,type=topic",
+      "as/c=View@0.0.0:b:prop1,prop2:syncCreate=true,type=topic",
     ];
 
     const Entity = {
@@ -181,6 +196,7 @@ describe("mapViewDefinitions", () => {
         },
         srcProps: ["prop1", "prop2"],
         srcEntity: "b",
+        version: "0.0.0",
       },
     ];
 

@@ -148,6 +148,7 @@ export function initializeEmberFlow(
       actionTypes: ["create", "merge", "delete"] as LogicResultDocAction[],
       modifiedFields: viewDef.srcProps,
       viewLogicFn: srcToDstViewLogicFn,
+      version: viewDef.version,
     };
     const dstToSrcLogicConfig = {
       name: `${viewDef.destEntity} Reverse ViewLogic`,
@@ -156,6 +157,7 @@ export function initializeEmberFlow(
       modifiedFields: "all" as LogicConfigModifiedFieldsType,
       ...(viewDef.destProp ? {destProp: viewDef.destProp.name} : {}),
       viewLogicFn: dstToSrcViewLogicFn,
+      version: viewDef.version,
     } as ViewLogicConfig;
     return [srcToDstLogicConfig, dstToSrcLogicConfig];
   }).flat();
@@ -486,7 +488,9 @@ export async function onFormSubmit(
       return;
     }
     const distributeNonTransactionalLogicResultsStart = performance.now();
-    logicDocsThatWereAlreadyDistributed.push(...await distributeNonTransactionalLogicResults(runBusinessLogicStatus.logicResults, docPath));
+    logicDocsThatWereAlreadyDistributed.push(...await distributeNonTransactionalLogicResults(
+      runBusinessLogicStatus.logicResults, docPath, targetVersion
+    ));
     const distributeNonTransactionalLogicResultsEnd = performance.now();
     const distributeNonTransactionalPerfLogicResults: LogicResult = {
       name: "distributeNonTransactionalLogicResults",
@@ -498,7 +502,7 @@ export async function onFormSubmit(
 
     await formRef.update({"@status": "finished"});
 
-    await queueRunViewLogics(...logicDocsThatWereAlreadyDistributed);
+    await queueRunViewLogics(targetVersion, ...logicDocsThatWereAlreadyDistributed);
 
     await queueRunPatchLogics(appVersion, docPath, ...logicDocsThatWereAlreadyDistributed.map((doc) => doc.dstPath));
 
@@ -535,6 +539,7 @@ export async function onFormSubmit(
 async function distributeNonTransactionalLogicResults(
   logicResults: LogicResult[],
   docPath: string,
+  targetVersion: string
 ): Promise<LogicResultDoc[]> {
   const forRunViewLogicQueuing: LogicResultDoc[] = [];
   const nonTransactionalResults = logicResults.filter((result) => !result.transactional);
@@ -575,7 +580,7 @@ async function distributeNonTransactionalLogicResults(
     otherDocsByDocPath: normalPriorityOtherDocsByDocPath,
   } = groupDocsByTargetDocPath(normalPriorityDstPathLogicDocsMap, docPath);
   forRunViewLogicQueuing.push(...await distributeFnNonTransactional(normalPriorityDocsByDocPath));
-  await distributeLater(normalPriorityOtherDocsByDocPath);
+  await distributeLater(normalPriorityOtherDocsByDocPath, targetVersion);
 
   console.info(`Consolidating and Distributing Low Priority Logic Results: ${lowPriorityDocs.length}`);
   const lowPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
@@ -584,8 +589,8 @@ async function distributeNonTransactionalLogicResults(
     docsByDocPath: lowPriorityDocsByDocPath,
     otherDocsByDocPath: lowPriorityOtherDocsByDocPath,
   } = groupDocsByTargetDocPath(lowPriorityDstPathLogicDocsMap, docPath);
-  await distributeLater(lowPriorityDocsByDocPath);
-  await distributeLater(lowPriorityOtherDocsByDocPath);
+  await distributeLater(lowPriorityDocsByDocPath, targetVersion);
+  await distributeLater(lowPriorityOtherDocsByDocPath, targetVersion);
 
   return forRunViewLogicQueuing;
 }

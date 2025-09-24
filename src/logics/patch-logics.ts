@@ -66,7 +66,7 @@ export async function onMessageRunPatchLogicsQueue(event: CloudEvent<MessagePubl
       return distributedLogicDocs;
     });
 
-    await queueRunViewLogics(...distributeLogicDocs);
+    await queueRunViewLogics(appVersion, ...distributeLogicDocs);
 
     const end = performance.now();
     const execTime = end - start;

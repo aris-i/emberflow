@@ -388,7 +388,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
   return [srcToDstLogicFn, dstToSrcLogicFn];
 }
 
-export async function queueRunViewLogics(...logicResultDocs: LogicResultDoc[]) {
+export async function queueRunViewLogics(targetVersion: string, ...logicResultDocs: LogicResultDoc[]) {
   try {
     for (const logicResultDoc of logicResultDocs) {
       const {
@@ -411,7 +411,7 @@ export async function queueRunViewLogics(...logicResultDocs: LogicResultDoc[]) {
             logicResultDoc.doc = data;
           }
         }
-        const messageId = await VIEW_LOGICS_TOPIC.publishMessage({json: logicResultDoc});
+        const messageId = await VIEW_LOGICS_TOPIC.publishMessage({json: {doc: logicResultDoc, targetVersion}});
         console.log(`queueRunViewLogics: Message ${messageId} published.`);
         console.debug(`queueRunViewLogics: ${logicResultDoc}`);
       }
@@ -433,12 +433,13 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
   }
 
   try {
-    const logicResultDoc = reviveDateAndTimestamp(event.data.message.json) as LogicResultDoc;
+    const {targetVersion, doc} = event.data.message.json;
+    const logicResultDoc = reviveDateAndTimestamp(doc) as LogicResultDoc;
     console.log("Received logic result doc:", logicResultDoc);
 
     console.info("Running View Logics");
     const start = performance.now();
-    const viewLogicResults = await runViewLogics(logicResultDoc);
+    const viewLogicResults = await runViewLogics(logicResultDoc, targetVersion);
     const end = performance.now();
     const execTime = end - start;
     const distributeFnLogicResult: LogicResult = {
