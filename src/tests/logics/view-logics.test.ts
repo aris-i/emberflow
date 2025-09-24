@@ -18,8 +18,8 @@ import {
   VIEW_LOGICS_TOPIC_NAME,
 } from "../../index";
 import * as admin from "firebase-admin";
-import {securityConfig} from "../../sample-custom/security";
-import {validatorConfig} from "../../sample-custom/validators";
+import {securityConfigs} from "../../sample-custom/security";
+import {validatorConfigs} from "../../sample-custom/validators";
 import {dbStructure, Entity} from "../../sample-custom/db-structure";
 import {DocumentReference} from "firebase-admin/lib/firestore";
 import Timestamp = firestore.Timestamp;
@@ -50,7 +50,7 @@ const projectConfig: ProjectConfig = {
 admin.initializeApp({
   databaseURL: "https://test-project.firebaseio.com",
 });
-initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, []);
+initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfigs, validatorConfigs, [], []);
 
 const vd1: ViewDefinition = {
   srcEntity: "user",

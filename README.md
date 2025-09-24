@@ -18,8 +18,8 @@ npm install emberflow
 import * as admin from "firebase-admin";
 import {dbStructure, Entity} from "./db-structure";
 import {initializeEmberFlow} from "emberflow";
-import {securityConfig} from "./security";
-import {validatorConfig} from "./validators";
+import {securityConfigs} from "./security";
+import {validatorConfigs} from "./validators";
 import {logics} from "./business-logics";
 
 admin.initializeApp();
@@ -27,8 +27,8 @@ const {functionsConfig} = initializeEmberFlow(
   admin,
   dbStructure,
   Entity,
-  securityConfig,
-  validatorConfig,
+  securityConfigs,
+  validatorConfigs,
   logics
 );
 

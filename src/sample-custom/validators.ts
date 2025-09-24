@@ -35,10 +35,31 @@ async function blankValidator(document: DocumentData): Promise<ValidationResult>
  *
  * @type {ValidatorConfig}
  */
-const validatorConfig: ValidatorConfig = {
-  [Entity.User]: userValidator,
-  [Entity.Feed]: blankValidator,
-  [Entity.Friend]: blankValidator,
-};
 
-export {validatorConfig};
+export const validatorConfigs: ValidatorConfig[] = [
+  {
+    entity: Entity.User,
+    validatorFn: userValidator,
+    version: "1.2.3",
+  },
+  {
+    entity: Entity.User,
+    validatorFn: userValidator,
+    version: "2.4.6",
+  },
+  {
+    entity: Entity.User,
+    validatorFn: userValidator,
+    version: "3",
+  },
+  {
+    entity: Entity.Feed,
+    validatorFn: blankValidator,
+    version: "1",
+  },
+  {
+    entity: Entity.Friend,
+    validatorFn: blankValidator,
+    version: "1",
+  },
+];

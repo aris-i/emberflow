@@ -277,7 +277,7 @@ export async function onFormSubmit(
     const metadata = form["@metadata"] || {};
 
     console.info("Validating appVersion");
-    const {appVersion} = metadata;
+    const {app: {version: appVersion}} = metadata;
     if (!appVersion) {
       const message = "No appVersion found in metadata";
       console.warn(message);

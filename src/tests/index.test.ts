@@ -93,7 +93,7 @@ jest.spyOn(admin, "database")
 
 admin.initializeApp();
 
-initializeEmberFlow(projectConfig, admin, dbStructure, Entity, {}, {}, []);
+initializeEmberFlow(projectConfig, admin, dbStructure, Entity, [], [], [], []);
 
 const refUpdateMock = jest.fn();
 const refMock = {
@@ -170,6 +170,11 @@ describe("onFormSubmit", () => {
         "field2": "oldValue",
         "@actionType": "update",
         "@docPath": "users/test-uid",
+        "@metadata": {
+          "app": {
+            "version": "1.0.0",
+          },
+        },
       }),
       "@status": "submit",
     };
@@ -195,6 +200,11 @@ describe("onFormSubmit", () => {
         "field2": "oldValue",
         "@actionType": "update",
         "@docPath": "users/another-user-id",
+        "@metadata": {
+          "app": {
+            "version": "1.0.0",
+          },
+        },
       }),
       "@status": "submit",
     };
@@ -210,12 +220,18 @@ describe("onFormSubmit", () => {
   });
 
   it("should pass user validation when target docPath is user for service account", async () => {
+    const targetVersion = "1.0.0";
     const form = {
       "formData": JSON.stringify({
         "field1": "newValue",
         "field2": "oldValue",
         "@actionType": "update",
         "@docPath": "users/another-user-id",
+        "@metadata": {
+          "app": {
+            "version": targetVersion,
+          },
+        },
       }),
       "@status": "submit",
     };
@@ -233,6 +249,11 @@ describe("onFormSubmit", () => {
         "field1": "newValue",
         "field2": "oldValue",
         "@docPath": "users/test-uid",
+        "@metadata": {
+          "app": {
+            "version": "1.0.0",
+          },
+        },
       }),
       "@status": "submit",
     };
@@ -254,6 +275,11 @@ describe("onFormSubmit", () => {
         "field2": "oldValue",
         "@actionType": "update",
         "@docPath": "users/test-uid",
+        "@metadata": {
+          "app": {
+            "version": "1.0.0",
+          },
+        },
       }),
       "@status": "submit",
     };
@@ -282,11 +308,17 @@ describe("onFormSubmit", () => {
     getSecurityFnMock.mockReturnValue(securityFnMock);
 
     const docPath = "@internal/forDistribution/distribution/0";
+    const targetVersion = "1.0.0";
     const formData = {
       "field1": "newValue",
       "field2": "oldValue",
       "@actionType": "update",
       "@docPath": docPath,
+      "@metadata": {
+        "app": {
+          "version": targetVersion,
+        },
+      },
     };
     const form = {
       "formData": JSON.stringify(formData),
@@ -312,8 +344,8 @@ describe("onFormSubmit", () => {
     jest.spyOn(transactionutils, "extractTransactionGetOnly").mockReturnValue( extractedTxnGet);
     await onFormSubmit(event);
 
-    expect(getSecurityFnMock).toHaveBeenCalledWith(entity);
-    expect(validateFormMock).toHaveBeenCalledWith(entity, formData);
+    expect(getSecurityFnMock).toHaveBeenCalledWith(entity, targetVersion);
+    expect(validateFormMock).toHaveBeenCalledWith(entity, formData, targetVersion);
     expect(securityFnMock).toHaveBeenCalledWith(extractedTxnGet, entity, docPath, document, "update", {field1: "newValue"}, user);
     expect(refMock.update).toHaveBeenCalledWith({
       "@status": "security-error",
@@ -341,6 +373,11 @@ describe("onFormSubmit", () => {
         "@actionType": "create",
         "someField": "exampleValue",
         "@docPath": "users/test-uid",
+        "@metadata": {
+          "app": {
+            "version": "1.0.0",
+          },
+        },
       }),
       "@status": "submit",
     };
@@ -391,6 +428,11 @@ describe("onFormSubmit", () => {
         "@actionType": "create",
         "name": "test",
         "@docPath": "users/test-uid",
+        "@metadata": {
+          "app": {
+            "version": "1.0.0",
+          },
+        },
       }),
       "@status": "submit",
     };
@@ -440,6 +482,11 @@ describe("onFormSubmit", () => {
         "@actionType": "create",
         "name": "test",
         "@docPath": "@internal/forDistribution/distributions/0",
+        "@metadata": {
+          "app": {
+            "version": "1.0.0",
+          },
+        },
       }),
       "@status": "submit",
     };
@@ -495,6 +542,11 @@ describe("onFormSubmit", () => {
         "@docPath": "users/test-uid",
         "@actionType": "create",
         "name": "test",
+        "@metadata": {
+          "app": {
+            "version": "1.0.0",
+          },
+        },
       }),
       "@status": "submit",
     };
@@ -722,6 +774,11 @@ describe("onFormSubmit", () => {
         "@actionType": "create",
         "name": "test",
         "@docPath": docPath,
+        "@metadata": {
+          "app": {
+            "version": "1.0.0",
+          },
+        },
       }),
       "@status": "submit",
     };
