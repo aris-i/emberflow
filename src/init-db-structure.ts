@@ -19,28 +19,23 @@ export function traverseBFS(obj: Record<string, object>): string[] {
     for (const key in node) {
       if (typeof node[key] === "object" && node[key] !== null) {
         if (Array.isArray(node[key])) {
-          const firstElement = (node[key] as string[])[0];
-          if (firstElement.startsWith("View:")) {
-            const propView = `#${key}=[${firstElement}]`;
-            const viewPath = `${path}${propView}`;
-            paths.push(viewPath);
+          for (const element of node[key] as string[]) {
+            if (element.startsWith("ViewMap@") || element.startsWith("ViewArrayMap@") ) {
+              const propView = `#${key}=${element}`;
+              const viewPath = `${path}${propView}`;
+              paths.push(viewPath);
+              continue;
+            }
+            if (element.startsWith("View@")) {
+              const viewPath = `${path}/${key}=${element}`;
+              paths.push(viewPath);
+              continue;
+            }
           }
         } else {
-          if (key.startsWith("View:")) {
-            const viewPath = `${path}=${key}`;
-            paths.push(viewPath);
-          } else {
-            const newPath = path === "" ? key : `${path}/${key}`;
-            paths.push(newPath);
-            queue.push({node: node[key] as Record<string, object>, path: newPath});
-          }
-        }
-      } else if (typeof node[key] === "string") {
-        const value = (node[key] as unknown) as string;
-        if (value.startsWith("View:")) {
-          const propView = `#${key}=${value}`;
-          const viewPath = `${path}${propView}`;
-          paths.push(viewPath);
+          const newPath = path === "" ? key : `${path}/${key}`;
+          paths.push(newPath);
+          queue.push({node: node[key] as Record<string, object>, path: newPath});
         }
       }
     }
@@ -88,24 +83,25 @@ export function mapViewDefinitions(
   const viewDefs: ViewDefinition[] = [];
 
   for (const path of paths) {
-    const match = path.match(/^([^#]*)(#.+)?=(\[?View:.+)$/);
+    const match = path.match(/^([^#]*)(#.+)?=(View[^@]*@[^:]*:.+)$/);
 
     if (match) {
       const destPath = match[1];
       // Get the last word of the path
       const destEntity = destPath.split("/").slice(-1)[0];
       const destProp = match[2]?.substring(1);
-      let viewDefinitionStr = match[3];
+      const viewDefinitionStr = match[3];
+
+      const [typeVersion, srcEntity, srcPropsStr, optionsStr] = viewDefinitionStr.split(":");
+      const srcProps = srcPropsStr.split(",");
+
+      const [type, version] = typeVersion.split("@");
       let destType = "map";
-      if (viewDefinitionStr.startsWith("[") && viewDefinitionStr.endsWith("]")) {
-        viewDefinitionStr = viewDefinitionStr.slice(1, -1);
+      if (type === "ViewArrayMap") {
         destType = "array-map";
       }
 
-      const [_, srcEntity, srcPropsStr, optionsStr] = viewDefinitionStr.split(":");
-      const srcProps = srcPropsStr.split(",");
-
-      const options = optionsStr.split(",")
+      const options = optionsStr?.split(",")
         .reduce<Record<string, any>>((acc, pair) => {
           if (pair === "") return acc;
           const [key, rawValue] = pair.split("=");
@@ -144,7 +140,8 @@ export function mapViewDefinitions(
               type: destType as DestPropType,
             },
           } : {}),
-          ...(Object.values(options).length > 0 ? {options}: {}),
+          ...(options && Object.values(options).length > 0 ? {options}: {}),
+          version,
         });
       }
     }

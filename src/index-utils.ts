@@ -10,6 +10,7 @@ import {
   SecurityFn,
   TxnGet,
   ValidateFormResult,
+  ViewLogicConfig,
 } from "./types";
 import {database, firestore} from "firebase-admin";
 import {
@@ -192,10 +193,10 @@ export async function distributeFnNonTransactional(docsByDstPath: Map<string, Lo
   return forRunViewLogicQueuing;
 }
 
-export async function distributeLater(docsByDstPath: Map<string, LogicResultDoc[]>) {
+export async function distributeLater(docsByDstPath: Map<string, LogicResultDoc[]>, targetVersion: string) {
   console.log("Submitting to form for later processing...");
   const documents = Array.from(docsByDstPath.values()).flat();
-  await queueForDistributionLater(...documents);
+  await queueForDistributionLater(targetVersion, ...documents);
 }
 
 export async function validateForm(
@@ -269,25 +270,21 @@ function getMatchingLogics(actionType: ActionType, modifiedFields: DocumentData,
 
   // Let's group by name
   const nameIndex = new Map<string, number>();
-  return matchingLogics.reduce((acc, logic) => {
-    const {name} = logic;
-    let logicConfigs: LogicConfig[];
+  return matchingLogics.reduce((acc, logicConfig) => {
+    const {name} = logicConfig;
     if (!nameIndex.has(name)) {
-      logicConfigs = [];
-      const length = acc.push(logicConfigs);
+      const length = acc.push(logicConfig);
       nameIndex.set(name, length-1);
     } else {
-      logicConfigs = acc[nameIndex.get(name)!];
+      const index = nameIndex.get(name);
+      const logicConfigPrev = acc[index!];
+      if (versionCompare(logicConfigPrev.version, logicConfig.version) < 0) {
+        acc[index!] = logicConfig; // Replace with the latest version
+      }
     }
-    logicConfigs.push(logic);
+    logicConfigs.push(logicConfig);
     return acc;
-  }, [] as LogicConfig[][])
-    .reduce((acc, logicConfigs) => {
-      // Sort by version and take the latest one
-      logicConfigs.sort((a, b) => versionCompare(b.version, a.version));
-      acc.push(logicConfigs[0]);
-      return acc;
-    }, [] as LogicConfig[]);
+  }, [] as LogicConfig[]);
 }
 
 export const runBusinessLogics = async (
@@ -508,7 +505,7 @@ export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultD
   return consolidated;
 }
 
-export async function runViewLogics(logicResultDoc: LogicResultDoc): Promise<LogicResult[]> {
+export async function runViewLogics(logicResultDoc: LogicResultDoc, targetVersion: string): Promise<LogicResult[]> {
   const {
     action,
     doc,
@@ -532,7 +529,9 @@ export async function runViewLogics(logicResultDoc: LogicResultDoc): Promise<Log
 
   const matchingLogics = _mockable.getViewLogicConfigs().filter((viewLogicConfig) => {
     if (action === "delete") {
-      return viewLogicConfig.entity === entity && (destProp ? viewLogicConfig.destProp === destProp : true);
+      return viewLogicConfig.entity === entity &&
+          (destProp ? viewLogicConfig.destProp === destProp : true) &&
+          versionCompare(viewLogicConfig.version, targetVersion) <= 0;
     }
 
     return viewLogicConfig.actionTypes.includes(action) &&
@@ -540,9 +539,23 @@ export async function runViewLogics(logicResultDoc: LogicResultDoc): Promise<Log
           viewLogicConfig.modifiedFields === "all" ||
             viewLogicConfig.modifiedFields.some((field) => modifiedFields.includes(field))
         ) &&
-        viewLogicConfig.entity === entity && (destProp ? viewLogicConfig.destProp === destProp : true)
-    ;
-  });
+        viewLogicConfig.entity === entity && (destProp ? viewLogicConfig.destProp === destProp : true) &&
+      versionCompare(viewLogicConfig.version, targetVersion) <= 0;
+  })
+    .reduce((acc, viewLogicConfig) => {
+      const {name} = viewLogicConfig;
+      if (!acc.has(name)) {
+        acc.set(name, viewLogicConfig);
+      } else {
+        const viewLogicConfigPrev = acc.get(name)!;
+        if (versionCompare(viewLogicConfigPrev.version, viewLogicConfig.version) < 0) {
+          acc.set(name, viewLogicConfig);
+        }
+      }
+      return acc;
+    }, new Map<string, ViewLogicConfig>())
+    .values();
+
   // TODO: Handle errors
 
   const logicResults = [];

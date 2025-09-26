@@ -102,6 +102,7 @@ export interface ViewLogicConfig{
     entity: string;
     destProp?: string;
     viewLogicFn: ViewLogicFn;
+    version: string;
 }
 
 export type PatchLogicFn = (dstPath: string, data: DocumentData) => Promise<LogicResult>;
@@ -150,6 +151,7 @@ export interface ViewDefinition {
     srcProps: string[];
     srcEntity: string;
     options?: ViewDefinitionOptions;
+    version: string;
 }
 
 export type IdGenerator = (collectionPath: string) => Promise<string[]>;
