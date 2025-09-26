@@ -639,7 +639,6 @@ describe("onFormSubmit", () => {
     jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() => Promise.resolve({status: "allowed"}));
     jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(false);
     jest.spyOn(indexutils, "distributeFnNonTransactional").mockResolvedValue([]);
-    jest.spyOn(indexutils, "distributeFnTransactional").mockResolvedValue([]);
     jest.spyOn(indexutils, "distributeLater").mockResolvedValue();
     jest.spyOn(viewLogics, "queueRunViewLogics").mockResolvedValue();
     jest.spyOn(distribution, "convertInstructionsToDbValues").mockResolvedValue({

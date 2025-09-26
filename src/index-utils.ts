@@ -356,7 +356,7 @@ export function getSecurityFn(entity: string, targetVersion: string): SecurityFn
     ?.securityFn;
 }
 
-export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultDoc[]): Promise<Map<string, LogicResultDoc[]>> {
+export const expandConsolidateAndGroupByDstPath = async (logicDocs: LogicResultDoc[]): Promise<Map<string, LogicResultDoc[]>> => {
   function warnOverwritingKeys(existing: any, incoming: any, type: string, dstPath: string) {
     for (const key in incoming) {
       if (existing && Object.prototype.hasOwnProperty.call(existing, key)) {
@@ -503,7 +503,7 @@ export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultD
   }
 
   return consolidated;
-}
+};
 
 export async function runViewLogics(logicResultDoc: LogicResultDoc, targetVersion: string): Promise<LogicResult[]> {
   const {
