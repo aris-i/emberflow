@@ -99,8 +99,7 @@ export function versionCompare(a: string, b: string): number {
   return 0;
 }
 
-export async function
-runPatchLogics(appVersion: string, dstPath: string, txn: Transaction): Promise<LogicResult[]> {
+export async function runPatchLogics(appVersion: string, dstPath: string, txn: Transaction): Promise<LogicResult[]> {
   const {entity} = findMatchingDocPathRegex(dstPath);
   if (!entity) {
     console.error("Entity should not be blank");
@@ -110,6 +109,7 @@ runPatchLogics(appVersion: string, dstPath: string, txn: Transaction): Promise<L
   const logicResults: LogicResult[] = [];
   const snapshot = await txn.get(db.doc(dstPath));
   const data = snapshot.data();
+  console.debug("data", data);
   if (!data) return logicResults;
 
   const dataVersion = data["@dataVersion"] || "0.0.0";
@@ -140,5 +140,6 @@ runPatchLogics(appVersion: string, dstPath: string, txn: Transaction): Promise<L
       timeFinished: admin.firestore.Timestamp.now(),
     });
   }
+  console.debug("patchLogicResults", logicResults);
   return logicResults;
 }
