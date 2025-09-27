@@ -875,12 +875,12 @@ describe("onFormSubmit", () => {
     expect(expandConsolidateAndGroupByDstPathMock).toHaveBeenNthCalledWith(3, [...normalPriorityDocs, ...additionalNormalPriorityDocs]);
     expect(indexutils.groupDocsByTargetDocPath).toHaveBeenNthCalledWith(2, normalPriorityDstPathLogicDocsMap, docPath);
     expect(indexutils.distributeFnNonTransactional).toHaveBeenNthCalledWith(3, normalPriorityDocsByDocPath);
-    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(1, normalPriorityOtherDocsByDocPath);
+    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(1, normalPriorityOtherDocsByDocPath, "1.0.0",);
 
     expect(expandConsolidateAndGroupByDstPathMock).toHaveBeenNthCalledWith(4, lowPriorityDocs);
     expect(indexutils.groupDocsByTargetDocPath).toHaveBeenNthCalledWith(3, lowPriorityDstPathLogicDocsMap, docPath);
-    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(2, lowPriorityDocsByDocPath);
-    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(3, lowPriorityOtherDocsByDocPath);
+    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(2, lowPriorityDocsByDocPath, "1.0.0",);
+    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(3, lowPriorityOtherDocsByDocPath, "1.0.0",);
 
     expect(expandConsolidateAndGroupByDstPathMock).toHaveBeenCalledTimes(4);
     expect(updateMock).toHaveBeenCalledTimes(1);

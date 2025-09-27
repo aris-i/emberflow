@@ -723,7 +723,7 @@ export async function distributeFnTransactional(
 ): Promise<LogicResultDoc[]> {
   const distributedLogicResultDocs: LogicResultDoc[] = [];
 
-  async function distributeTransactionalLogicResults() {
+  const distributeTransactionalLogicResults= async () => {
     const transactionalResults = logicResults.filter((result) => result.transactional);
     if (transactionalResults.length === 0) {
       console.info("No transactional logic results to distribute");
@@ -740,9 +740,11 @@ export async function distributeFnTransactional(
         await distributeDoc(logicDoc, undefined, txn);
       }
     }
-  }
+  };
 
   await distributeTransactionalLogicResults();
 
   return distributedLogicResultDocs;
 }
+
+

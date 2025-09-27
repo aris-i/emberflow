@@ -78,7 +78,7 @@ describe("mapViewDefinitions", () => {
       "as/a/ds/d=View@0.0.0:a:prop1,prop2",
       "a/d#g=ViewArrayMap@0.0.0:b:prop1,prop2",
       "as/c=View@0.0.0:b:prop1,prop2:syncCreate=true",
-      "as/c#f=ViewMap@0.0.2:b:prop1,prop2:syncCreate=true,type=topic",
+      "as/c#f=ViewMap@0.0.2:b:prop1,prop2:syncCreate=true",
     ];
 
     const Entity = {

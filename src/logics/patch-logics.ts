@@ -21,8 +21,8 @@ export async function queueRunPatchLogics(appVersion: string, ...dstPaths: strin
   try {
     for (const dstPath of dstPaths) {
       const messageId = await PATCH_LOGICS_TOPIC.publishMessage({json: {appVersion, dstPath}});
-      console.log(`queueRunPathcLogics: Message ${messageId} published.`);
-      console.debug(`queueRunPathcLogics: ${dstPath}`);
+      console.log(`queueRunPatchLogics: Message ${messageId} published.`);
+      console.debug(`queueRunPatchLogics: ${dstPath}`);
     }
   } catch (error: unknown) {
     if (error instanceof Error) {
@@ -54,8 +54,6 @@ export async function onMessageRunPatchLogicsQueue(event: CloudEvent<MessagePubl
 
       const patchLogicResultDocs = patchLogicResults.map((result) => result.documents).flat();
       const dstPathPatchLogicDocsMap: Map<string, LogicResultDoc[]> = await expandConsolidateAndGroupByDstPath(patchLogicResultDocs);
-
-      console.info("Distributing Patch Logic Results");
 
       dstPathPatchLogicDocsMap.forEach((value) => {
         value.forEach(async (logicResultDoc) => {
@@ -99,13 +97,14 @@ export function versionCompare(a: string, b: string): number {
   return 0;
 }
 
-export async function runPatchLogics(appVersion: string, dstPath: string, txn: Transaction): Promise<LogicResult[]> {
+export const runPatchLogics = async (appVersion: string, dstPath: string, txn: Transaction): Promise<LogicResult[]> => {
   const {entity} = findMatchingDocPathRegex(dstPath);
   if (!entity) {
     console.error("Entity should not be blank");
     return [];
   }
 
+  console.log("running here");
   const logicResults: LogicResult[] = [];
   const snapshot = await txn.get(db.doc(dstPath));
   const data = snapshot.data();
@@ -114,8 +113,11 @@ export async function runPatchLogics(appVersion: string, dstPath: string, txn: T
 
   const dataVersion = data["@dataVersion"] || "0.0.0";
 
+  let count = 0;
   const matchingPatchLogics = _mockable.getPatchLogicConfigs()
     .filter((patchLogicConfig) => {
+      count++;
+      console.debug("count", count);
       return entity === patchLogicConfig.entity &&
             versionCompare(dataVersion, patchLogicConfig.version) < 0 &&
         versionCompare(patchLogicConfig.version, appVersion) <= 0;
@@ -140,6 +142,5 @@ export async function runPatchLogics(appVersion: string, dstPath: string, txn: T
       timeFinished: admin.firestore.Timestamp.now(),
     });
   }
-  console.debug("patchLogicResults", logicResults);
   return logicResults;
-}
+};

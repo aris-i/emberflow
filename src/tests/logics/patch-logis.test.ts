@@ -1,14 +1,25 @@
-import {runPatchLogics, versionCompare} from "../../logics/patch-logics";
+import {
+  onMessageRunPatchLogicsQueue,
+  queueRunPatchLogics,
+  runPatchLogics,
+  versionCompare,
+} from "../../logics/patch-logics";
 import {firestore} from "firebase-admin";
 import * as paths from "../../utils/paths";
 import * as admin from "firebase-admin";
-import {PatchLogicConfig, ProjectConfig} from "../../types";
-import {initializeEmberFlow} from "../../index";
+import {LogicResult, LogicResultDoc, PatchLogicConfig, ProjectConfig} from "../../types";
+import {db, initializeEmberFlow, PATCH_LOGICS_TOPIC} from "../../index";
 import {dbStructure, Entity} from "../../sample-custom/db-structure";
 import {securityConfigs} from "../../sample-custom/security";
 import {validatorConfigs} from "../../sample-custom/validators";
 import Transaction = firestore.Transaction;
 import Timestamp = firestore.Timestamp;
+import {pubsubUtils} from "../../utils/pubsub";
+import * as ViewLogics from "../../logics/view-logics";
+import * as PatchLogics from "../../logics/patch-logics";
+import * as indexUtils from "../../index-utils";
+import {CloudEvent} from "firebase-functions/core";
+import {MessagePublishedData} from "firebase-functions/pubsub";
 
 const projectConfig: ProjectConfig = {
   projectId: "your-project-id",
@@ -24,6 +35,40 @@ const projectConfig: ProjectConfig = {
 };
 admin.initializeApp({
   databaseURL: "https://test-project.firebaseio.com",
+});
+
+initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfigs, validatorConfigs, [], []);
+
+describe("queueRunPatchLogics", () => {
+  const messageId = "test-message-id";
+  let publishMessageSpy: jest.SpyInstance;
+  beforeEach(() => {
+    jest.restoreAllMocks();
+    publishMessageSpy = jest.spyOn(PATCH_LOGICS_TOPIC, "publishMessage")
+      .mockResolvedValue(messageId as never);
+  });
+
+  it("should queue docs to run patch logics", async () => {
+    const appVersion = "3.0.0";
+    const dstPath = "users/userId";
+    await queueRunPatchLogics(appVersion, dstPath);
+
+    expect(publishMessageSpy).toHaveBeenCalledWith({json: {appVersion, dstPath}});
+  });
+
+  it("should be able to queue multiple dstPaths", async () => {
+    const appVersion = "3.0.0";
+    const dstPathList = [
+      "users/userId",
+      "users/userId2",
+      "users/userId3",
+    ];
+    await queueRunPatchLogics(appVersion, ...dstPathList);
+
+    expect(publishMessageSpy).toHaveBeenNthCalledWith(1, {json: {appVersion, dstPath: dstPathList[0]}});
+    expect(publishMessageSpy).toHaveBeenNthCalledWith(2, {json: {appVersion, dstPath: dstPathList[1]}});
+    expect(publishMessageSpy).toHaveBeenNthCalledWith(3, {json: {appVersion, dstPath: dstPathList[2]}});
+  });
 });
 
 describe("versionCompare", () => {
@@ -60,7 +105,6 @@ describe("versionCompare", () => {
     expect(versionCompare("1.a.4", "1.0.3")).toBeGreaterThan(0);
   });
 });
-
 
 describe("runPatchLogics", () => {
   const logicFn1 = jest.fn().mockResolvedValue({
@@ -122,38 +166,37 @@ describe("runPatchLogics", () => {
     regex: /users/,
   });
 
-  it("should run the patch logics between dataVersion and appVersion", async () => {
+  it("should run the patch logics between dataVersion and appVersion then " +
+    "update the version of the data", async () => {
     const dstPath = "users/userId";
 
-    initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfigs, validatorConfigs, [], patchLogics);
-    await runPatchLogics(appVersion, dstPath, txn);
+    initializeEmberFlow(
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs,
+      validatorConfigs,
+      [],
+      patchLogics
+    );
+    const result = await runPatchLogics(appVersion, dstPath, txn);
 
+    // should run the appropriate logics
     expect(logicFn1).not.toHaveBeenCalled();
     expect(logicFn2).toHaveBeenCalled();
     expect(logicFn2Point5).toHaveBeenCalled();
     expect(logicFn3).not.toHaveBeenCalled();
 
+    // should run the logics in the correct order
     expect(logicFn2.mock.invocationCallOrder[0])
       .toBeLessThan(logicFn2Point5.mock.invocationCallOrder[0]);
-  });
 
-  it("should run the patch logics between dataVersion and appVersion", async () => {
-    const dstPath = "users/userId";
-
-    initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfigs, validatorConfigs, [], patchLogics);
-    const result = await runPatchLogics(appVersion, dstPath, txn);
-
+    // should update the data version
     expect(result).toEqual([
       {
         status: "finished",
         documents: [
-          {
-            "action": "merge",
-            "doc": {
-              "@dataVersion": "2.0.0",
-            },
-            "dstPath": "users/userId",
-          },
           {
             "action": "merge",
             "doc": {
@@ -167,10 +210,114 @@ describe("runPatchLogics", () => {
       },
       {
         status: "finished",
-        documents: [],
+        documents: [
+          {
+            "action": "merge",
+            "doc": {
+              "@dataVersion": "2.5.0",
+            },
+            "dstPath": "users/userId",
+          },
+        ],
         execTime: expect.any(Number),
         timeFinished: expect.any(Timestamp),
       },
     ]);
+  });
+});
+
+describe("onMessageRunPatchLogicsQueue", () => {
+  const isProcessedSpy =
+    jest.spyOn(pubsubUtils, "isProcessed").mockResolvedValue(false);
+  const trackProcessedIdsSpy =
+    jest.spyOn(pubsubUtils, "trackProcessedIds").mockResolvedValue();
+  const queueRunViewLogicsSpy =
+    jest.spyOn(ViewLogics, "queueRunViewLogics").mockResolvedValue();
+
+  const patchLogicResult1: LogicResult = {
+    name: "logic1",
+    status: "finished",
+    documents: [
+      {
+        action: "merge",
+        doc: {"@dataVersion": "2.0.0"},
+        dstPath: "users/userId",
+      },
+    ],
+  };
+  const patchLogicResult2: LogicResult = {
+    name: "logic2",
+    status: "finished",
+    documents: [
+      {
+        action: "merge",
+        doc: {
+          firstName: "john",
+          lastName: "doe",
+        },
+        instructions: {
+          fullName: "del",
+        },
+        dstPath: "users/userId",
+      },
+      {
+        action: "merge",
+        doc: {"@dataVersion": "2.5.0"},
+        dstPath: "users/userId",
+      },
+    ],
+  };
+
+  const patchLogicResults: LogicResult[] = [patchLogicResult1, patchLogicResult2];
+
+  const runPatchLogicsSpy =
+    jest.spyOn(PatchLogics, "runPatchLogics").mockResolvedValue(patchLogicResults);
+
+  const txnGet = jest.fn();
+  const fakeTxn = {
+    get: txnGet,
+  } as unknown as FirebaseFirestore.Transaction;
+
+  const runTxnSpy = jest
+    .spyOn(db, "runTransaction")
+    .mockImplementation(async (callback: any) => callback(fakeTxn));
+
+  const expandConsolidateResult = new Map<string, LogicResultDoc[]>([
+    ["users/doc1", [{
+      action: "merge",
+      priority: "normal",
+      dstPath: "users/doc1",
+      doc: {
+        firstName: "john",
+        lastName: "doe",
+      },
+      instructions: {field2: "--", field4: "--"},
+    }]],
+  ]);
+  const expandConsolidateAndGroupByDstPathSpy =
+    jest.spyOn(indexUtils, "expandConsolidateAndGroupByDstPath")
+      .mockResolvedValue(expandConsolidateResult);
+
+  const event = {
+    data: {
+      message: {
+        json: {
+          appVersion: "2.9.0",
+          dstPath: "users/userId",
+        },
+      },
+    },
+  } as CloudEvent<MessagePublishedData>;
+
+  it("should properly run the function", async () => {
+    const result = await onMessageRunPatchLogicsQueue(event);
+    expect(runTxnSpy).toHaveBeenCalledTimes(1);
+    expect(isProcessedSpy).toHaveBeenCalled();
+    expect(trackProcessedIdsSpy).toHaveBeenCalled();
+    expect(trackProcessedIdsSpy).toHaveBeenCalled();
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith("users/userId");
+    expect(runPatchLogicsSpy).toHaveBeenCalledWith("2.9.0", "users/userId", fakeTxn);
+    expect(expandConsolidateAndGroupByDstPathSpy).toHaveBeenCalledWith();
+    expect(result).toEqual("Processed patch logics");
   });
 });

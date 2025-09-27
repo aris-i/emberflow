@@ -1,42 +1,40 @@
-import {view} from "../../utils/db-structure";
+import {propView, view} from "../../utils/db-structure";
 
 describe("view", () => {
-  it("should return correct string without options", () => {
-    const result = view("user", ["name", "email"]);
-    expect(result).toBe("View:user:name,email:");
+  it("uses default version when not provided", () => {
+    const result = view("User", ["id", "name"], {syncCreate: true});
+    expect(result).toBe("View:User@0.0.0:id,name:syncCreate=true");
   });
 
-  it("should return correct string with a single string option", () => {
-    const result = view("product", ["id"], {sortBy: "price"});
-    expect(result).toBe("View:product:id:sortBy=price");
+  it("uses provided version", () => {
+    const result = view("Order", ["id"], {syncCreate: false}, "1.2.3");
+    expect(result).toBe("View:Order@1.2.3:id:syncCreate=false");
   });
 
-  it("should return correct string with a single boolean option", () => {
-    const result = view("order", ["id", "status"], {active: true});
-    expect(result).toBe("View:order:id,status:active=true");
+  it("should handle multiple options", () => {
+    const result = view("Order", ["id"], {syncCreate: true, type: "view-array"}, "1.2.3");
+    expect(result).toBe("View:Order@1.2.3:id:syncCreate=true,type=view-array");
   });
 
-  it("should return correct string with multiple options", () => {
-    const result = view("category", ["name"], {
-      visible: true,
-      filter: "popular",
-    });
-    // order of keys is preserved in Object.entries
-    expect(result).toBe("View:category:name:visible=true,filter=popular");
+  it("should handle no options", () => {
+    const result = view("Product", ["sku", "price"], undefined, "1.0.0" );
+    expect(result).toBe("View:Product@1.0.0:sku,price:");
+  });
+});
+
+describe("propView", () => {
+  it("returns ViewMap when type is map", () => {
+    const result = propView("map", "Inventory", ["count"], {syncCreate: true});
+    expect(result).toBe("ViewMap@0.0.0:Inventory:count:syncCreate=true");
   });
 
-  it("should handle empty props array", () => {
-    const result = view("dashboard", []);
-    expect(result).toBe("View:dashboard::");
+  it("returns ViewArrayMap when type is array-map", () => {
+    const result = propView("array-map", "Inventory", ["count"], {syncCreate: true}, "2.0.0");
+    expect(result).toBe("ViewArrayMap@2.0.0:Inventory:count:syncCreate=true");
   });
 
-  it("should handle empty options object", () => {
-    const result = view("settings", ["theme"], {});
-    expect(result).toBe("View:settings:theme:");
-  });
-
-  it("should handle false boolean option", () => {
-    const result = view("settings", ["notifications"], {enabled: false});
-    expect(result).toBe("View:settings:notifications:enabled=false");
+  it("handles empty options", () => {
+    const result = propView("map", "Inventory", ["count"]);
+    expect(result).toBe("ViewMap@0.0.0:Inventory:count:");
   });
 });

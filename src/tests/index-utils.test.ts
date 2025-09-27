@@ -635,10 +635,11 @@ describe("distributeLater", () => {
       ["/users/test-user-id/documents/doc1", [doc1]],
       ["/users/test-user-id/documents/doc2", [doc2]],
     ]);
-    await indexUtils.distributeLater(usersDocsByDstPath);
+    const targetVersion = "1.0.0";
+    await indexUtils.distributeLater(usersDocsByDstPath, targetVersion);
 
     expect(queueForDistributionLaterSpy).toHaveBeenCalledTimes(1);
-    expect(queueForDistributionLaterSpy).toHaveBeenCalledWith(doc1, doc2);
+    expect(queueForDistributionLaterSpy).toHaveBeenCalledWith(targetVersion, doc1, doc2);
   });
 });
 
@@ -1671,15 +1672,40 @@ describe("expandConsolidateAndGroupByDstPath", () => {
 
 describe("runViewLogics", () => {
   // Define mock functions
-  const viewLogicFn1 = jest.fn();
   const viewLogicFn2 = jest.fn();
+  const viewLogicFn1V2Point5 = jest.fn();
   const customViewLogicsConfig: ViewLogicConfig[] = [
     {
       name: "logic 1",
       entity: "user",
       actionTypes: ["merge", "delete"],
       modifiedFields: ["sampleField1", "sampleField2"],
-      viewLogicFn: viewLogicFn1,
+      viewLogicFn: jest.fn(),
+      version: "1.0.0",
+    },
+    {
+      name: "logic 1",
+      entity: "user",
+      actionTypes: ["merge", "delete"],
+      modifiedFields: ["sampleField1", "sampleField2"],
+      viewLogicFn: jest.fn(),
+      version: "2.0.0",
+    },
+    {
+      name: "logic 1",
+      entity: "user",
+      actionTypes: ["merge", "delete"],
+      modifiedFields: ["sampleField1", "sampleField2"],
+      viewLogicFn: viewLogicFn1V2Point5,
+      version: "2.5.0",
+    },
+    {
+      name: "logic 1",
+      entity: "user",
+      actionTypes: ["merge", "delete"],
+      modifiedFields: ["sampleField1", "sampleField2"],
+      viewLogicFn: jest.fn(),
+      version: "3.0.0",
     },
     {
       name: "logic 2",
@@ -1687,6 +1713,7 @@ describe("runViewLogics", () => {
       actionTypes: ["merge", "delete"],
       modifiedFields: ["sampleField3"],
       viewLogicFn: viewLogicFn2,
+      version: "1.0.0",
     },
   ];
 
@@ -1695,6 +1722,7 @@ describe("runViewLogics", () => {
   });
 
   it("should run view logics properly", async () => {
+    const targetVersion = "2.9.0";
     const logicResult1: LogicResultDoc = {
       action: "merge" as LogicResultDocAction,
       priority: "normal",
@@ -1706,16 +1734,16 @@ describe("runViewLogics", () => {
       priority: "normal",
       dstPath: "users/user124",
     };
-    viewLogicFn1.mockResolvedValue({});
+    viewLogicFn1V2Point5.mockResolvedValue({});
     viewLogicFn2.mockResolvedValue({});
 
-    const results1 = await indexUtils.runViewLogics(logicResult1);
-    const results2 = await indexUtils.runViewLogics(logicResult2);
+    const results1 = await indexUtils.runViewLogics(logicResult1, targetVersion);
+    const results2 = await indexUtils.runViewLogics(logicResult2, targetVersion);
     const results = [...results1, ...results2];
 
-    expect(viewLogicFn1).toHaveBeenCalledTimes(2);
-    expect(viewLogicFn1.mock.calls[0][0]).toBe(logicResult1);
-    expect(viewLogicFn1.mock.calls[1][0]).toBe(logicResult2);
+    expect(viewLogicFn1V2Point5).toHaveBeenCalledTimes(2);
+    expect(viewLogicFn1V2Point5.mock.calls[0][0]).toBe(logicResult1);
+    expect(viewLogicFn1V2Point5.mock.calls[1][0]).toBe(logicResult2);
     expect(viewLogicFn2).toHaveBeenCalledTimes(1);
     expect(viewLogicFn2).toHaveBeenCalledWith(logicResult2);
     expect(results).toHaveLength(3);
