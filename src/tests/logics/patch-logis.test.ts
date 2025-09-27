@@ -8,18 +8,23 @@ import {firestore} from "firebase-admin";
 import * as paths from "../../utils/paths";
 import * as admin from "firebase-admin";
 import {LogicResult, LogicResultDoc, PatchLogicConfig, ProjectConfig} from "../../types";
-import {db, initializeEmberFlow, PATCH_LOGICS_TOPIC} from "../../index";
+import {
+  db,
+  initializeEmberFlow,
+  PATCH_LOGICS_TOPIC,
+  PATCH_LOGICS_TOPIC_NAME,
+} from "../../index";
 import {dbStructure, Entity} from "../../sample-custom/db-structure";
 import {securityConfigs} from "../../sample-custom/security";
 import {validatorConfigs} from "../../sample-custom/validators";
 import Transaction = firestore.Transaction;
 import Timestamp = firestore.Timestamp;
-import {pubsubUtils} from "../../utils/pubsub";
-import * as ViewLogics from "../../logics/view-logics";
-import * as PatchLogics from "../../logics/patch-logics";
+import * as viewLogics from "../../logics/view-logics";
+import * as patchLogics from "../../logics/patch-logics";
 import * as indexUtils from "../../index-utils";
 import {CloudEvent} from "firebase-functions/core";
 import {MessagePublishedData} from "firebase-functions/pubsub";
+import {pubsubUtils} from "../../utils/pubsub";
 
 const projectConfig: ProjectConfig = {
   projectId: "your-project-id",
@@ -227,13 +232,15 @@ describe("runPatchLogics", () => {
 });
 
 describe("onMessageRunPatchLogicsQueue", () => {
-  const isProcessedSpy =
-    jest.spyOn(pubsubUtils, "isProcessed").mockResolvedValue(false);
-  const trackProcessedIdsSpy =
-    jest.spyOn(pubsubUtils, "trackProcessedIds").mockResolvedValue();
-  const queueRunViewLogicsSpy =
-    jest.spyOn(ViewLogics, "queueRunViewLogics").mockResolvedValue();
+  let isProcessedSpy: jest.SpyInstance;
+  let trackProcessedIdsSpy: jest.SpyInstance;
+  let queueRunViewLogicsSpy: jest.SpyInstance;
+  let runPatchLogicsSpy: jest.SpyInstance;
+  let runTransactionSpy: jest.SpyInstance;
+  let expandConsolidateAndGroupByDstPathSpy: jest.SpyInstance;
+  let distributeDocSpy: jest.SpyInstance;
 
+  const dstPath = "users/userId";
   const patchLogicResult1: LogicResult = {
     name: "logic1",
     status: "finished",
@@ -241,7 +248,16 @@ describe("onMessageRunPatchLogicsQueue", () => {
       {
         action: "merge",
         doc: {"@dataVersion": "2.0.0"},
-        dstPath: "users/userId",
+        dstPath,
+      },
+      {
+        action: "create",
+        doc: {
+          "@id": "userId",
+          "firstName": "Maria",
+          "lastName": "Doe",
+        },
+        dstPath: "users/userId/collaborators/collaboratorId",
       },
     ],
   };
@@ -258,66 +274,104 @@ describe("onMessageRunPatchLogicsQueue", () => {
         instructions: {
           fullName: "del",
         },
-        dstPath: "users/userId",
+        dstPath,
       },
       {
         action: "merge",
         doc: {"@dataVersion": "2.5.0"},
-        dstPath: "users/userId",
+        dstPath,
       },
     ],
   };
-
   const patchLogicResults: LogicResult[] = [patchLogicResult1, patchLogicResult2];
-
-  const runPatchLogicsSpy =
-    jest.spyOn(PatchLogics, "runPatchLogics").mockResolvedValue(patchLogicResults);
-
   const txnGet = jest.fn();
   const fakeTxn = {
     get: txnGet,
   } as unknown as FirebaseFirestore.Transaction;
 
-  const runTxnSpy = jest
-    .spyOn(db, "runTransaction")
-    .mockImplementation(async (callback: any) => callback(fakeTxn));
-
   const expandConsolidateResult = new Map<string, LogicResultDoc[]>([
-    ["users/doc1", [{
-      action: "merge",
-      priority: "normal",
-      dstPath: "users/doc1",
-      doc: {
-        firstName: "john",
-        lastName: "doe",
-      },
-      instructions: {field2: "--", field4: "--"},
-    }]],
+    ["users/doc1", [
+      {
+        action: "merge",
+        priority: "normal",
+        dstPath: "users/doc1",
+        doc: {
+          firstName: "john",
+          lastName: "doe",
+        },
+        instructions: {field2: "--", field4: "--"},
+      }],
+    ],
+    ["users/userId/collaborators/collaboratorId", [
+      {
+        action: "create",
+        doc: {
+          "@id": "userId",
+          "firstName": "Maria",
+          "lastName": "Doe",
+        },
+        dstPath: "users/userId/collaborators/collaboratorId",
+      }]],
   ]);
-  const expandConsolidateAndGroupByDstPathSpy =
-    jest.spyOn(indexUtils, "expandConsolidateAndGroupByDstPath")
-      .mockResolvedValue(expandConsolidateResult);
 
+  const targetVersion = "2.9.0";
   const event = {
     data: {
       message: {
         json: {
-          appVersion: "2.9.0",
+          appVersion: targetVersion,
           dstPath: "users/userId",
         },
       },
     },
   } as CloudEvent<MessagePublishedData>;
 
-  it("should properly run the function", async () => {
+  beforeEach(() => {
+    isProcessedSpy = jest.spyOn(pubsubUtils, "isProcessed").mockResolvedValue(false);
+    trackProcessedIdsSpy = jest.spyOn(pubsubUtils, "trackProcessedIds").mockResolvedValue();
+    queueRunViewLogicsSpy = jest.spyOn(viewLogics, "queueRunViewLogics").mockResolvedValue();
+    runPatchLogicsSpy = jest.spyOn(patchLogics, "runPatchLogics").mockResolvedValue(patchLogicResults);
+    runTransactionSpy = jest.spyOn(db, "runTransaction").mockImplementation(async (callback: any) => callback(fakeTxn));
+    expandConsolidateAndGroupByDstPathSpy = jest.spyOn(indexUtils, "expandConsolidateAndGroupByDstPath")
+      .mockResolvedValue(expandConsolidateResult);
+    distributeDocSpy = jest.spyOn(indexUtils, "distributeDoc").mockResolvedValue();
+  });
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("should skip duplicate message", async () => {
+    isProcessedSpy = jest.spyOn(pubsubUtils, "isProcessed").mockResolvedValue(true);
+    jest.spyOn(console, "log").mockImplementation();
+    await patchLogics.onMessageRunPatchLogicsQueue(event);
+
+    expect(isProcessedSpy).toHaveBeenCalledWith(PATCH_LOGICS_TOPIC_NAME, event.id);
+    expect(console.log).toHaveBeenCalledWith("Skipping duplicate message");
+  });
+
+  it("should distribute patch logic result docs", async () => {
+    jest.spyOn(indexUtils._mockable, "createMetricExecution").mockResolvedValue();
     const result = await onMessageRunPatchLogicsQueue(event);
-    expect(runTxnSpy).toHaveBeenCalledTimes(1);
-    expect(isProcessedSpy).toHaveBeenCalled();
-    expect(trackProcessedIdsSpy).toHaveBeenCalled();
-    expect(trackProcessedIdsSpy).toHaveBeenCalled();
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith("users/userId");
-    expect(runPatchLogicsSpy).toHaveBeenCalledWith("2.9.0", "users/userId", fakeTxn);
-    expect(expandConsolidateAndGroupByDstPathSpy).toHaveBeenCalledWith();
+
+    expect(isProcessedSpy).toHaveBeenCalledWith(PATCH_LOGICS_TOPIC_NAME, event.id);
+    expect(runTransactionSpy).toHaveBeenCalledTimes(1);
+    expect(runPatchLogicsSpy).toHaveBeenCalledWith(targetVersion, dstPath, fakeTxn);
+
+    const flattenedPatchLogicResults = patchLogicResults.flatMap((result) => result.documents);
+    expect(expandConsolidateAndGroupByDstPathSpy).toHaveBeenCalledWith(flattenedPatchLogicResults);
+
+    const consolidatedLogicResultDoc1 = expandConsolidateResult.get("users/doc1")?.[0];
+    expect(distributeDocSpy).toHaveBeenNthCalledWith(1, consolidatedLogicResultDoc1, undefined, fakeTxn);
+    const consolidatedLogicResultDoc2 = expandConsolidateResult.get("users/userId/collaborators/collaboratorId")?.[0];
+    expect(distributeDocSpy).toHaveBeenNthCalledWith(2, consolidatedLogicResultDoc2, undefined, fakeTxn);
+
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(
+      targetVersion,
+      consolidatedLogicResultDoc1,
+      consolidatedLogicResultDoc2,
+    );
+
+    expect(trackProcessedIdsSpy).toHaveBeenCalledWith(PATCH_LOGICS_TOPIC_NAME, event.id);
     expect(result).toEqual("Processed patch logics");
   });
 });
