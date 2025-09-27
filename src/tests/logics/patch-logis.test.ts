@@ -108,6 +108,8 @@ describe("versionCompare", () => {
     // Because parseInt of non-numeric yields NaN, then || 0 → 0
     expect(versionCompare("1.a.3", "1.0.3")).toBe(0);
     expect(versionCompare("1.a.4", "1.0.3")).toBeGreaterThan(0);
+    expect(versionCompare("1.a.4", "1.0.3")).toBeGreaterThan(0);
+    expect(versionCompare("1.a.4", "1.0.3")).toBeGreaterThan(0);
   });
 });
 

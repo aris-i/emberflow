@@ -505,7 +505,10 @@ export async function onFormSubmit(
 
     await queueRunViewLogics(targetVersion, ...logicDocsThatWereAlreadyDistributed);
 
-    await queueRunPatchLogics(appVersion, docPath, ...logicDocsThatWereAlreadyDistributed.map((doc) => doc.dstPath));
+    await queueRunPatchLogics(
+      appVersion,
+      ...new Set([docPath, ...logicDocsThatWereAlreadyDistributed.map((doc) => doc.dstPath)])
+    );
 
     const end = performance.now();
     const execTime = end - start;
@@ -593,6 +596,7 @@ async function distributeNonTransactionalLogicResults(
   await distributeLater(lowPriorityDocsByDocPath, targetVersion);
   await distributeLater(lowPriorityOtherDocsByDocPath, targetVersion);
 
+  console.debug("attention: forRunViewLogicQueuing", forRunViewLogicQueuing);
   return forRunViewLogicQueuing;
 }
 
