@@ -596,7 +596,6 @@ async function distributeNonTransactionalLogicResults(
   await distributeLater(lowPriorityDocsByDocPath, targetVersion);
   await distributeLater(lowPriorityOtherDocsByDocPath, targetVersion);
 
-  console.debug("attention: forRunViewLogicQueuing", forRunViewLogicQueuing);
   return forRunViewLogicQueuing;
 }
 
