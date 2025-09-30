@@ -276,11 +276,9 @@ export async function onFormSubmit(
     const trimmedForm = trimStrings(JSON.parse(formSnapshot.val().formData));
     const form = reviveDateAndTimestamp(trimmedForm);
     console.log("form", form);
-    const metadata = form["@metadata"] || {};
+    const appVersion = form["@appVersion"];
 
     console.info("Validating appVersion");
-    const {app} = metadata;
-    const {version: appVersion} = app || {};
     if (!appVersion) {
       const message = "No appVersion found in metadata";
       console.warn(message);
@@ -414,6 +412,7 @@ export async function onFormSubmit(
         entity,
       };
 
+      const metadata = form["@metadata"] || {};
       const action: Action = {
         eventContext,
         actionType,

@@ -136,8 +136,6 @@ describe("onFormSubmit", () => {
       nestedField2: "oldValue",
     },
   };
-
-  const metadata = {"app": {"version": "1.0.0"}};
   beforeEach(() => {
     jest.spyOn(indexutils._mockable, "createMetricExecution").mockResolvedValue();
     jest.spyOn(_mockable, "createNowTimestamp").mockReturnValue(Timestamp.now());
@@ -198,7 +196,7 @@ describe("onFormSubmit", () => {
         "field2": "oldValue",
         "@actionType": "update",
         "@docPath": "users/test-uid",
-        "@metadata": metadata,
+        "@appVersion": "1.0.0",
       }),
       "@status": "submit",
     };
@@ -224,7 +222,7 @@ describe("onFormSubmit", () => {
         "field2": "oldValue",
         "@actionType": "update",
         "@docPath": "users/another-user-id",
-        "@metadata": metadata,
+        "@appVersion": "1.0.0",
       }),
       "@status": "submit",
     };
@@ -246,7 +244,7 @@ describe("onFormSubmit", () => {
         "field2": "oldValue",
         "@actionType": "update",
         "@docPath": "users/another-user-id",
-        "@metadata": metadata,
+        "@appVersion": "1.0.0",
       }),
       "@status": "submit",
     };
@@ -264,7 +262,7 @@ describe("onFormSubmit", () => {
         "field1": "newValue",
         "field2": "oldValue",
         "@docPath": "users/test-uid",
-        "@metadata": metadata,
+        "@appVersion": "1.0.0",
       }),
       "@status": "submit",
     };
@@ -286,7 +284,7 @@ describe("onFormSubmit", () => {
         "field2": "oldValue",
         "@actionType": "update",
         "@docPath": "users/test-uid",
-        "@metadata": metadata,
+        "@appVersion": "1.0.0",
       }),
       "@status": "submit",
     };
@@ -320,7 +318,7 @@ describe("onFormSubmit", () => {
       "field2": "oldValue",
       "@actionType": "update",
       "@docPath": docPath,
-      "@metadata": metadata,
+      "@appVersion": "1.0.0",
     };
     const form = {
       "formData": JSON.stringify(formData),
@@ -375,7 +373,7 @@ describe("onFormSubmit", () => {
         "@actionType": "create",
         "someField": "exampleValue",
         "@docPath": "users/test-uid",
-        "@metadata": metadata,
+        "@appVersion": "1.0.0",
       }),
       "@status": "submit",
     };
@@ -427,7 +425,7 @@ describe("onFormSubmit", () => {
         "@actionType": "create",
         "name": "test",
         "@docPath": "users/test-uid",
-        "@metadata": metadata,
+        "@appVersion": "1.0.0",
       }),
       "@status": "submit",
     };
@@ -477,7 +475,7 @@ describe("onFormSubmit", () => {
         "@actionType": "create",
         "name": "test",
         "@docPath": "@internal/forDistribution/distributions/0",
-        "@metadata": metadata,
+        "@appVersion": "1.0.0",
       }),
       "@status": "submit",
     };
@@ -534,7 +532,7 @@ describe("onFormSubmit", () => {
         "@docPath": "users/test-uid",
         "@actionType": "create",
         "name": "test",
-        "@metadata": metadata,
+        "@appVersion": "1.0.0",
       }),
       "@status": "submit",
     };
@@ -577,7 +575,7 @@ describe("onFormSubmit", () => {
         name: "test",
       },
       status: "processed-with-errors",
-      metadata: metadata,
+      metadata: {},
     };
 
     // Test that the runBusinessLogics function was called with the correct parameters
@@ -724,11 +722,7 @@ describe("onFormSubmit", () => {
         "@actionType": "create",
         "name": "test",
         "@docPath": docPath,
-        "@metadata": {
-          app: {
-            version: "4.0.0",
-          },
-        },
+        "@appVersion": "4.0.0",
       }),
       "@status": "submit",
     };
