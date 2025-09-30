@@ -397,7 +397,10 @@ export const expandConsolidateAndGroupByDstPath = async (logicDocs: LogicResultD
       }
     }
     if (!merged) {
-      existingDocs.push(logicResultDoc);
+      existingDocs.push({
+        ...logicResultDoc,
+        ...(logicResultDoc.instructions ? {instructions: logicResultDoc.instructions} : {}),
+      });
     }
   }
 
