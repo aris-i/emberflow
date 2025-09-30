@@ -23,6 +23,7 @@ export interface Action{
     status: "new" | "processing" | "processed" | "processed-with-errors";
     timeCreated: Timestamp;
     metadata: Record<string, any>;
+    appVersion: string;
     message?: string
 }
 

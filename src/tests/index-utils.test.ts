@@ -893,7 +893,6 @@ describe("runBusinessLogics", () => {
     id: "user123",
     name: "John Doe",
   };
-  const metadata = {version: "1.0"};
   const action:Action = {
     user,
     eventContext: {
@@ -913,7 +912,8 @@ describe("runBusinessLogics", () => {
     status: "processing",
     timeCreated: firestore.Timestamp.now(),
     modifiedFields: formModifiedFields,
-    metadata,
+    metadata: {},
+    appVersion: "1.0.0",
   };
 
   let distributeFn: jest.Mock;

@@ -422,6 +422,7 @@ export async function onFormSubmit(
         modifiedFields: formModifiedFields,
         user,
         metadata,
+        appVersion,
       };
 
       await formRef.update({"@status": "submitted"});

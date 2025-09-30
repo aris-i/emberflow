@@ -552,12 +552,12 @@ describe("onFormSubmit", () => {
     await onFormSubmit(event);
 
     const expectedAction = {
-      actionType: "create",
-      document: {
+      "actionType": "create",
+      "document": {
         description: "test description",
         name: "test",
       },
-      eventContext: {
+      "eventContext": {
         docId: "test-uid",
         docPath: "users/test-uid",
         entity: "user",
@@ -565,17 +565,18 @@ describe("onFormSubmit", () => {
         id: "test-id",
         uid: "test-uid",
       },
-      modifiedFields: {
+      "modifiedFields": {
         field1: "value1",
         field2: "value2",
       },
-      timeCreated: _mockable.createNowTimestamp(),
-      user: {
+      "timeCreated": _mockable.createNowTimestamp(),
+      "user": {
         description: "test description",
         name: "test",
       },
-      status: "processed-with-errors",
-      metadata: {},
+      "status": "processed-with-errors",
+      "metadata": {},
+      "appVersion": "1.0.0",
     };
 
     // Test that the runBusinessLogics function was called with the correct parameters
