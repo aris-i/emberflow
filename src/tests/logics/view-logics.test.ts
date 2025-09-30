@@ -18,8 +18,8 @@ import {
   VIEW_LOGICS_TOPIC_NAME,
 } from "../../index";
 import * as admin from "firebase-admin";
-import {securityConfig} from "../../sample-custom/security";
-import {validatorConfig} from "../../sample-custom/validators";
+import {securityConfigs} from "../../sample-custom/security";
+import {validatorConfigs} from "../../sample-custom/validators";
 import {dbStructure, Entity} from "../../sample-custom/db-structure";
 import {DocumentReference} from "firebase-admin/lib/firestore";
 import Timestamp = firestore.Timestamp;
@@ -50,12 +50,13 @@ const projectConfig: ProjectConfig = {
 admin.initializeApp({
   databaseURL: "https://test-project.firebaseio.com",
 });
-initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, []);
+initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfigs, validatorConfigs, [], []);
 
 const vd1: ViewDefinition = {
   srcEntity: "user",
   srcProps: ["name", "avatar", "age"],
   destEntity: "friend",
+  version: "1.0.0",
 };
 
 const vd2: ViewDefinition = {
@@ -66,6 +67,7 @@ const vd2: ViewDefinition = {
     name: "followers",
     type: "array-map",
   },
+  version: "1.0.0",
 };
 
 const vd3: ViewDefinition = {
@@ -76,12 +78,14 @@ const vd3: ViewDefinition = {
     name: "createdBy",
     type: "map",
   },
+  version: "1.0.0",
 };
 
 const vd4: ViewDefinition = {
   srcEntity: "friend",
   srcProps: ["name", "avatar", "age"],
   destEntity: "user",
+  version: "1.0.0",
 };
 
 const createLogicResultDoc: LogicResultDoc = {
@@ -626,6 +630,7 @@ describe("createViewLogicFn", () => {
         name: "createdBy",
         type: "map",
       },
+      version: "1.0.0",
     });
 
     const dstPath = "topics/topic21/prepAreas/prepArea2/menus/prepAreaMenuItem34";
@@ -653,6 +658,7 @@ describe("createViewLogicFn", () => {
         name: "createdBy",
         type: "map",
       },
+      version: "1.0.0",
     });
 
     const dstPath = "topics/topic21/prepAreas/prepArea2/menus/prepAreaMenuItem34#orderItem";
@@ -680,6 +686,7 @@ describe("createViewLogicFn", () => {
         name: "createdBy",
         type: "map",
       },
+      version: "1.0.0",
     });
 
     const dstPath = "topics/topic21/prepAreas/prepArea2/menus/prepAreaMenuItem34#orderItem";
@@ -905,6 +912,7 @@ describe("createViewLogicFn", () => {
         srcProps: ["amount", "ingredient"],
         destEntity: "menuItemIngredient",
         options: {syncCreate: true},
+        version: "1.0.0",
       });
       const logicResultDoc: LogicResultDoc = {
         action: "create",
@@ -974,6 +982,7 @@ describe("createViewLogicFn", () => {
         srcProps: ["amount", "ingredient"],
         destEntity: "menuItemIngredient",
         options: {syncCreate: true},
+        version: "1.0.0",
       });
 
       const dstPath = "topics/topic22/ingredients/ingredient1";
@@ -1075,6 +1084,7 @@ describe("queueRunViewLogics", () => {
         return "message-id";
       });
   });
+  const targetVersion = "1.0.0";
 
   it("should queue docs to run view logics", async () => {
     const doc1: LogicResultDoc = {
@@ -1083,9 +1093,9 @@ describe("queueRunViewLogics", () => {
       doc: {name: "test-doc-name-merge"},
       dstPath: "users/test-user-id/documents/doc1",
     };
-    await viewLogics.queueRunViewLogics(doc1);
+    await viewLogics.queueRunViewLogics(targetVersion, doc1);
 
-    expect(publishMessageSpy).toHaveBeenCalledWith({json: doc1});
+    expect(publishMessageSpy).toHaveBeenCalledWith({json: {"doc": doc1, "targetVersion": targetVersion}});
   });
 });
 
@@ -1162,7 +1172,10 @@ describe("onMessageViewLogicsQueue", () => {
   const event = {
     data: {
       message: {
-        json: doc1,
+        json: {
+          doc: doc1,
+          targetVersion: "1.0.0",
+        },
       },
     },
   } as CloudEvent<MessagePublishedData>;
@@ -1193,7 +1206,7 @@ describe("onMessageViewLogicsQueue", () => {
     const viewLogicsResultDocs = viewLogicsResult.map((logicResult) => logicResult.documents).flat();
     const result = await viewLogics.onMessageViewLogicsQueue(event);
 
-    expect(runViewLogicsSpy).toHaveBeenCalledWith(doc1);
+    expect(runViewLogicsSpy).toHaveBeenCalledWith(doc1, "1.0.0");
     expect(createMetricExecutionSpy).toHaveBeenCalledWith([...viewLogicsResult, distributeFnLogicResult]);
     expect(expandConsolidateAndGroupByDstPathSpy).toHaveBeenCalledWith(viewLogicsResultDocs);
     expect(distributeSpy).toHaveBeenCalledWith(expandConsolidateResult);

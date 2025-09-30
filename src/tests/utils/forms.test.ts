@@ -9,8 +9,8 @@ import {initializeEmberFlow, SUBMIT_FORM_TOPIC, SUBMIT_FORM_TOPIC_NAME} from "..
 import {ProjectConfig} from "../../types";
 import * as admin from "firebase-admin";
 import {dbStructure, Entity} from "../../sample-custom/db-structure";
-import {securityConfig} from "../../sample-custom/security";
-import {validatorConfig} from "../../sample-custom/validators";
+import {securityConfigs} from "../../sample-custom/security";
+import {validatorConfigs} from "../../sample-custom/validators";
 import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
 import spyOn = jest.spyOn;
 import * as misc from "../../utils/misc";
@@ -40,7 +40,7 @@ const projectConfig: ProjectConfig = {
 admin.initializeApp({
   databaseURL: "https://test-project.firebaseio.com",
 });
-initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, []);
+initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfigs, validatorConfigs, [], []);
 
 describe("queueSubmitForm", () => {
   let publishMessageSpy: jest.SpyInstance;

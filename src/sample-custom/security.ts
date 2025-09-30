@@ -76,10 +76,21 @@ const userSecurityFn: SecurityFn =
       };
     };
 
-export const securityConfig: SecurityConfig = {
-  // Implement your security functions for each entity here
-  [Entity.User]: userSecurityFn,
-  [Entity.Feed]: allAllowed,
-  [Entity.Friend]: allAllowed,
-};
+export const securityConfigs: SecurityConfig[] = [
+  {
+    entity: Entity.User,
+    securityFn: userSecurityFn,
+    version: "1",
+  },
+  {
+    entity: Entity.Feed,
+    securityFn: allAllowed,
+    version: "1",
+  },
+  {
+    entity: Entity.Friend,
+    securityFn: allAllowed,
+    version: "1",
+  },
+];
 

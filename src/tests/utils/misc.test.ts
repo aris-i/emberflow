@@ -14,8 +14,9 @@ import {db, initializeEmberFlow} from "../../index";
 import {ProjectConfig} from "../../types";
 import * as admin from "firebase-admin";
 import {dbStructure, Entity} from "../../sample-custom/db-structure";
-import {securityConfig} from "../../sample-custom/security";
-import {validatorConfig} from "../../sample-custom/validators";
+import {securityConfigs} from "../../sample-custom/security";
+import {validatorConfigs} from "../../sample-custom/validators";
+import {patchLogicConfigs} from "../../sample-custom/patch-logics";
 
 const projectConfig: ProjectConfig = {
   projectId: "your-project-id",
@@ -32,7 +33,7 @@ const projectConfig: ProjectConfig = {
 admin.initializeApp({
   databaseURL: "https://test-project.firebaseio.com",
 });
-initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, []);
+initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfigs, validatorConfigs, [], patchLogicConfigs);
 
 describe("deepEqual", () => {
   it("should correctly compare Firestore Field types", () => {

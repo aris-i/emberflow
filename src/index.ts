@@ -5,9 +5,11 @@ import {
   FirebaseAdmin,
   Instructions,
   LogicConfig,
-  LogicConfigModifiedFieldsType, LogicResult,
+  LogicConfigModifiedFieldsType,
+  LogicResult,
   LogicResultDoc,
   LogicResultDocAction,
+  PatchLogicConfig,
   ProjectConfig,
   RunBusinessLogicStatus,
   SecurityConfig,
@@ -23,6 +25,7 @@ import {
   createMetricLogicDoc,
   delayFormSubmissionAndCheckIfCancelled,
   distributeFnNonTransactional,
+  distributeFnTransactional,
   distributeLater,
   expandConsolidateAndGroupByDstPath,
   getFormModifiedFields,
@@ -31,7 +34,6 @@ import {
   onDeleteFunction,
   runBusinessLogics,
   validateForm,
-  distributeDoc,
 } from "./index-utils";
 import {initDbStructure} from "./init-db-structure";
 import {createViewLogicFn, onMessageViewLogicsQueue, queueRunViewLogics} from "./logics/view-logics";
@@ -39,27 +41,22 @@ import {resetUsageStats, stopBillingIfBudgetExceeded, useBillProtect} from "./ut
 import {Firestore} from "firebase-admin/firestore";
 import {DatabaseEvent, DataSnapshot, onValueCreated} from "firebase-functions/v2/database";
 import {parseEntity} from "./utils/paths";
-import {database, firestore} from "firebase-admin";
+import {database} from "firebase-admin";
 import {initClient} from "emberflow-admin-client/lib";
 import {internalDbStructure, InternalEntity} from "./db-structure";
 import {cleanActionsAndForms, onMessageSubmitFormQueue} from "./utils/forms";
 import {PubSub, Topic} from "@google-cloud/pubsub";
 import {onMessagePublished} from "firebase-functions/v2/pubsub";
-import {reviveDateAndTimestamp, deleteForms, trimStrings} from "./utils/misc";
-import Database = database.Database;
-import {
-  onMessageForDistributionQueue,
-  onMessageInstructionsQueue,
-  instructionsReducer,
-} from "./utils/distribution";
+import {reviveDateAndTimestamp, trimStrings} from "./utils/misc";
+import {instructionsReducer, onMessageForDistributionQueue, onMessageInstructionsQueue} from "./utils/distribution";
 import {cleanPubSubProcessedIds} from "./utils/pubsub";
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import {onDocumentCreated} from "firebase-functions/v2/firestore";
-import {onRequest} from "firebase-functions/v2/https";
 import {UserRecord} from "firebase-admin/lib/auth";
 import {debounce} from "./utils/functions";
-import Transaction = firestore.Transaction;
 import {extractTransactionGetOnly} from "./utils/transaction";
+import {onMessageRunPatchLogicsQueue, queueRunPatchLogics, versionCompare} from "./logics/patch-logics";
+import Database = database.Database;
 
 export let admin: FirebaseAdmin;
 export let db: Firestore;
@@ -67,9 +64,10 @@ export let rtdb: Database;
 export let pubsub: PubSub;
 export let dbStructure: Record<string, object>;
 export let Entity: Record<string, string>;
-export let securityConfig: SecurityConfig;
-export let validatorConfig: ValidatorConfig;
+export let securityConfigs: SecurityConfig[];
+export let validatorConfigs: ValidatorConfig[];
 export let logicConfigs: LogicConfig[];
+export let patchLogicConfigs: PatchLogicConfig[];
 export let docPaths: Record<string, string>;
 export let colPaths: Record<string, string>;
 export let docPathsRegex: Record<string, RegExp>;
@@ -78,16 +76,19 @@ export let projectConfig: ProjectConfig;
 export const functionsConfig: Record<string, any> = {};
 export const SUBMIT_FORM_TOPIC_NAME = "submit-form-queue";
 export const VIEW_LOGICS_TOPIC_NAME = "view-logics-queue";
+export const PATCH_LOGICS_TOPIC_NAME = "patch-logics-queue";
 export const FOR_DISTRIBUTION_TOPIC_NAME = "for-distribution-queue";
 export const INSTRUCTIONS_TOPIC_NAME = "instructions-queue";
 export const pubSubTopics = [
   SUBMIT_FORM_TOPIC_NAME,
   VIEW_LOGICS_TOPIC_NAME,
+  PATCH_LOGICS_TOPIC_NAME,
   FOR_DISTRIBUTION_TOPIC_NAME,
   INSTRUCTIONS_TOPIC_NAME,
 ];
 export let SUBMIT_FORM_TOPIC: Topic;
 export let VIEW_LOGICS_TOPIC: Topic;
+export let PATCH_LOGICS_TOPIC: Topic;
 export let FOR_DISTRIBUTION_TOPIC: Topic;
 export let INSTRUCTIONS_TOPIC: Topic;
 
@@ -101,9 +102,10 @@ export function initializeEmberFlow(
   adminInstance: FirebaseAdmin,
   customDbStructure: Record<string, object>,
   CustomEntity: Record<string, string>,
-  customSecurityConfig: SecurityConfig,
-  customValidatorConfig: ValidatorConfig,
+  customSecurityConfigs: SecurityConfig[],
+  customValidatorConfigs: ValidatorConfig[],
   customLogicConfigs: LogicConfig[],
+  customPatchLogicConfigs: PatchLogicConfig[],
 ) : {
     docPaths: Record<string, string>;
     colPaths: Record<string, string>;
@@ -117,12 +119,14 @@ export function initializeEmberFlow(
   pubsub = new PubSub();
   dbStructure = {...customDbStructure, ...internalDbStructure};
   Entity = {...CustomEntity, ...InternalEntity};
-  securityConfig = customSecurityConfig;
-  validatorConfig = customValidatorConfig;
+  securityConfigs = [...customSecurityConfigs];
+  validatorConfigs = [...customValidatorConfigs];
   logicConfigs = [...customLogicConfigs];
+  patchLogicConfigs = [...customPatchLogicConfigs];
   initClient(admin.app(), "service");
   SUBMIT_FORM_TOPIC = pubsub.topic(SUBMIT_FORM_TOPIC_NAME);
   VIEW_LOGICS_TOPIC = pubsub.topic(VIEW_LOGICS_TOPIC_NAME);
+  PATCH_LOGICS_TOPIC = pubsub.topic(PATCH_LOGICS_TOPIC_NAME);
   FOR_DISTRIBUTION_TOPIC = pubsub.topic(FOR_DISTRIBUTION_TOPIC_NAME);
   INSTRUCTIONS_TOPIC = pubsub.topic(INSTRUCTIONS_TOPIC_NAME);
 
@@ -144,6 +148,7 @@ export function initializeEmberFlow(
       actionTypes: ["create", "merge", "delete"] as LogicResultDocAction[],
       modifiedFields: viewDef.srcProps,
       viewLogicFn: srcToDstViewLogicFn,
+      version: viewDef.version,
     };
     const dstToSrcLogicConfig = {
       name: `${viewDef.destEntity} Reverse ViewLogic`,
@@ -152,6 +157,7 @@ export function initializeEmberFlow(
       modifiedFields: "all" as LogicConfigModifiedFieldsType,
       ...(viewDef.destProp ? {destProp: viewDef.destProp.name} : {}),
       viewLogicFn: dstToSrcViewLogicFn,
+      version: viewDef.version,
     } as ViewLogicConfig;
     return [srcToDstLogicConfig, dstToSrcLogicConfig];
   }).flat();
@@ -169,11 +175,6 @@ export function initializeEmberFlow(
     },
     useBillProtect(onFormSubmit)
   );
-  // TODO: Make this disappear when deployed to production
-  functionsConfig["deleteForms"] = onRequest({
-    timeoutSeconds: 540,
-    region: projectConfig.region,
-  }, deleteForms);
 
   functionsConfig["onBudgetAlert"] =
         functions.pubsub.topic(projectConfig.budgetAlertTopicName).onPublish(stopBillingIfBudgetExceeded);
@@ -190,6 +191,12 @@ export function initializeEmberFlow(
     maxInstances: 5,
     timeoutSeconds: 540,
   }, onMessageViewLogicsQueue);
+  functionsConfig["onMessagePatchLogicsQueue"] = onMessagePublished({
+    topic: PATCH_LOGICS_TOPIC_NAME,
+    region: projectConfig.region,
+    maxInstances: 5,
+    timeoutSeconds: 540,
+  }, onMessageRunPatchLogicsQueue);
   functionsConfig["onMessageForDistributionQueue"] = onMessagePublished({
     topic: FOR_DISTRIBUTION_TOPIC_NAME,
     region: projectConfig.region,
@@ -269,6 +276,15 @@ export async function onFormSubmit(
     const trimmedForm = trimStrings(JSON.parse(formSnapshot.val().formData));
     const form = reviveDateAndTimestamp(trimmedForm);
     console.log("form", form);
+    const appVersion = form["@appVersion"];
+
+    console.info("Validating appVersion");
+    if (!appVersion) {
+      const message = "No appVersion found in metadata";
+      console.warn(message);
+      await formRef.update({"@status": "error", "@messages": message});
+      return;
+    }
 
     console.info("Validating docPath");
     const docPath = form["@docPath"] as string;
@@ -301,22 +317,6 @@ export async function onFormSubmit(
       return;
     }
 
-    console.info("Validating form");
-    const validateFormStart = performance.now();
-    const [hasValidationError, validationResult] = await validateForm(entity, form);
-    const validateFormEnd = performance.now();
-    const validateFormLogicResult: LogicResult = {
-      name: "validateForm",
-      status: "finished",
-      documents: [],
-      execTime: validateFormEnd - validateFormStart,
-    };
-    logicResults.push(validateFormLogicResult);
-    if (hasValidationError) {
-      await formRef.update({"@status": "validation-error", "@messages": JSON.stringify(validationResult)});
-      return;
-    }
-
     // Check for delay
     console.info("Checking for delay");
     const delay = form["@delay"];
@@ -333,13 +333,34 @@ export async function onFormSubmit(
       logicResults: [],
     };
 
-    const forRunViewLogicQueuing: LogicResultDoc[] = [];
+    const logicDocsThatWereAlreadyDistributed: LogicResultDoc[] = [];
     const actionRef = _mockable.initActionRef(formId);
+    let targetVersion = appVersion;
     const runTransactionStatus = await db.runTransaction(async (txn) => {
       const docRef = db.doc(docPath);
       const document = (await txn.get(docRef)).data() || {};
       const formModifiedFields = getFormModifiedFields(form, document);
 
+      const dataVersion = document["@dataVersion"] || appVersion;
+      targetVersion = versionCompare(appVersion, dataVersion) <= 0 ? appVersion : dataVersion;
+
+      console.info("Validating form");
+      const validateFormStart = performance.now();
+      const [hasValidationError, validationResult] = await validateForm(entity, form, targetVersion);
+      const validateFormEnd = performance.now();
+      const validateFormLogicResult: LogicResult = {
+        name: "validateForm",
+        status: "finished",
+        documents: [],
+        execTime: validateFormEnd - validateFormStart,
+      };
+      logicResults.push(validateFormLogicResult);
+      if (hasValidationError) {
+        await formRef.update({"@status": "validation-error", "@messages": JSON.stringify(validationResult)});
+        return "form-validation-error";
+      }
+
+      // Let's get the user data
       let user;
       if (!isServiceAccount) {
         const userRef = db.doc(`users/${userId}`);
@@ -356,7 +377,7 @@ export async function onFormSubmit(
 
       console.info("Validating Security");
       const txnGet = extractTransactionGetOnly(txn);
-      const securityFn = getSecurityFn(entity);
+      const securityFn = getSecurityFn(entity, targetVersion);
       if (securityFn) {
         const securityFnStart = performance.now();
         const securityResult = await securityFn(txnGet, entity, docPath, document,
@@ -401,12 +422,13 @@ export async function onFormSubmit(
         modifiedFields: formModifiedFields,
         user,
         metadata,
+        appVersion,
       };
 
       await formRef.update({"@status": "submitted"});
       console.info("Running Business Logics");
       const businessLogicStart = performance.now();
-      runBusinessLogicStatus = await runBusinessLogics(txnGet, action);
+      runBusinessLogicStatus = await runBusinessLogics(txnGet, action, targetVersion);
       const businessLogicEnd = performance.now();
       const runBusinessLogicsMetrics: LogicResult = {
         name: "runBusinessLogics",
@@ -450,7 +472,7 @@ export async function onFormSubmit(
       await saveLogicResults();
 
       const distributeTransactionalLogicResultsStart = performance.now();
-      forRunViewLogicQueuing.push(...await distributeFnTransactional(txn, runBusinessLogicStatus.logicResults));
+      logicDocsThatWereAlreadyDistributed.push(...await distributeFnTransactional(txn, runBusinessLogicStatus.logicResults));
       const distributeTransactionalLogicResultsEnd = performance.now();
       const distributeTransactionalLogicResults: LogicResult = {
         name: "distributeTransactionalLogicResults",
@@ -462,12 +484,14 @@ export async function onFormSubmit(
       return "transaction-complete";
     });
 
-    if (["no-user-data-error", "security-error"].includes(runTransactionStatus)) {
-      console.warn("No User Data Error / Security Error in transaction");
+    if (runTransactionStatus.includes("error")) {
+      console.warn("Error in transaction", runTransactionStatus);
       return;
     }
     const distributeNonTransactionalLogicResultsStart = performance.now();
-    forRunViewLogicQueuing.push(...await distributeNonTransactionalLogicResults(runBusinessLogicStatus.logicResults, docPath));
+    logicDocsThatWereAlreadyDistributed.push(...await distributeNonTransactionalLogicResults(
+      runBusinessLogicStatus.logicResults, docPath, targetVersion
+    ));
     const distributeNonTransactionalLogicResultsEnd = performance.now();
     const distributeNonTransactionalPerfLogicResults: LogicResult = {
       name: "distributeNonTransactionalLogicResults",
@@ -479,7 +503,12 @@ export async function onFormSubmit(
 
     await formRef.update({"@status": "finished"});
 
-    await queueRunViewLogics(...forRunViewLogicQueuing);
+    await queueRunViewLogics(targetVersion, ...logicDocsThatWereAlreadyDistributed);
+
+    await queueRunPatchLogics(
+      appVersion,
+      ...new Set([docPath, ...logicDocsThatWereAlreadyDistributed.map((doc) => doc.dstPath)])
+    );
 
     const end = performance.now();
     const execTime = end - start;
@@ -514,6 +543,7 @@ export async function onFormSubmit(
 async function distributeNonTransactionalLogicResults(
   logicResults: LogicResult[],
   docPath: string,
+  targetVersion: string
 ): Promise<LogicResultDoc[]> {
   const forRunViewLogicQueuing: LogicResultDoc[] = [];
   const nonTransactionalResults = logicResults.filter((result) => !result.transactional);
@@ -554,7 +584,7 @@ async function distributeNonTransactionalLogicResults(
     otherDocsByDocPath: normalPriorityOtherDocsByDocPath,
   } = groupDocsByTargetDocPath(normalPriorityDstPathLogicDocsMap, docPath);
   forRunViewLogicQueuing.push(...await distributeFnNonTransactional(normalPriorityDocsByDocPath));
-  await distributeLater(normalPriorityOtherDocsByDocPath);
+  await distributeLater(normalPriorityOtherDocsByDocPath, targetVersion);
 
   console.info(`Consolidating and Distributing Low Priority Logic Results: ${lowPriorityDocs.length}`);
   const lowPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
@@ -563,36 +593,8 @@ async function distributeNonTransactionalLogicResults(
     docsByDocPath: lowPriorityDocsByDocPath,
     otherDocsByDocPath: lowPriorityOtherDocsByDocPath,
   } = groupDocsByTargetDocPath(lowPriorityDstPathLogicDocsMap, docPath);
-  await distributeLater(lowPriorityDocsByDocPath);
-  await distributeLater(lowPriorityOtherDocsByDocPath);
-
-  return forRunViewLogicQueuing;
-}
-
-async function distributeFnTransactional(
-  txn: Transaction,
-  logicResults: LogicResult[],
-): Promise<LogicResultDoc[]> {
-  const forRunViewLogicQueuing: LogicResultDoc[] = [];
-  async function distributeTransactionalLogicResults() {
-    const transactionalResults = logicResults.filter((result) => result.transactional);
-    if (transactionalResults.length === 0) {
-      console.info("No transactional logic results to distribute");
-      return;
-    }
-    // We always distribute transactional results first
-    const transactionalDstPathLogicDocsMap =
-        await expandConsolidateAndGroupByDstPath(transactionalResults.map(
-          (result) => result.documents).flat());
-      // Write to firestore in one transaction
-    for (const [_, logicDocs] of transactionalDstPathLogicDocsMap) {
-      for (const logicDoc of logicDocs) {
-        forRunViewLogicQueuing.push(logicDoc);
-        await distributeDoc(logicDoc, undefined, txn);
-      }
-    }
-  }
-  await distributeTransactionalLogicResults();
+  await distributeLater(lowPriorityDocsByDocPath, targetVersion);
+  await distributeLater(lowPriorityOtherDocsByDocPath, targetVersion);
 
   return forRunViewLogicQueuing;
 }

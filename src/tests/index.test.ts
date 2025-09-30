@@ -3,6 +3,7 @@ import * as indexutils from "../index-utils";
 import * as transactionutils from "../utils/transaction";
 import * as admin from "firebase-admin";
 import * as viewLogics from "../logics/view-logics";
+import * as patchLogics from "../logics/patch-logics";
 import {database, firestore} from "firebase-admin";
 
 import {
@@ -25,7 +26,6 @@ import Timestamp = firestore.Timestamp;
 import Database = database.Database;
 import {expandConsolidateAndGroupByDstPath, groupDocsByTargetDocPath} from "../index-utils";
 import FieldValue = firestore.FieldValue;
-import * as indexUtils from "../index-utils";
 import * as distribution from "../utils/distribution";
 
 const projectConfig: ProjectConfig = {
@@ -93,7 +93,7 @@ jest.spyOn(admin, "database")
 
 admin.initializeApp();
 
-initializeEmberFlow(projectConfig, admin, dbStructure, Entity, {}, {}, []);
+initializeEmberFlow(projectConfig, admin, dbStructure, Entity, [], [], [], []);
 
 const refUpdateMock = jest.fn();
 const refMock = {
@@ -136,12 +136,12 @@ describe("onFormSubmit", () => {
       nestedField2: "oldValue",
     },
   };
-
   beforeEach(() => {
-    jest.spyOn(indexUtils._mockable, "createMetricExecution").mockResolvedValue();
+    jest.spyOn(indexutils._mockable, "createMetricExecution").mockResolvedValue();
     jest.spyOn(_mockable, "createNowTimestamp").mockReturnValue(Timestamp.now());
     jest.spyOn(indexutils._mockable, "createMetricExecution").mockResolvedValue();
     jest.spyOn(console, "log").mockImplementation();
+    jest.spyOn(patchLogics, "queueRunPatchLogics").mockResolvedValue();
     jest.spyOn(console, "warn").mockImplementation();
     parseEntityMock = jest.spyOn(paths, "parseEntity").mockReturnValue({
       entity: "user",
@@ -163,6 +163,32 @@ describe("onFormSubmit", () => {
     jest.restoreAllMocks();
   });
 
+  it("should return when there's no app version in metadata", async () => {
+    const form = {
+      "formData": JSON.stringify({
+        "field1": "newValue",
+        "field2": "oldValue",
+        "@actionType": "update",
+        "@docPath": "users/test-uid",
+        "@metadata": {},
+      }),
+      "@status": "submit",
+    };
+
+    const event = createEvent(form);
+    parseEntityMock.mockReturnValue({
+      entity: undefined,
+      entityId: "test-uid",
+    });
+    await onFormSubmit(event);
+
+    expect(refMock.update).toHaveBeenCalledWith({
+      "@status": "error",
+      "@messages": "No appVersion found in metadata",
+    });
+    expect(console.warn).toHaveBeenCalledWith("No appVersion found in metadata");
+  });
+
   it("should return when there's no matched entity", async () => {
     const form = {
       "formData": JSON.stringify({
@@ -170,6 +196,7 @@ describe("onFormSubmit", () => {
         "field2": "oldValue",
         "@actionType": "update",
         "@docPath": "users/test-uid",
+        "@appVersion": "1.0.0",
       }),
       "@status": "submit",
     };
@@ -195,6 +222,7 @@ describe("onFormSubmit", () => {
         "field2": "oldValue",
         "@actionType": "update",
         "@docPath": "users/another-user-id",
+        "@appVersion": "1.0.0",
       }),
       "@status": "submit",
     };
@@ -216,6 +244,7 @@ describe("onFormSubmit", () => {
         "field2": "oldValue",
         "@actionType": "update",
         "@docPath": "users/another-user-id",
+        "@appVersion": "1.0.0",
       }),
       "@status": "submit",
     };
@@ -233,6 +262,7 @@ describe("onFormSubmit", () => {
         "field1": "newValue",
         "field2": "oldValue",
         "@docPath": "users/test-uid",
+        "@appVersion": "1.0.0",
       }),
       "@status": "submit",
     };
@@ -254,6 +284,7 @@ describe("onFormSubmit", () => {
         "field2": "oldValue",
         "@actionType": "update",
         "@docPath": "users/test-uid",
+        "@appVersion": "1.0.0",
       }),
       "@status": "submit",
     };
@@ -287,6 +318,7 @@ describe("onFormSubmit", () => {
       "field2": "oldValue",
       "@actionType": "update",
       "@docPath": docPath,
+      "@appVersion": "1.0.0",
     };
     const form = {
       "formData": JSON.stringify(formData),
@@ -312,8 +344,8 @@ describe("onFormSubmit", () => {
     jest.spyOn(transactionutils, "extractTransactionGetOnly").mockReturnValue( extractedTxnGet);
     await onFormSubmit(event);
 
-    expect(getSecurityFnMock).toHaveBeenCalledWith(entity);
-    expect(validateFormMock).toHaveBeenCalledWith(entity, formData);
+    expect(getSecurityFnMock).toHaveBeenCalledWith(entity, "1.0.0");
+    expect(validateFormMock).toHaveBeenCalledWith(entity, formData, "1.0.0");
     expect(securityFnMock).toHaveBeenCalledWith(extractedTxnGet, entity, docPath, document, "update", {field1: "newValue"}, user);
     expect(refMock.update).toHaveBeenCalledWith({
       "@status": "security-error",
@@ -341,6 +373,7 @@ describe("onFormSubmit", () => {
         "@actionType": "create",
         "someField": "exampleValue",
         "@docPath": "users/test-uid",
+        "@appVersion": "1.0.0",
       }),
       "@status": "submit",
     };
@@ -368,6 +401,7 @@ describe("onFormSubmit", () => {
         "field1": "value1",
         "field2": "value2",
       });
+
     const getSecurityFnMock = jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() =>
       Promise.resolve({status: "allowed"}),
     );
@@ -391,6 +425,7 @@ describe("onFormSubmit", () => {
         "@actionType": "create",
         "name": "test",
         "@docPath": "users/test-uid",
+        "@appVersion": "1.0.0",
       }),
       "@status": "submit",
     };
@@ -440,6 +475,7 @@ describe("onFormSubmit", () => {
         "@actionType": "create",
         "name": "test",
         "@docPath": "@internal/forDistribution/distributions/0",
+        "@appVersion": "1.0.0",
       }),
       "@status": "submit",
     };
@@ -461,6 +497,7 @@ describe("onFormSubmit", () => {
   });
 
   it("should set action-status to 'finished-with-error' if there are logic error results", async () => {
+    jest.clearAllMocks();
     const validateFormMock = jest.spyOn(indexutils, "validateForm").mockResolvedValue([false, {}]);
     const getFormModifiedFieldsMock =
       jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue({
@@ -495,6 +532,7 @@ describe("onFormSubmit", () => {
         "@docPath": "users/test-uid",
         "@actionType": "create",
         "name": "test",
+        "@appVersion": "1.0.0",
       }),
       "@status": "submit",
     };
@@ -514,12 +552,12 @@ describe("onFormSubmit", () => {
     await onFormSubmit(event);
 
     const expectedAction = {
-      actionType: "create",
-      document: {
+      "actionType": "create",
+      "document": {
         description: "test description",
         name: "test",
       },
-      eventContext: {
+      "eventContext": {
         docId: "test-uid",
         docPath: "users/test-uid",
         entity: "user",
@@ -527,22 +565,24 @@ describe("onFormSubmit", () => {
         id: "test-id",
         uid: "test-uid",
       },
-      modifiedFields: {
+      "modifiedFields": {
         field1: "value1",
         field2: "value2",
       },
-      timeCreated: _mockable.createNowTimestamp(),
-      user: {
+      "timeCreated": _mockable.createNowTimestamp(),
+      "user": {
         description: "test description",
         name: "test",
       },
-      status: "processed-with-errors",
-      metadata: {},
+      "status": "processed-with-errors",
+      "metadata": {},
+      "appVersion": "1.0.0",
     };
 
     // Test that the runBusinessLogics function was called with the correct parameters
     const actionRef = _mockable.initActionRef(event.params.formId);
-    expect(transactionSetMock).toHaveBeenNthCalledWith(4, actionRef, expectedAction);
+    console.debug("debug", transactionSetMock.mock.calls);
+    expect(transactionSetMock).toHaveBeenNthCalledWith(1, actionRef, expectedAction);
 
     // form should still finish successfully
     expect(refMock.update).toHaveBeenCalledTimes(3);
@@ -552,7 +592,7 @@ describe("onFormSubmit", () => {
 
     expect(docMock.update).toHaveBeenCalledTimes(1);
     const logicResultsRef = actionRef.collection("logicResults").doc("undefined-0");
-    expect(transactionSetMock).toHaveBeenNthCalledWith(5, logicResultsRef, {
+    expect(transactionSetMock).toHaveBeenNthCalledWith(2, logicResultsRef, {
       status: "error",
       message: errorMessage,
       name: "testLogic",
@@ -574,18 +614,10 @@ describe("onFormSubmit", () => {
     setMock.mockRestore();
     transactionSetMock.mockRestore();
     transactionUpdateMock.mockRestore();
-    jest.spyOn(indexutils, "validateForm").mockResolvedValue([false, {}]);
-    jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue({"field1": "value1", "field2": "value2"});
-    jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() => Promise.resolve({status: "allowed"}));
-    jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(false);
-    jest.spyOn(indexutils, "distributeFnNonTransactional").mockResolvedValue([]);
-    jest.spyOn(indexutils, "distributeLater").mockResolvedValue();
-    jest.spyOn(viewLogics, "queueRunViewLogics").mockResolvedValue();
-    jest.spyOn(distribution, "convertInstructionsToDbValues").mockResolvedValue({
-      updateData: {
-        transactions: FieldValue.increment(-1),
-      },
-      removeData: {},
+    txnGetFnMock.mockResolvedValue({
+      data: () => ({
+        "@dataVersion": "1.0.0",
+      }),
     });
 
     const highPriorityDocs: LogicResultDoc[] = [
@@ -685,6 +717,60 @@ describe("onFormSubmit", () => {
         priority: "low",
       },
     ];
+    const docPath = "users/user-1";
+    const form = {
+      "formData": JSON.stringify({
+        "@actionType": "create",
+        "name": "test",
+        "@docPath": docPath,
+        "@appVersion": "4.0.0",
+      }),
+      "@status": "submit",
+    };
+
+    const event = createEvent(form);
+
+    const transactionalDstPathLogicDocsMap =
+      await expandConsolidateAndGroupByDstPath(transactionalDocs);
+
+    const highPriorityDstPathLogicDocsMap =
+      await expandConsolidateAndGroupByDstPath(highPriorityDocs);
+    const {
+      docsByDocPath: highPriorityDocsByDocPath,
+      otherDocsByDocPath: highPriorityOtherDocsByDocPath,
+    } = groupDocsByTargetDocPath(highPriorityDstPathLogicDocsMap, docPath);
+
+    const normalPriorityDstPathLogicDocsMap =
+      await expandConsolidateAndGroupByDstPath([...normalPriorityDocs, ...additionalNormalPriorityDocs]);
+    const {
+      docsByDocPath: normalPriorityDocsByDocPath,
+      otherDocsByDocPath: normalPriorityOtherDocsByDocPath,
+    } = groupDocsByTargetDocPath(normalPriorityDstPathLogicDocsMap, docPath);
+
+    const lowPriorityDstPathLogicDocsMap =
+      await expandConsolidateAndGroupByDstPath(lowPriorityDocs);
+    const {
+      docsByDocPath: lowPriorityDocsByDocPath,
+      otherDocsByDocPath: lowPriorityOtherDocsByDocPath,
+    } = groupDocsByTargetDocPath(lowPriorityDstPathLogicDocsMap, docPath);
+
+    jest.spyOn(indexutils, "validateForm").mockResolvedValue([false, {}]);
+    jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue({"field1": "value1", "field2": "value2"});
+    jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() => Promise.resolve({status: "allowed"}));
+    jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(false);
+    jest.spyOn(indexutils, "distributeFnNonTransactional")
+      .mockResolvedValueOnce([...highPriorityDstPathLogicDocsMap.values()].flat())
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([...normalPriorityDstPathLogicDocsMap.values()].flat());
+    jest.spyOn(indexutils, "distributeLater").mockResolvedValue();
+    const queueRunViewLogicsSpy = jest.spyOn(viewLogics, "queueRunViewLogics").mockResolvedValue();
+    const queueRunPatchLogicsSpy = jest.spyOn(patchLogics, "queueRunPatchLogics").mockResolvedValue();
+    jest.spyOn(distribution, "convertInstructionsToDbValues").mockResolvedValue({
+      updateData: {
+        transactions: FieldValue.increment(-1),
+      },
+      removeData: {},
+    });
 
     const logicResults: LogicResult[] = [
       {
@@ -716,43 +802,6 @@ describe("onFormSubmit", () => {
         },
       );
 
-    const docPath = "users/user-1";
-    const form = {
-      "formData": JSON.stringify({
-        "@actionType": "create",
-        "name": "test",
-        "@docPath": docPath,
-      }),
-      "@status": "submit",
-    };
-
-    const event = createEvent(form);
-
-    const highPriorityDstPathLogicDocsMap =
-      await expandConsolidateAndGroupByDstPath(highPriorityDocs);
-    const {
-      docsByDocPath: highPriorityDocsByDocPath,
-      otherDocsByDocPath: highPriorityOtherDocsByDocPath,
-    } = groupDocsByTargetDocPath(highPriorityDstPathLogicDocsMap, docPath);
-
-
-    const normalPriorityDstPathLogicDocsMap =
-      await expandConsolidateAndGroupByDstPath([...normalPriorityDocs, ...additionalNormalPriorityDocs]);
-    const {
-      docsByDocPath: normalPriorityDocsByDocPath,
-      otherDocsByDocPath: normalPriorityOtherDocsByDocPath,
-    } = groupDocsByTargetDocPath(normalPriorityDstPathLogicDocsMap, docPath);
-
-    const lowPriorityDstPathLogicDocsMap =
-      await expandConsolidateAndGroupByDstPath(lowPriorityDocs);
-    const {
-      docsByDocPath: lowPriorityDocsByDocPath,
-      otherDocsByDocPath: lowPriorityOtherDocsByDocPath,
-    } = groupDocsByTargetDocPath(lowPriorityDstPathLogicDocsMap, docPath);
-
-    const transactionalDstPathLogicDocsMap =
-      await expandConsolidateAndGroupByDstPath(transactionalDocs);
-
     const viewLogicResults: LogicResult[] = [{
       name: "User ViewLogic",
       status: "finished",
@@ -760,11 +809,12 @@ describe("onFormSubmit", () => {
       documents: logicResults.map((result) => result.documents).flat(),
     }];
 
-    jest.spyOn(indexutils, "expandConsolidateAndGroupByDstPath")
-      .mockResolvedValueOnce(transactionalDstPathLogicDocsMap)
-      .mockResolvedValueOnce(highPriorityDstPathLogicDocsMap)
-      .mockResolvedValueOnce(normalPriorityDstPathLogicDocsMap)
-      .mockResolvedValueOnce(lowPriorityDstPathLogicDocsMap);
+    const expandConsolidateAndGroupByDstPathMock =
+      jest.spyOn(indexutils, "expandConsolidateAndGroupByDstPath")
+        .mockResolvedValueOnce(transactionalDstPathLogicDocsMap)
+        .mockResolvedValueOnce(highPriorityDstPathLogicDocsMap)
+        .mockResolvedValueOnce(normalPriorityDstPathLogicDocsMap)
+        .mockResolvedValueOnce(lowPriorityDstPathLogicDocsMap);
     jest.spyOn(indexutils, "groupDocsByTargetDocPath")
       .mockReturnValueOnce({
         docsByDocPath: highPriorityDocsByDocPath,
@@ -792,33 +842,53 @@ describe("onFormSubmit", () => {
     expect(refMock.update).toHaveBeenNthCalledWith(3, {"@status": "finished"});
 
     // Test that the functions are called in the correct sequence
-    console.debug("set", transactionSetMock.mock.calls);
-    console.debug("update", transactionUpdateMock.mock.calls);
     expect(transactionMock.set).toHaveBeenCalledTimes(18);
     expect(transactionMock.update).toHaveBeenCalledTimes(0);
 
-    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(1, transactionalDocs);
+    expect(expandConsolidateAndGroupByDstPathMock).toHaveBeenNthCalledWith(1, transactionalDocs);
     expect(transactionMock.delete).toHaveBeenCalledTimes(1);
 
-    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(2, highPriorityDocs);
+    expect(expandConsolidateAndGroupByDstPathMock).toHaveBeenNthCalledWith(2, highPriorityDocs);
     expect(indexutils.groupDocsByTargetDocPath).toHaveBeenNthCalledWith(1, highPriorityDstPathLogicDocsMap, docPath);
     expect(indexutils.distributeFnNonTransactional).toHaveBeenNthCalledWith(1, highPriorityDocsByDocPath);
     expect(indexutils.distributeFnNonTransactional).toHaveBeenNthCalledWith(2, highPriorityOtherDocsByDocPath);
 
-    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(3, [...normalPriorityDocs, ...additionalNormalPriorityDocs]);
+    expect(expandConsolidateAndGroupByDstPathMock).toHaveBeenNthCalledWith(3, [...normalPriorityDocs, ...additionalNormalPriorityDocs]);
     expect(indexutils.groupDocsByTargetDocPath).toHaveBeenNthCalledWith(2, normalPriorityDstPathLogicDocsMap, docPath);
     expect(indexutils.distributeFnNonTransactional).toHaveBeenNthCalledWith(3, normalPriorityDocsByDocPath);
-    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(1, normalPriorityOtherDocsByDocPath);
+    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(1, normalPriorityOtherDocsByDocPath, "1.0.0",);
 
-    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenNthCalledWith(4, lowPriorityDocs);
+    expect(expandConsolidateAndGroupByDstPathMock).toHaveBeenNthCalledWith(4, lowPriorityDocs);
     expect(indexutils.groupDocsByTargetDocPath).toHaveBeenNthCalledWith(3, lowPriorityDstPathLogicDocsMap, docPath);
-    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(2, lowPriorityDocsByDocPath);
-    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(3, lowPriorityOtherDocsByDocPath);
+    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(2, lowPriorityDocsByDocPath, "1.0.0",);
+    expect(indexutils.distributeLater).toHaveBeenNthCalledWith(3, lowPriorityOtherDocsByDocPath, "1.0.0",);
 
-    expect(indexutils.expandConsolidateAndGroupByDstPath).toHaveBeenCalledTimes(4);
+    expect(expandConsolidateAndGroupByDstPathMock).toHaveBeenCalledTimes(4);
     expect(updateMock).toHaveBeenCalledTimes(1);
     expect(updateMock.mock.calls[0][0]).toEqual({
       execTime: expect.any(Number),
     });
+
+    const distributedLogicResultDocs = [
+      ...transactionalDstPathLogicDocsMap.values(),
+      ...highPriorityDstPathLogicDocsMap.values(),
+      ...normalPriorityDstPathLogicDocsMap.values(),
+    ].flat();
+
+    // Should run views update using the target version
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(
+      "1.0.0",
+      ...distributedLogicResultDocs,
+    );
+
+    // Should run patches update using the app version along with the consolidated paths
+    expect(queueRunPatchLogicsSpy).toHaveBeenCalledWith(
+      "4.0.0",
+      "users/user-1",
+      "transactions/transaction-1",
+      "messages/message-1",
+      "users/user-2",
+      "users/user-1/activities/activity-1",
+    );
   });
 });

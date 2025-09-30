@@ -32,6 +32,7 @@ const logics: LogicConfig[] = [
     modifiedFields: "all",
     entities: "all",
     logicFn: echoLogic,
+    version: "1",
   },
   // more logics here
 ];

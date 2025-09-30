@@ -2,8 +2,8 @@ import {ProjectConfig} from "../../types";
 import * as admin from "firebase-admin";
 import {initializeEmberFlow, pubSubTopics} from "../../index";
 import {dbStructure, Entity} from "../../sample-custom/db-structure";
-import {securityConfig} from "../../sample-custom/security";
-import {validatorConfig} from "../../sample-custom/validators";
+import {securityConfigs} from "../../sample-custom/security";
+import {validatorConfigs} from "../../sample-custom/validators";
 import {cleanPubSubProcessedIds, pubsubUtils} from "../../utils/pubsub";
 import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
 import * as misc from "../../utils/misc";
@@ -24,7 +24,7 @@ const projectConfig: ProjectConfig = {
 admin.initializeApp({
   databaseURL: "https://test-project.firebaseio.com",
 });
-initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, []);
+initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfigs, validatorConfigs, [], []);
 
 describe("pubsubUtils", () => {
   let docSetMock: jest.Mock;

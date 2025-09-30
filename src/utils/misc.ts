@@ -1,8 +1,6 @@
 import {firestore} from "firebase-admin";
-import {rtdb} from "../index";
 import Timestamp = firestore.Timestamp;
 import GeoPoint = firestore.GeoPoint;
-import {Request, Response} from "firebase-functions/v1";
 import Query = firestore.Query;
 import {BatchUtil} from "./batch";
 
@@ -86,59 +84,6 @@ export function computeHashCode(str: string) {
 export async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-
-export async function deleteForms(request: Request, response: Response) {
-  const userId = request.query.userId;
-
-  if (!userId) {
-    response.status(400).send("No ID provided");
-    return;
-  }
-
-  const ref = rtdb.ref(`forms/${userId}`);
-  const batchSize = 10;
-
-  try {
-    let lastKey = "";
-    let lastBatch = false;
-    while (!lastBatch) {
-      let query = ref.orderByKey().limitToFirst(batchSize);
-      if (lastKey) {
-        query = query.startAt(lastKey);
-      }
-
-      const snapshot = await query.once("value");
-      const data = snapshot.val();
-
-      if (!data) {
-        if (lastKey) {
-          response.send(`Data with ID ${userId} deleted`);
-        } else {
-          response.status(404).send("No data found for the provided ID");
-        }
-        return;
-      }
-
-      const keys = Object.keys(data);
-      lastKey = keys[keys.length - 1];
-
-      for (const key of keys) {
-        console.debug("Deleting: ", key);
-        await ref.child(key).remove();
-      }
-
-      if (keys.length < batchSize) {
-        lastBatch = true;
-        response.send(`Data with ID ${userId} deleted`);
-        return;
-      }
-    }
-  } catch (error) {
-    console.error("Error processing data:", error);
-    response.status(500).send("Internal Server Error");
-  }
-}
-
 
 export class LimitedSet<T> {
   private maxLength: number;

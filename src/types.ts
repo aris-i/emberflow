@@ -23,6 +23,7 @@ export interface Action{
     status: "new" | "processing" | "processed" | "processed-with-errors";
     timeCreated: Timestamp;
     metadata: Record<string, any>;
+    appVersion: string;
     message?: string
 }
 
@@ -91,6 +92,7 @@ export interface LogicConfig{
     entities: LogicConfigEntities;
     addtlFilterFn?: LogicConfigFilterFn;
     logicFn: LogicFn;
+    version: string; // i.e. "xx.yy.zz"
 }
 
 export type ViewLogicFn = (logicResultDoc: LogicResultDoc) => Promise<LogicResult>;
@@ -101,6 +103,15 @@ export interface ViewLogicConfig{
     entity: string;
     destProp?: string;
     viewLogicFn: ViewLogicFn;
+    version: string;
+}
+
+export type PatchLogicFn = (dstPath: string, data: DocumentData) => Promise<LogicResult>;
+export interface PatchLogicConfig{
+    name: string;
+    entity: string;
+    patchLogicFn: PatchLogicFn;
+    version: string; // i.e. "xx.yy.zz"
 }
 
 export type SecurityStatus = "allowed" | "rejected"
@@ -111,12 +122,21 @@ export interface SecurityResult {
 
 export type SecurityFn = (txnGet: TxnGet, entity: string, docPath: string, document: FirebaseFirestore.DocumentData, actionType: LogicActionType,
                           modifiedFields: DocumentData, user: DocumentData) => Promise<SecurityResult>;
-export type SecurityConfig = Record<string, SecurityFn>;
+export interface SecurityConfig {
+    entity: string;
+    securityFn: SecurityFn;
+    version: string; // i.e. "xx.yy.zz"
+}
+
 export interface ValidationResult {
     [key: string]: string[];
 }
 export type ValidatorFn = (document: DocumentData) => Promise<ValidationResult>;
-export type ValidatorConfig = Record<string, ValidatorFn>;
+export interface ValidatorConfig {
+    entity: string;
+    validatorFn: ValidatorFn;
+    version: string; // i.e. "xx.yy.zz"
+}
 export type ValidateFormResult = [hasValidationErrors: boolean, validationResult: ValidationResult];
 
 export type DestPropType = "map"|"array-map";
@@ -132,6 +152,7 @@ export interface ViewDefinition {
     srcProps: string[];
     srcEntity: string;
     options?: ViewDefinitionOptions;
+    version: string;
 }
 
 export type IdGenerator = (collectionPath: string) => Promise<string[]>;

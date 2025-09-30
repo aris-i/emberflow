@@ -9,11 +9,11 @@ import {
   LogicResultDocAction,
   LogicResultDoc,
   ProjectConfig,
-  ViewLogicConfig, TxnGet,
+  ViewLogicConfig, TxnGet, ValidatorConfig, SecurityConfig,
 } from "../types";
 import {Entity, dbStructure} from "../sample-custom/db-structure";
-import {securityConfig} from "../sample-custom/security";
-import {validatorConfig} from "../sample-custom/validators";
+import {securityConfigs} from "../sample-custom/security";
+import {validatorConfigs} from "../sample-custom/validators";
 import Timestamp = firestore.Timestamp;
 import {expandAndGroupDocPathsByEntity} from "../utils/paths";
 import {BatchUtil} from "../utils/batch";
@@ -30,6 +30,7 @@ import {
   createMetricComputation,
 } from "../index-utils";
 import * as viewLogics from "../logics/view-logics";
+import {patchLogicConfigs} from "../sample-custom/patch-logics";
 
 // should mock when using initializeEmberFlow and testing db.doc() calls count
 jest.spyOn(indexUtils, "createMetricLogicDoc").mockResolvedValue();
@@ -566,7 +567,7 @@ describe("distribute", () => {
         dstPath: "/users/test-user-id/documents/test-doc-id",
       } as LogicResultDoc],
     ]]);
-    initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, []);
+    initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfigs, validatorConfigs, [], patchLogicConfigs);
     await indexUtils.distributeFnNonTransactional(userDocsByDstPath);
 
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
@@ -609,7 +610,7 @@ describe("distributeLater", () => {
   let queueForDistributionLaterSpy: jest.SpyInstance;
 
   beforeEach(() => {
-    initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, []);
+    initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfigs, validatorConfigs, [], patchLogicConfigs);
     queueForDistributionLaterSpy = jest.spyOn(distribution, "queueForDistributionLater").mockResolvedValue();
   });
 
@@ -634,40 +635,167 @@ describe("distributeLater", () => {
       ["/users/test-user-id/documents/doc1", [doc1]],
       ["/users/test-user-id/documents/doc2", [doc2]],
     ]);
-    await indexUtils.distributeLater(usersDocsByDstPath);
+    const targetVersion = "1.0.0";
+    await indexUtils.distributeLater(usersDocsByDstPath, targetVersion);
 
     expect(queueForDistributionLaterSpy).toHaveBeenCalledTimes(1);
-    expect(queueForDistributionLaterSpy).toHaveBeenCalledWith(doc1, doc2);
+    expect(queueForDistributionLaterSpy).toHaveBeenCalledWith(targetVersion, doc1, doc2);
   });
 });
 
 describe("validateForm", () => {
   beforeEach(() => {
-    initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, []);
+    initializeEmberFlow(
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs,
+      validatorConfigs,
+      [],
+      patchLogicConfigs
+    );
   });
+  const targetVersion = "2.5";
+  const entity = "user";
 
-  it("returns an object with empty validationResult when document is valid", async () => {
-    const entity = "user";
+  it("should call the appropriate version of validator", async () => {
+    const userValidation = jest.fn().mockResolvedValue({});
+    const userValidationV2 = jest.fn().mockResolvedValue({});
+    const userValidationV3 = jest.fn().mockResolvedValue({});
+    const feedValidation = jest.fn().mockResolvedValue({});
+    const feedValidationV2 = jest.fn().mockResolvedValue({});
+
+    const validatorConfigs: ValidatorConfig[] = [
+      {
+        entity: Entity.User,
+        validatorFn: userValidation,
+        version: "01",
+      },
+      {
+        entity: Entity.User,
+        validatorFn: userValidationV2,
+        version: "02.04.06",
+      },
+      {
+        entity: Entity.User,
+        validatorFn: userValidationV3,
+        version: "03",
+      },
+      {
+        entity: Entity.Feed,
+        validatorFn: feedValidation,
+        version: "01",
+      },
+      {
+        entity: Entity.Feed,
+        validatorFn: feedValidationV2,
+        version: "02.04.06",
+      },
+    ];
+
+    initializeEmberFlow(
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs,
+      validatorConfigs,
+      [],
+      patchLogicConfigs
+    );
+
     const document = {
       name: "John Doe",
       email: "johndoe@example.com",
       password: "abc123",
     };
-    const [hasValidationError, validationResult] = await indexUtils.validateForm(entity, document);
+
+    await indexUtils.validateForm(entity, document, targetVersion);
+    expect(userValidation).not.toHaveBeenCalled();
+    expect(userValidationV2).toHaveBeenCalledTimes(1);
+    expect(userValidationV3).not.toHaveBeenCalled();
+    expect(feedValidation).not.toHaveBeenCalled();
+    expect(feedValidationV2).not.toHaveBeenCalled();
+  });
+
+  it("returns an object with empty validationResult when document is valid", async () => {
+    const document = {
+      name: "John Doe",
+      email: "johndoe@example.com",
+      password: "abc123",
+    };
+    const [hasValidationError, validationResult] = await indexUtils.validateForm(entity, document, targetVersion);
     expect(hasValidationError).toBe(false);
     expect(validationResult).toEqual({});
   });
 
   it("returns an object with validation errors when document is invalid", async () => {
-    const entity = "user";
     const document = {
       name: "",
       email: "johndoe@example.com",
       password: "abc",
     };
-    const [hasValidationError, validationResult] = await indexUtils.validateForm(entity, document);
+    const [hasValidationError, validationResult] = await indexUtils.validateForm(entity, document, targetVersion);
     expect(hasValidationError).toBe(true);
     expect(validationResult).toEqual({name: ["Name is required"]});
+  });
+});
+
+describe("getSecurityFn", () => {
+  it("should return the appropriate version of security function", async () => {
+    const userSecurityFn = jest.fn().mockResolvedValue({});
+    const userSecurityFnV2 = jest.fn().mockResolvedValue({
+      status: "allowed",
+    });
+    const userSecurityFnV3 = jest.fn().mockResolvedValue({});
+    const feedSecurityFn = jest.fn().mockResolvedValue({});
+    const feedSecurityFnV2 = jest.fn().mockResolvedValue({});
+
+    const targetVersion = "2.5";
+    const entity = "user";
+
+    const securityConfigs: SecurityConfig[] = [
+      {
+        entity: Entity.User,
+        securityFn: userSecurityFn,
+        version: "01",
+      },
+      {
+        entity: Entity.User,
+        securityFn: userSecurityFnV2,
+        version: "02.04.06",
+      },
+      {
+        entity: Entity.User,
+        securityFn: userSecurityFnV3,
+        version: "03",
+      },
+      {
+        entity: Entity.Feed,
+        securityFn: feedSecurityFn,
+        version: "01",
+      },
+      {
+        entity: Entity.Feed,
+        securityFn: feedSecurityFnV2,
+        version: "02.04.06",
+      },
+    ];
+
+    initializeEmberFlow(
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs,
+      validatorConfigs,
+      [],
+      patchLogicConfigs
+    );
+
+    const result = await indexUtils.getSecurityFn(entity, targetVersion);
+    expect(result).toEqual(userSecurityFnV2);
   });
 });
 
@@ -726,6 +854,37 @@ describe("delayFormSubmissionAndCheckIfCancelled", () => {
   });
 });
 
+describe("groupDocsByTargetDocPath", () => {
+  initializeEmberFlow(projectConfig, admin, dbStructure, Entity, [], [], [], []);
+  const docsByDstPath = new Map<string, LogicResultDoc[]>([
+    ["users/user123/document1", [{action: "merge", priority: "normal", dstPath: "users/user123/document1", doc: {field1: "value1", field2: "value2"}}]],
+    ["users/user123/document1/threads/thread1", [{action: "merge", priority: "normal", dstPath: "users/user123/document1/threads/thread1", doc: {field3: "value3", field6: "value6"}}]],
+    ["users/user123/document1/messages/message1", [{action: "merge", priority: "normal", dstPath: "users/user123/document1/messages/message1", doc: {field4: "value4"}}]],
+    ["users/user123/document1/images/image1", [{action: "merge", priority: "low", dstPath: "users/user123/document1/images/image1", doc: {field7: "value7"}}]],
+    ["othercollection/document2", [{action: "merge", priority: "normal", dstPath: "othercollection/document2", doc: {field5: "value5"}}]],
+    ["othercollection/document3", [{action: "delete", priority: "normal", dstPath: "othercollection/document3"}]],
+  ]);
+
+  it("should group documents by docPath", () => {
+    const docPath = "users/user123/document1";
+    const expectedResults = {
+      docsByDocPath: new Map<string, LogicResultDoc[]>([
+        ["users/user123/document1", [{action: "merge", priority: "normal", dstPath: "users/user123/document1", doc: {field1: "value1", field2: "value2"}}]],
+        ["users/user123/document1/threads/thread1", [{action: "merge", priority: "normal", dstPath: "users/user123/document1/threads/thread1", doc: {field3: "value3", field6: "value6"}}]],
+        ["users/user123/document1/messages/message1", [{action: "merge", priority: "normal", dstPath: "users/user123/document1/messages/message1", doc: {field4: "value4"}}]],
+        ["users/user123/document1/images/image1", [{action: "merge", priority: "low", dstPath: "users/user123/document1/images/image1", doc: {field7: "value7"}}]],
+      ]),
+      otherDocsByDocPath: new Map<string, LogicResultDoc[]>([
+        ["othercollection/document2", [{action: "merge", priority: "normal", dstPath: "othercollection/document2", doc: {field5: "value5"}}]],
+        ["othercollection/document3", [{action: "delete", priority: "normal", dstPath: "othercollection/document3"}]],
+      ]),
+    };
+
+    const results = indexUtils.groupDocsByTargetDocPath(docsByDstPath, docPath);
+    expect(results).toEqual(expectedResults);
+  });
+});
+
 describe("runBusinessLogics", () => {
   const actionType = "create";
   const formModifiedFields = {field1: "value1", field2: "value2"};
@@ -734,7 +893,6 @@ describe("runBusinessLogics", () => {
     id: "user123",
     name: "John Doe",
   };
-  const metadata = {version: "1.0"};
   const action:Action = {
     user,
     eventContext: {
@@ -754,7 +912,8 @@ describe("runBusinessLogics", () => {
     status: "processing",
     timeCreated: firestore.Timestamp.now(),
     modifiedFields: formModifiedFields,
-    metadata,
+    metadata: {},
+    appVersion: "1.0.0",
   };
 
   let distributeFn: jest.Mock;
@@ -813,7 +972,7 @@ describe("runBusinessLogics", () => {
     dbSpy.mockRestore();
   });
 
-  it("should call all matching logics and pass their results to distributeFn", async () => {
+  it("should call all matching logics then pass their results to distributeFn", async () => {
     const logics: LogicConfig[] = [
       {
         name: "Logic 1",
@@ -821,6 +980,7 @@ describe("runBusinessLogics", () => {
         modifiedFields: ["field1"],
         entities: ["user"],
         logicFn: logicFn1,
+        version: "1",
       },
       {
         name: "Logic 2",
@@ -828,6 +988,7 @@ describe("runBusinessLogics", () => {
         modifiedFields: ["field2"],
         entities: ["user"],
         logicFn: logicFn2,
+        version: "1",
       },
       {
         name: "Logic 3",
@@ -835,58 +996,212 @@ describe("runBusinessLogics", () => {
         modifiedFields: ["field3"],
         entities: ["user"],
         logicFn: logicFn3,
+        version: "1",
       },
+    ];
+    initializeEmberFlow(
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs,
+      validatorConfigs,
+      logics,
+      patchLogicConfigs,
+    );
+    const runStatus = await indexUtils.runBusinessLogics(txnGet, action, "2");
+
+    expect(logicFn1).toHaveBeenCalledWith(txnGet, action, new Map());
+    expect(logicFn2).toHaveBeenCalledWith(txnGet, action, new Map());
+    expect(logicFn3).not.toHaveBeenCalled();
+    expect(runStatus).toEqual({
+      status: "done",
+      logicResults: [{
+        status: "finished",
+        execTime: expect.any(Number),
+        timeFinished: expect.any(Timestamp),
+      }, {
+        status: "finished",
+        execTime: expect.any(Number),
+        timeFinished: expect.any(Timestamp),
+      }],
+    });
+  });
+
+  it("should call all matching logics with passing addtnlFilters then pass their results " +
+    "to distributeFn", async () => {
+    const logics: LogicConfig[] = [
       {
         name: "Logic 4",
         actionTypes: ["create"],
-        modifiedFields: ["field1"],
+        modifiedFields: ["shouldRun"],
         entities: ["user"],
         logicFn: logicFn4,
-        addtlFilterFn(actionType) {
-          return actionType !== "create";
+        addtlFilterFn(_, modifiedFields) {
+          return modifiedFields.shouldRun;
         },
+        version: "1",
       },
       {
         name: "Logic 5",
         actionTypes: ["create"],
-        modifiedFields: ["field2"],
+        modifiedFields: ["shouldRun"],
         entities: ["user"],
         logicFn: logicFn5,
-        addtlFilterFn(actionType, modifiedFields) {
-          return !Object.prototype.hasOwnProperty.call(modifiedFields, "field1");
+        addtlFilterFn(_, modifiedFields) {
+          return !modifiedFields.shouldRun;
         },
+        version: "1",
       },
       {
         name: "Logic 6",
-        actionTypes: ["create"],
-        modifiedFields: ["field2"],
+        actionTypes: ["update"],
+        modifiedFields: ["shouldRun"],
         entities: ["user"],
         logicFn: logicFn6,
-        addtlFilterFn(actionType, modifiedFields, document) {
-          return !Object.prototype.hasOwnProperty.call(document, "field3");
+        addtlFilterFn(_, modifiedFields) {
+          return modifiedFields.shouldRun;
         },
+        version: "1",
       },
       {
         name: "Logic 7",
         actionTypes: ["create"],
-        modifiedFields: ["field2"],
+        modifiedFields: ["all"],
         entities: ["user"],
         logicFn: logicFn7,
         addtlFilterFn(actionType, modifiedFields, document, entity, metadata) {
           return metadata.version === "2.0";
         },
+        version: "1",
       },
     ];
-    initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
-    const runStatus = await indexUtils.runBusinessLogics(txnGet, action);
+    initializeEmberFlow(
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs,
+      validatorConfigs,
+      logics,
+      [],
+    );
+    const newAction = {
+      ...action,
+      modifiedFields: {
+        shouldRun: true,
+      },
+    };
+    const runStatus = await indexUtils.runBusinessLogics(txnGet, newAction, "1");
 
-    expect(logicFn1).toHaveBeenCalledWith(txnGet, action, new Map());
-    expect(logicFn2).toHaveBeenCalledWith(txnGet, action, new Map());
-    expect(logicFn3).not.toHaveBeenCalled();
-    expect(logicFn4).not.toHaveBeenCalled();
+    expect(logicFn4).toHaveBeenCalledWith(txnGet, newAction, new Map());
     expect(logicFn5).not.toHaveBeenCalled();
     expect(logicFn6).not.toHaveBeenCalled();
     expect(logicFn7).not.toHaveBeenCalled();
+    expect(runStatus).toEqual({
+      status: "done",
+      logicResults: [{
+        status: "finished",
+        execTime: expect.any(Number),
+        timeFinished: expect.any(Timestamp),
+      }],
+    });
+  });
+
+  it("should call all matching logics nearest to the target version then pass their results " +
+    "to distributeFn", async () => {
+    const logicFn1 = jest.fn().mockResolvedValue({status: "finished"});
+    const logicFn1V2 = jest.fn().mockResolvedValue({status: "finished"});
+    const logicFn1V3 = jest.fn().mockResolvedValue({status: "finished"});
+    const logicFn2 = jest.fn().mockResolvedValue({status: "finished"});
+    const logicFn2V2 = jest.fn().mockResolvedValue({status: "finished"});
+    const logicFn3 = jest.fn().mockResolvedValue({status: "finished"});
+    const logicFn3V2 = jest.fn().mockResolvedValue({status: "error", message: "Error message"});
+
+    const logics: LogicConfig[] = [
+      {
+        name: "Logic1",
+        actionTypes: ["create"],
+        modifiedFields: "all",
+        entities: ["user"],
+        logicFn: logicFn1,
+        version: "1.2.3",
+      },
+      {
+        name: "Logic1",
+        actionTypes: ["create"],
+        modifiedFields: "all",
+        entities: ["user"],
+        logicFn: logicFn1V2,
+        version: "2.4.6",
+      },
+      {
+        name: "Logic1",
+        actionTypes: ["update"],
+        modifiedFields: "all",
+        entities: ["user"],
+        logicFn: logicFn1V3,
+        version: "3.0.0",
+      },
+      {
+        name: "Logic2",
+        actionTypes: ["create"],
+        modifiedFields: ["field1"],
+        entities: ["user"],
+        logicFn: logicFn2,
+        version: "1.2.3",
+      },
+      {
+        name: "Logic2",
+        actionTypes: ["create"],
+        modifiedFields: ["field1"],
+        entities: ["user"],
+        logicFn: logicFn2V2,
+        version: "2.4.6",
+      },
+      {
+        name: "Logic3",
+        actionTypes: ["update"],
+        modifiedFields: ["field2"],
+        entities: ["user"],
+        logicFn: logicFn3,
+        version: "1.2.3",
+      },
+      {
+        name: "Logic3",
+        actionTypes: ["update"],
+        modifiedFields: ["field2"],
+        entities: ["user"],
+        logicFn: logicFn3V2,
+        version: "2.4.6",
+      },
+    ];
+    initializeEmberFlow(
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs,
+      validatorConfigs,
+      logics,
+      [],
+    );
+    const newAction = {
+      ...action,
+      modifiedFields: {
+        field1: true,
+      },
+    };
+    const targetVersion = "2.5";
+    const runStatus = await indexUtils.runBusinessLogics(txnGet, newAction, targetVersion);
+
+    expect(logicFn1).not.toHaveBeenCalled();
+    expect(logicFn1V2).toHaveBeenCalledWith(txnGet, newAction, new Map());
+    expect(logicFn1V3).not.toHaveBeenCalled();
+    expect(logicFn2).not.toHaveBeenCalled();
+    expect(logicFn2V2).toHaveBeenCalledWith(txnGet, newAction, new Map());
+    expect(logicFn3).not.toHaveBeenCalled();
+    expect(logicFn3V2).not.toHaveBeenCalled();
     expect(runStatus).toEqual({
       status: "done",
       logicResults: [{
@@ -902,7 +1217,7 @@ describe("runBusinessLogics", () => {
   });
 
   it("should not call any logic when no matching logics are found but distributeFn should still be " +
-      "called", async () => {
+    "called", async () => {
     const logics: LogicConfig[] = [
       {
         name: "Logic 1",
@@ -910,6 +1225,7 @@ describe("runBusinessLogics", () => {
         modifiedFields: ["field1"],
         entities: ["customentity"],
         logicFn: logicFn1,
+        version: "1",
       },
       {
         name: "Logic 2",
@@ -917,6 +1233,7 @@ describe("runBusinessLogics", () => {
         modifiedFields: ["field2"],
         entities: ["customentity"],
         logicFn: logicFn2,
+        version: "1",
       },
       {
         name: "Logic 3",
@@ -924,10 +1241,20 @@ describe("runBusinessLogics", () => {
         modifiedFields: ["field3"],
         entities: ["customentity"],
         logicFn: logicFn3,
+        version: "1",
       },
     ];
-    initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
-    const runStatus = await indexUtils.runBusinessLogics(txnGet, action);
+    initializeEmberFlow(
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs,
+      validatorConfigs,
+      logics,
+      [],
+    );
+    const runStatus = await indexUtils.runBusinessLogics(txnGet, action, "1");
 
     expect(logicFn1).not.toHaveBeenCalled();
     expect(logicFn2).not.toHaveBeenCalled();
@@ -938,93 +1265,73 @@ describe("runBusinessLogics", () => {
     });
   });
 
-  it("should pass data from previous logic to the next logic via shared map",
-    async () => {
-      const expectedSharedMap = new Map<string, any>();
-      expectedSharedMap.set("another-document-id", {
-        "@id": "another-document-id",
-        "title": "Another Document Title",
-      });
-      expectedSharedMap.set("test-document-id", {
-        "@id": "test-document-id",
-        "title": "Test Document Title",
-      });
-      logicFn2.mockImplementation((txnGet, action, sharedMap) => {
-        sharedMap.set("another-document-id", expectedSharedMap.get("another-document-id"));
-        return {status: "finished"};
-      });
-      logicFn3.mockImplementation((txnGet, action, sharedMap) => {
-        sharedMap.set("test-document-id", expectedSharedMap.get("test-document-id"));
-        return {status: "finished"};
-      });
-      const logics: LogicConfig[] = [
-        {
-          name: "Logic 1",
-          actionTypes: ["create"],
-          modifiedFields: ["field1"],
-          entities: ["user"],
-          logicFn: logicFn1,
-        },
-        {
-          name: "Logic 2",
-          actionTypes: "all",
-          modifiedFields: ["field2"],
-          entities: ["user"],
-          logicFn: logicFn2,
-        },
-        {
-          name: "Logic 3",
-          actionTypes: ["create"],
-          modifiedFields: ["field2"],
-          entities: ["user"],
-          logicFn: logicFn3,
-        },
-      ];
-      initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfig, validatorConfig, logics);
-      const runStatus = await indexUtils.runBusinessLogics(txnGet, action);
-
-      expect(logicFn1).toHaveBeenCalledWith(txnGet, action, expectedSharedMap);
-      expect(logicFn2).toHaveBeenCalledWith(txnGet, action, expectedSharedMap);
-      expect(logicFn3).toHaveBeenCalledWith(txnGet, action, expectedSharedMap);
-
-      expect(runStatus.status).toEqual("done");
-
-      const logicResults = runStatus.logicResults;
-      expect(logicResults.length).toEqual(3);
-      expect(logicResults[0].status).toEqual("finished");
-      expect(logicResults[1].status).toEqual("finished");
-      expect(logicResults[2].status).toEqual("finished");
+  it("should pass data from previous logic to the next logic via shared map", async () => {
+    const expectedSharedMap = new Map<string, any>();
+    expectedSharedMap.set("another-document-id", {
+      "@id": "another-document-id",
+      "title": "Another Document Title",
     });
-});
+    expectedSharedMap.set("test-document-id", {
+      "@id": "test-document-id",
+      "title": "Test Document Title",
+    });
+    logicFn2.mockImplementation((txnGet, action, sharedMap) => {
+      sharedMap.set("another-document-id", expectedSharedMap.get("another-document-id"));
+      return {status: "finished"};
+    });
+    logicFn3.mockImplementation((txnGet, action, sharedMap) => {
+      sharedMap.set("test-document-id", expectedSharedMap.get("test-document-id"));
+      return {status: "finished"};
+    });
+    const logics: LogicConfig[] = [
+      {
+        name: "Logic 1",
+        actionTypes: ["create"],
+        modifiedFields: ["field1"],
+        entities: ["user"],
+        logicFn: logicFn1,
+        version: "1",
+      },
+      {
+        name: "Logic 2",
+        actionTypes: "all",
+        modifiedFields: ["field2"],
+        entities: ["user"],
+        logicFn: logicFn2,
+        version: "1",
+      },
+      {
+        name: "Logic 3",
+        actionTypes: ["create"],
+        modifiedFields: ["field2"],
+        entities: ["user"],
+        logicFn: logicFn3,
+        version: "1",
+      },
+    ];
+    initializeEmberFlow(
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs,
+      validatorConfigs,
+      logics,
+      [],
+    );
+    const runStatus = await indexUtils.runBusinessLogics(txnGet, action, "1");
 
-describe("groupDocsByTargetDocPath", () => {
-  initializeEmberFlow(projectConfig, admin, dbStructure, Entity, {}, {}, []);
-  const docsByDstPath = new Map<string, LogicResultDoc[]>([
-    ["users/user123/document1", [{action: "merge", priority: "normal", dstPath: "users/user123/document1", doc: {field1: "value1", field2: "value2"}}]],
-    ["users/user123/document1/threads/thread1", [{action: "merge", priority: "normal", dstPath: "users/user123/document1/threads/thread1", doc: {field3: "value3", field6: "value6"}}]],
-    ["users/user123/document1/messages/message1", [{action: "merge", priority: "normal", dstPath: "users/user123/document1/messages/message1", doc: {field4: "value4"}}]],
-    ["users/user123/document1/images/image1", [{action: "merge", priority: "low", dstPath: "users/user123/document1/images/image1", doc: {field7: "value7"}}]],
-    ["othercollection/document2", [{action: "merge", priority: "normal", dstPath: "othercollection/document2", doc: {field5: "value5"}}]],
-    ["othercollection/document3", [{action: "delete", priority: "normal", dstPath: "othercollection/document3"}]],
-  ]);
+    expect(logicFn1).toHaveBeenCalledWith(txnGet, action, expectedSharedMap);
+    expect(logicFn2).toHaveBeenCalledWith(txnGet, action, expectedSharedMap);
+    expect(logicFn3).toHaveBeenCalledWith(txnGet, action, expectedSharedMap);
 
-  it("should group documents by docPath", () => {
-    const docPath = "users/user123/document1";
-    const expectedResults = {
-      docsByDocPath: new Map<string, LogicResultDoc[]>([
-        ["users/user123/document1", [{action: "merge", priority: "normal", dstPath: "users/user123/document1", doc: {field1: "value1", field2: "value2"}}]],
-        ["users/user123/document1/threads/thread1", [{action: "merge", priority: "normal", dstPath: "users/user123/document1/threads/thread1", doc: {field3: "value3", field6: "value6"}}]],
-        ["users/user123/document1/messages/message1", [{action: "merge", priority: "normal", dstPath: "users/user123/document1/messages/message1", doc: {field4: "value4"}}]],
-        ["users/user123/document1/images/image1", [{action: "merge", priority: "low", dstPath: "users/user123/document1/images/image1", doc: {field7: "value7"}}]],
-      ]),
-      otherDocsByDocPath: new Map<string, LogicResultDoc[]>([
-        ["othercollection/document2", [{action: "merge", priority: "normal", dstPath: "othercollection/document2", doc: {field5: "value5"}}]],
-        ["othercollection/document3", [{action: "delete", priority: "normal", dstPath: "othercollection/document3"}]],
-      ]),
-    };
+    expect(runStatus.status).toEqual("done");
 
-    const results = indexUtils.groupDocsByTargetDocPath(docsByDstPath, docPath);
-    expect(results).toEqual(expectedResults);
+    const logicResults = runStatus.logicResults;
+    expect(logicResults.length).toEqual(3);
+    expect(logicResults[0].status).toEqual("finished");
+    expect(logicResults[1].status).toEqual("finished");
+    expect(logicResults[2].status).toEqual("finished");
   });
 });
 
@@ -1365,15 +1672,40 @@ describe("expandConsolidateAndGroupByDstPath", () => {
 
 describe("runViewLogics", () => {
   // Define mock functions
-  const viewLogicFn1 = jest.fn();
   const viewLogicFn2 = jest.fn();
+  const viewLogicFn1V2Point5 = jest.fn();
   const customViewLogicsConfig: ViewLogicConfig[] = [
     {
       name: "logic 1",
       entity: "user",
       actionTypes: ["merge", "delete"],
       modifiedFields: ["sampleField1", "sampleField2"],
-      viewLogicFn: viewLogicFn1,
+      viewLogicFn: jest.fn(),
+      version: "1.0.0",
+    },
+    {
+      name: "logic 1",
+      entity: "user",
+      actionTypes: ["merge", "delete"],
+      modifiedFields: ["sampleField1", "sampleField2"],
+      viewLogicFn: jest.fn(),
+      version: "2.0.0",
+    },
+    {
+      name: "logic 1",
+      entity: "user",
+      actionTypes: ["merge", "delete"],
+      modifiedFields: ["sampleField1", "sampleField2"],
+      viewLogicFn: viewLogicFn1V2Point5,
+      version: "2.5.0",
+    },
+    {
+      name: "logic 1",
+      entity: "user",
+      actionTypes: ["merge", "delete"],
+      modifiedFields: ["sampleField1", "sampleField2"],
+      viewLogicFn: jest.fn(),
+      version: "3.0.0",
     },
     {
       name: "logic 2",
@@ -1381,14 +1713,16 @@ describe("runViewLogics", () => {
       actionTypes: ["merge", "delete"],
       modifiedFields: ["sampleField3"],
       viewLogicFn: viewLogicFn2,
+      version: "1.0.0",
     },
   ];
 
   beforeEach(() => {
-    jest.spyOn(indexUtils._mockable, "getViewLogicsConfig").mockReturnValue(customViewLogicsConfig);
+    jest.spyOn(indexUtils._mockable, "getViewLogicConfigs").mockReturnValue(customViewLogicsConfig);
   });
 
   it("should run view logics properly", async () => {
+    const targetVersion = "2.9.0";
     const logicResult1: LogicResultDoc = {
       action: "merge" as LogicResultDocAction,
       priority: "normal",
@@ -1400,16 +1734,16 @@ describe("runViewLogics", () => {
       priority: "normal",
       dstPath: "users/user124",
     };
-    viewLogicFn1.mockResolvedValue({});
+    viewLogicFn1V2Point5.mockResolvedValue({});
     viewLogicFn2.mockResolvedValue({});
 
-    const results1 = await indexUtils.runViewLogics(logicResult1);
-    const results2 = await indexUtils.runViewLogics(logicResult2);
+    const results1 = await indexUtils.runViewLogics(logicResult1, targetVersion);
+    const results2 = await indexUtils.runViewLogics(logicResult2, targetVersion);
     const results = [...results1, ...results2];
 
-    expect(viewLogicFn1).toHaveBeenCalledTimes(2);
-    expect(viewLogicFn1.mock.calls[0][0]).toBe(logicResult1);
-    expect(viewLogicFn1.mock.calls[1][0]).toBe(logicResult2);
+    expect(viewLogicFn1V2Point5).toHaveBeenCalledTimes(2);
+    expect(viewLogicFn1V2Point5.mock.calls[0][0]).toBe(logicResult1);
+    expect(viewLogicFn1V2Point5.mock.calls[1][0]).toBe(logicResult2);
     expect(viewLogicFn2).toHaveBeenCalledTimes(1);
     expect(viewLogicFn2).toHaveBeenCalledWith(logicResult2);
     expect(results).toHaveLength(3);

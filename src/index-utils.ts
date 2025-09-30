@@ -1,25 +1,33 @@
 import {
-  Action, ActionType, Instructions, LogicActionType,
+  Action,
+  ActionType,
+  Instructions,
+  LogicActionType,
+  LogicConfig,
   LogicResult,
-  LogicResultDoc, RunBusinessLogicStatus,
+  LogicResultDoc,
+  RunBusinessLogicStatus,
   SecurityFn,
   TxnGet,
   ValidateFormResult,
+  ViewLogicConfig,
 } from "./types";
 import {database, firestore} from "firebase-admin";
 import {
   admin,
   db,
   logicConfigs,
+  patchLogicConfigs,
   projectConfig,
-  securityConfig,
-  validatorConfig,
+  securityConfigs,
+  validatorConfigs,
   viewLogicConfigs,
 } from "./index";
 import {
   _mockable as _pathMockable,
   expandAndGroupDocPathsByEntity,
-  findMatchingDocPathRegex, getDestPropAndDestPropId,
+  findMatchingDocPathRegex,
+  getDestPropAndDestPropId,
 } from "./utils/paths";
 import {deepEqual, deleteCollection} from "./utils/misc";
 import {CloudFunctionsServiceClient} from "@google-cloud/functions";
@@ -32,18 +40,20 @@ import {
   queueForDistributionLater,
   queueInstructions,
 } from "./utils/distribution";
+import {FirestoreEvent} from "firebase-functions/lib/v2/providers/firestore";
+import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
 import QueryDocumentSnapshot = firestore.QueryDocumentSnapshot;
 import DocumentReference = FirebaseFirestore.DocumentReference;
 import DocumentData = FirebaseFirestore.DocumentData;
 import Reference = database.Reference;
-import {FirestoreEvent} from "firebase-functions/lib/v2/providers/firestore";
-import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
 import FieldValue = firestore.FieldValue;
 import Timestamp = firestore.Timestamp;
 import Transaction = firestore.Transaction;
+import {versionCompare} from "./logics/patch-logics";
 
 export const _mockable = {
-  getViewLogicsConfig: () => viewLogicConfigs,
+  getViewLogicConfigs: () => viewLogicConfigs,
+  getPatchLogicConfigs: () => patchLogicConfigs,
   createNowTimestamp: () => admin.firestore.Timestamp.now(),
   createMetricExecution,
 };
@@ -183,24 +193,30 @@ export async function distributeFnNonTransactional(docsByDstPath: Map<string, Lo
   return forRunViewLogicQueuing;
 }
 
-export async function distributeLater(docsByDstPath: Map<string, LogicResultDoc[]>) {
+export async function distributeLater(docsByDstPath: Map<string, LogicResultDoc[]>, targetVersion: string) {
   console.log("Submitting to form for later processing...");
   const documents = Array.from(docsByDstPath.values()).flat();
-  await queueForDistributionLater(...documents);
+  await queueForDistributionLater(targetVersion, ...documents);
 }
 
 export async function validateForm(
   entity: string,
-  form: FirebaseFirestore.DocumentData
+  form: FirebaseFirestore.DocumentData,
+  targetVersion: string
 ): Promise<ValidateFormResult> {
   let hasValidationError = false;
   console.info(`Validating form for entity ${entity}`);
-  const validate = validatorConfig[entity];
-  if (!validate) {
+  const validatorFn = validatorConfigs
+    .filter((config) =>
+      config.entity === entity &&
+        versionCompare(config.version, targetVersion) <= 0
+    ).sort((a, b) => versionCompare(b.version, a.version))[0]
+    ?.validatorFn;
+  if (!validatorFn) {
     console.log(`No validator found for entity ${entity}`);
     return [false, {}];
   }
-  const validationResult = await validate(form);
+  const validationResult = await validatorFn(form);
 
   // Check if validation failed
   if (validationResult && Object.keys(validationResult).length > 0) {
@@ -240,25 +256,47 @@ export async function delayFormSubmissionAndCheckIfCancelled(delay: number, form
 }
 
 function getMatchingLogics(actionType: ActionType, modifiedFields: DocumentData,
-  document: DocumentData, entity: string, metadata: Record<string, any>) {
-  return logicConfigs.filter((logic) => {
+  document: DocumentData, entity: string, metadata: Record<string, any>, targetVersion: string) {
+  const matchingLogics = logicConfigs.filter((logic) => {
     return (
       (logic.actionTypes === "all" || logic.actionTypes.includes(actionType as LogicActionType)) &&
-        (logic.modifiedFields === "all" ||
-            logic.modifiedFields.some((field) => field in modifiedFields)) &&
+        (logic.modifiedFields === "all" || logic.modifiedFields.some((field) => field in modifiedFields)) &&
         (logic.entities === "all" || logic.entities.includes(entity)) &&
-      (logic.addtlFilterFn ? logic.addtlFilterFn(actionType, modifiedFields, document, entity, metadata) : true)
+      (logic.addtlFilterFn ? logic.addtlFilterFn(actionType, modifiedFields, document, entity, metadata) : true) &&
+          versionCompare(logic.version, targetVersion) <= 0
     );
   });
+  console.debug("All Logics", logicConfigs.map((logic) => logic.name));
+
+  // Let's group by name
+  const nameIndex = new Map<string, number>();
+  return matchingLogics.reduce((acc, logicConfig) => {
+    const {name} = logicConfig;
+    if (!nameIndex.has(name)) {
+      const length = acc.push(logicConfig);
+      nameIndex.set(name, length-1);
+    } else {
+      const index = nameIndex.get(name);
+      const logicConfigPrev = acc[index!];
+      if (versionCompare(logicConfigPrev.version, logicConfig.version) < 0) {
+        acc[index!] = logicConfig; // Replace with the latest version
+      }
+    }
+    logicConfigs.push(logicConfig);
+    return acc;
+  }, [] as LogicConfig[]);
 }
 
 export const runBusinessLogics = async (
   txnGet: TxnGet,
   action: Action,
+  targetVersion: string,
 ): Promise<RunBusinessLogicStatus> => {
   const {actionType, modifiedFields, document, eventContext: {entity}, metadata} = action;
 
-  const matchingLogics = getMatchingLogics(actionType, modifiedFields, document, entity, metadata);
+  const matchingLogics = getMatchingLogics(
+    actionType, modifiedFields, document, entity, metadata, targetVersion
+  );
   console.debug("Matching logics:", matchingLogics.map((logic) => logic.name));
   if (matchingLogics.length === 0) {
     console.log("No matching logics found");
@@ -309,11 +347,16 @@ export function groupDocsByTargetDocPath(docsByDstPath: Map<string, LogicResultD
   return {docsByDocPath, otherDocsByDocPath};
 }
 
-export function getSecurityFn(entity: string): SecurityFn {
-  return securityConfig[entity];
+export function getSecurityFn(entity: string, targetVersion: string): SecurityFn {
+  return securityConfigs
+    .filter((security) =>
+      security.entity === entity &&
+        versionCompare(security.version, targetVersion) <= 0)
+    .sort((a, b) => versionCompare(b.version, a.version))[0]
+    ?.securityFn;
 }
 
-export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultDoc[]): Promise<Map<string, LogicResultDoc[]>> {
+export const expandConsolidateAndGroupByDstPath = async (logicDocs: LogicResultDoc[]): Promise<Map<string, LogicResultDoc[]>> => {
   function warnOverwritingKeys(existing: any, incoming: any, type: string, dstPath: string) {
     for (const key in incoming) {
       if (existing && Object.prototype.hasOwnProperty.call(existing, key)) {
@@ -460,9 +503,9 @@ export async function expandConsolidateAndGroupByDstPath(logicDocs: LogicResultD
   }
 
   return consolidated;
-}
+};
 
-export async function runViewLogics(logicResultDoc: LogicResultDoc): Promise<LogicResult[]> {
+export async function runViewLogics(logicResultDoc: LogicResultDoc, targetVersion: string): Promise<LogicResult[]> {
   const {
     action,
     doc,
@@ -484,9 +527,11 @@ export async function runViewLogics(logicResultDoc: LogicResultDoc): Promise<Log
 
   const {destProp} = getDestPropAndDestPropId(dstPath);
 
-  const matchingLogics = _mockable.getViewLogicsConfig().filter((viewLogicConfig) => {
+  const matchingLogics = _mockable.getViewLogicConfigs().filter((viewLogicConfig) => {
     if (action === "delete") {
-      return viewLogicConfig.entity === entity && (destProp ? viewLogicConfig.destProp === destProp : true);
+      return viewLogicConfig.entity === entity &&
+          (destProp ? viewLogicConfig.destProp === destProp : true) &&
+          versionCompare(viewLogicConfig.version, targetVersion) <= 0;
     }
 
     return viewLogicConfig.actionTypes.includes(action) &&
@@ -494,9 +539,23 @@ export async function runViewLogics(logicResultDoc: LogicResultDoc): Promise<Log
           viewLogicConfig.modifiedFields === "all" ||
             viewLogicConfig.modifiedFields.some((field) => modifiedFields.includes(field))
         ) &&
-        viewLogicConfig.entity === entity && (destProp ? viewLogicConfig.destProp === destProp : true)
-    ;
-  });
+        viewLogicConfig.entity === entity && (destProp ? viewLogicConfig.destProp === destProp : true) &&
+      versionCompare(viewLogicConfig.version, targetVersion) <= 0;
+  })
+    .reduce((acc, viewLogicConfig) => {
+      const {name} = viewLogicConfig;
+      if (!acc.has(name)) {
+        acc.set(name, viewLogicConfig);
+      } else {
+        const viewLogicConfigPrev = acc.get(name)!;
+        if (versionCompare(viewLogicConfigPrev.version, viewLogicConfig.version) < 0) {
+          acc.set(name, viewLogicConfig);
+        }
+      }
+      return acc;
+    }, new Map<string, ViewLogicConfig>())
+    .values();
+
   // TODO: Handle errors
 
   const logicResults = [];
@@ -657,3 +716,35 @@ export async function cleanMetricComputations(event: ScheduledEvent) {
   }
   console.info(`Cleaned ${i} logic metric computations`);
 }
+
+export async function distributeFnTransactional(
+  txn: Transaction,
+  logicResults: LogicResult[],
+): Promise<LogicResultDoc[]> {
+  const distributedLogicResultDocs: LogicResultDoc[] = [];
+
+  const distributeTransactionalLogicResults= async () => {
+    const transactionalResults = logicResults.filter((result) => result.transactional);
+    if (transactionalResults.length === 0) {
+      console.info("No transactional logic results to distribute");
+      return;
+    }
+    // We always distribute transactional results first
+    const transactionalDstPathLogicDocsMap =
+            await expandConsolidateAndGroupByDstPath(transactionalResults.map(
+              (result) => result.documents).flat());
+    // Write to firestore in one transaction
+    for (const [_, logicDocs] of transactionalDstPathLogicDocsMap) {
+      for (const logicDoc of logicDocs) {
+        distributedLogicResultDocs.push(logicDoc);
+        await distributeDoc(logicDoc, undefined, txn);
+      }
+    }
+  };
+
+  await distributeTransactionalLogicResults();
+
+  return distributedLogicResultDocs;
+}
+
+
