@@ -123,7 +123,7 @@ export function initializeEmberFlow(
   validatorConfigs = [...customValidatorConfigs];
   logicConfigs = [...customLogicConfigs];
   patchLogicConfigs = [...customPatchLogicConfigs];
-  initClient(admin.app(), "service");
+  initClient(admin.app(), "service", "0.0.0");
   SUBMIT_FORM_TOPIC = pubsub.topic(SUBMIT_FORM_TOPIC_NAME);
   VIEW_LOGICS_TOPIC = pubsub.topic(VIEW_LOGICS_TOPIC_NAME);
   PATCH_LOGICS_TOPIC = pubsub.topic(PATCH_LOGICS_TOPIC_NAME);
