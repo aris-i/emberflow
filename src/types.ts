@@ -2,6 +2,7 @@ import * as admin from "firebase-admin";
 import {firestore} from "firebase-admin";
 import Timestamp = firestore.Timestamp;
 import DocumentData = firestore.DocumentData;
+import {FormData} from "emberflow-admin-client/lib/types";
 
 export type FirebaseAdmin = typeof admin;
 
@@ -42,12 +43,9 @@ export interface LogicResultDoc{
     skipEntityDuringRecursion?: string[];
     skipRunViewLogics?: boolean;
 }
-export interface SubmitFormDoc {
+export interface SubmitFormDoc extends FormData {
   "@appVersion": string,
-  "@actionType": LogicActionType,
   "@submitFormAs"?: string,
-  "@metadata"?: Record<string, any>
-  [key: string]: any;
 }
 export interface SubmitFormLogicResultDoc extends LogicResultDoc {
   action: "submit-form",

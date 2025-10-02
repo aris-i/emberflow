@@ -6,8 +6,9 @@ import {submitForm} from "emberflow-admin-client/lib";
 import {pubsubUtils} from "./pubsub";
 import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
 import {deleteCollection} from "./misc";
+import {SubmitFormDoc} from "../types";
 
-export async function queueSubmitForm(formData: FormData) {
+export async function queueSubmitForm(formData: SubmitFormDoc) {
   try {
     const messageId = await SUBMIT_FORM_TOPIC.publishMessage({json: formData});
     console.log(`queueSubmitForm: Message ${messageId} published.`);
@@ -28,7 +29,7 @@ export async function onMessageSubmitFormQueue(event: CloudEvent<MessagePublishe
     console.log("Skipping duplicate event");
     return;
   }
-  let formData = event.data.message.json;
+  let formData = event.data.message.json as FormData;
   console.log("Received form submission:", formData);
 
   const submitFormAs = formData["@submitFormAs"];
