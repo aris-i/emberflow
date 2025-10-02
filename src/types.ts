@@ -42,6 +42,18 @@ export interface LogicResultDoc{
     skipEntityDuringRecursion?: string[];
     skipRunViewLogics?: boolean;
 }
+export interface SubmitFormDoc {
+  "@appVersion": string,
+  "@actionType": LogicActionType,
+  "@submitFormAs"?: string,
+  "@metadata"?: Record<string, any>
+  [key: string]: any;
+}
+export interface SubmitFormLogicResultDoc extends LogicResultDoc {
+  action: "submit-form",
+  skipRunViewLogics: true,
+  doc: SubmitFormDoc,
+}
 
 export interface LedgerEntry {
     account: string;
