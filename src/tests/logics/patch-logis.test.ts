@@ -83,33 +83,33 @@ describe("versionCompare", () => {
   });
 
   it("returns a negative number when first is lower", () => {
-    expect(versionCompare("1.2.3", "1.2.4")).toBeLessThan(0);
-    expect(versionCompare("1.2", "1.2.1")).toBeLessThan(0);
-    expect(versionCompare("1", "1.0.1")).toBeLessThan(0);
+    expect(versionCompare("1.2.3", "1.2.4")).toBe(-1);
+    expect(versionCompare("1.2", "1.2.1")).toBe(-1);
+    expect(versionCompare("1", "1.0.1")).toBe(-1);
   });
 
   it("returns a positive number when first is higher", () => {
-    expect(versionCompare("1.2.5", "1.2.4")).toBeGreaterThan(0);
-    expect(versionCompare("2.0", "1.9.9")).toBeGreaterThan(0);
-    expect(versionCompare("1.0.1", "1")).toBeGreaterThan(0);
+    expect(versionCompare("1.2.5", "1.2.4")).toBe(1);
+    expect(versionCompare("2.0", "1.9.9")).toBe(1);
+    expect(versionCompare("1.0.1", "1")).toBe(1);
   });
 
   it("handles leading zeros correctly", () => {
     expect(versionCompare("01.02.03", "1.2.3")).toBe(0);
-    expect(versionCompare("01.10", "1.2")).toBeGreaterThan(0);
+    expect(versionCompare("01.10", "1.2")).toBe(1);
   });
 
   it("handles different segment lengths gracefully", () => {
     expect(versionCompare("1.2", "1.2.0.0")).toBe(0);
-    expect(versionCompare("1.2.0.1", "1.2")).toBeGreaterThan(0);
+    expect(versionCompare("1.2.0.1", "1.2")).toBe(1);
   });
 
   it("treats non-numeric segments as 0", () => {
     // Because parseInt of non-numeric yields NaN, then || 0 → 0
     expect(versionCompare("1.a.3", "1.0.3")).toBe(0);
-    expect(versionCompare("1.a.4", "1.0.3")).toBeGreaterThan(0);
-    expect(versionCompare("1.a.4", "1.0.3")).toBeGreaterThan(0);
-    expect(versionCompare("1.a.4", "1.0.3")).toBeGreaterThan(0);
+    expect(versionCompare("1.a.4", "1.0.3")).toBe(1);
+    expect(versionCompare("1.a.4", "1.0.3")).toBe(1);
+    expect(versionCompare("1.a.4", "1.0.3")).toBe(1);
   });
 });
 

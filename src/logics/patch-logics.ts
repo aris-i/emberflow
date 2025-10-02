@@ -84,17 +84,21 @@ export async function onMessageRunPatchLogicsQueue(event: CloudEvent<MessagePubl
   }
 }
 
-export function versionCompare(a: string, b: string): number {
-  const A = a.split(".").map((s) => parseInt(s, 10) || 0);
-  const B = b.split(".").map((s) => parseInt(s, 10) || 0);
-  const len = Math.max(A.length, B.length);
+export function versionCompare(version1: string, version2: string): number {
+  const parts1 = version1.split(".").map(Number);
+  const parts2 = version2.split(".").map(Number);
 
-  for (let i = 0; i < len; i++) {
-    const ai = A[i] ?? 0;
-    const bi = B[i] ?? 0;
-    if (ai !== bi) return ai - bi;
+  const length = Math.max(parts1.length, parts2.length);
+
+  for (let i = 0; i < length; i++) {
+    const num1 = parts1[i] ?? 0;
+    const num2 = parts2[i] ?? 0;
+
+    if (num1 > num2) return 1; // version1 is higher
+    if (num1 < num2) return -1; // version2 is higher
   }
-  return 0;
+
+  return 0; // equal
 }
 
 export const runPatchLogics = async (appVersion: string, dstPath: string, txn: Transaction): Promise<LogicResult[]> => {
