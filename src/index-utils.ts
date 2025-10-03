@@ -266,7 +266,6 @@ function getMatchingLogics(actionType: ActionType, modifiedFields: DocumentData,
           versionCompare(logic.version, targetVersion) <= 0
     );
   });
-  console.debug("All Logics", logicConfigs.map((logic) => logic.name));
 
   // Let's group by name
   const nameIndex = new Map<string, number>();
