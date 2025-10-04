@@ -58,7 +58,12 @@ export const dbStructure = {
             view(Entity.Server, [], {}, "0.0.4"),
           ],
           ingredients: {
-            [Entity.MenuItemIngredient]: [view(Entity.RecipeIngredient, [], {syncCreate: true})],
+            [Entity.MenuItemIngredient]: [
+              view(Entity.RecipeIngredient, [], {syncCreate: true}, "0.0.1"),
+              propView("map", Entity.RecipeIngredient, [], {syncCreate: true}, "0.0.2"),
+              propView("array-map", Entity.RecipeIngredient, [], {syncCreate: true}, "0.0.3"),
+              view(Entity.Topic, [], {syncCreate: true}, "0.0.4"),
+            ],
           },
         },
       },
