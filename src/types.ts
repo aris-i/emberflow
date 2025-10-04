@@ -43,7 +43,7 @@ export interface LogicResultDoc{
     skipEntityDuringRecursion?: string[];
     skipRunViewLogics?: boolean;
 }
-export interface SubmitFormDoc extends FormData {
+export interface SubmitFormDoc extends Omit<FormData, "@docPath"> {
   "@appVersion": string,
   "@submitFormAs"?: string,
 }
