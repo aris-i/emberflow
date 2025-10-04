@@ -1,3 +1,5 @@
+import {initDbStructure} from "../../init-db-structure";
+import {dbStructure, Entity} from "../../sample-custom/backend-db-structure";
 import {propView, view} from "../../utils/db-structure";
 
 describe("view", () => {
@@ -36,5 +38,23 @@ describe("propView", () => {
   it("handles empty options", () => {
     const result = propView("map", "Inventory", ["count"]);
     expect(result).toBe("ViewMap@0.0.0:Inventory:count:");
+  });
+});
+
+describe("initDbStructure", () => {
+  it("should return entity and regex for path", () => {
+    function findMatchingDocPathRegex(docPath: string) {
+      const {docPathsRegex} = initDbStructure(dbStructure, Entity);
+
+      for (const key in docPathsRegex) {
+        if (docPathsRegex[key].test(docPath)) {
+          return {entity: key, regex: docPathsRegex[key]};
+        }
+      }
+      return {entity: undefined, regex: undefined};
+    }
+
+    const res = findMatchingDocPathRegex("topics/topic123/todos/todo456");
+    expect(res).toEqual({entity: Entity.ToDoView, regex: "/^topics\\/([^/]+)\\/todos\\/([^/]+)$/"});
   });
 });
