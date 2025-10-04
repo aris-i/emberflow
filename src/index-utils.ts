@@ -8,6 +8,7 @@ import {
   LogicResultDoc,
   RunBusinessLogicStatus,
   SecurityFn,
+  SubmitFormDoc,
   TxnGet,
   ValidateFormResult,
   ViewLogicConfig,
@@ -31,7 +32,6 @@ import {
 } from "./utils/paths";
 import {deepEqual, deleteCollection} from "./utils/misc";
 import {CloudFunctionsServiceClient} from "@google-cloud/functions";
-import {FormData} from "emberflow-admin-client/lib/types";
 import {BatchUtil} from "./utils/batch";
 import {queueSubmitForm} from "./utils/forms";
 import {
@@ -162,12 +162,7 @@ export async function distributeDoc(
       console.error("Submit-form is not supported in transactional logic result");
     } else {
       console.debug("Queuing submit form...");
-      const formData: FormData = {
-        "@docPath": dstPath,
-        "@actionType": "create",
-        ...doc,
-      };
-      await queueSubmitForm(formData);
+      await queueSubmitForm(doc as SubmitFormDoc);
     }
   }
 }

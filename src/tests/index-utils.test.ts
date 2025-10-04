@@ -9,7 +9,7 @@ import {
   LogicResultDocAction,
   LogicResultDoc,
   ProjectConfig,
-  ViewLogicConfig, TxnGet, ValidatorConfig, SecurityConfig,
+  ViewLogicConfig, TxnGet, ValidatorConfig, SecurityConfig, SubmitFormDoc,
 } from "../types";
 import {Entity, dbStructure} from "../sample-custom/db-structure";
 import {securityConfigs} from "../sample-custom/security";
@@ -19,7 +19,6 @@ import {expandAndGroupDocPathsByEntity} from "../utils/paths";
 import {BatchUtil} from "../utils/batch";
 import * as distribution from "../utils/distribution";
 import * as forms from "../utils/forms";
-import {FormData} from "emberflow-admin-client/lib/types";
 import {DocumentReference} from "firebase-admin/lib/firestore";
 import CollectionReference = firestore.CollectionReference;
 import * as misc from "../utils/misc";
@@ -31,6 +30,7 @@ import {
 } from "../index-utils";
 import * as viewLogics from "../logics/view-logics";
 import {patchLogicConfigs} from "../sample-custom/patch-logics";
+import {FormActionType} from "emberflow-admin-client/lib/types";
 
 // should mock when using initializeEmberFlow and testing db.doc() calls count
 jest.spyOn(indexUtils, "createMetricLogicDoc").mockResolvedValue();
@@ -250,20 +250,20 @@ describe("distributeDoc", () => {
     const logicResultDoc: LogicResultDoc = {
       action: "submit-form",
       priority: "normal",
-      doc: {name: "test-doc-name-updated"},
+      doc: {
+        "name": "test-doc-name-updated",
+        "@appVersion": "1.0.0",
+        "@actionType": "merge" as FormActionType,
+        "@docPath": "/users/test-user-id/documents/test-doc-id",
+      } as SubmitFormDoc,
       dstPath: "/users/test-user-id/documents/test-doc-id",
-    };
-    const formData: FormData = {
-      "@docPath": logicResultDoc.dstPath,
-      "@actionType": "create",
-      ...logicResultDoc.doc,
     };
 
     await indexUtils.distributeDoc(logicResultDoc, batch);
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
     expect(queueSubmitFormSpy).toHaveBeenCalledTimes(1);
-    expect(queueSubmitFormSpy).toHaveBeenCalledWith(formData);
+    expect(queueSubmitFormSpy).toHaveBeenCalledWith(logicResultDoc.doc);
     expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(0);
 
     queueSubmitFormSpy.mockRestore();
