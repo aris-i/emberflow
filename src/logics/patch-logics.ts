@@ -1,4 +1,4 @@
-import {LogicResult, LogicResultDoc} from "../types";
+import {LogicResult, LogicResultDoc, PatchLogicConfig} from "../types";
 import {findMatchingDocPathRegex} from "../utils/paths";
 import {
   admin,
@@ -41,21 +41,8 @@ export async function onMessageRunPatchLogicsQueue(event: CloudEvent<MessagePubl
   try {
     const {dstPath, appVersion} = event.data.message.json;
     console.log("Received dstPath:", dstPath);
-
     console.info("Running Patch Logics");
-    const start = performance.now();
-
-    const patchLogicResults = await runPatchLogics(appVersion, dstPath);
-
-    const end = performance.now();
-    const execTime = end - start;
-    const distributeFnLogicResult: LogicResult = {
-      name: "runPatchLogics",
-      status: "finished",
-      documents: [],
-      execTime: execTime,
-    };
-    await _mockable.createMetricExecution([...patchLogicResults, distributeFnLogicResult]);
+    await runPatchLogics(appVersion, dstPath);
 
     await pubsubUtils.trackProcessedIds(PATCH_LOGICS_TOPIC_NAME, event.id);
     return "Processed patch logics";
@@ -82,37 +69,57 @@ export function versionCompare(version1: string, version2: string): number {
   return 0; // equal
 }
 
-export const runPatchLogics = async (appVersion: string, dstPath: string): Promise<LogicResult[]> => {
+export const runPatchLogics = async (appVersion: string, dstPath: string): Promise<void> => {
   const {entity} = findMatchingDocPathRegex(dstPath);
   if (!entity) {
     console.error("Entity should not be blank");
-    return [];
+    return;
   }
+  const matchingPatchLogics = _mockable.getPatchLogicConfigs()
+    .filter((patchLogicConfig) => {
+      return entity === patchLogicConfig.entity &&
+        versionCompare(patchLogicConfig.version, appVersion) <= 0;
+    });
 
-  return await db.runTransaction(async (txn) => {
-    const logicResults: LogicResult[] = [];
-    const snapshot = await txn.get(db.doc(dstPath));
-    const data = snapshot.data();
-    console.debug("data", data);
-    if (!data) return logicResults;
-    const dataVersion = data["@dataVersion"] || "0.0.0";
+  const matchingPatchLogicsByVersion = matchingPatchLogics
+    .sort((a, b) =>versionCompare(a.version, b.version))
+    .reduce((map, patchLogicConfig) => {
+      if (!map.has(patchLogicConfig.version)) {
+        map.set(patchLogicConfig.version, []);
+      }
 
-    const matchingPatchLogics = _mockable.getPatchLogicConfigs()
-      .filter((patchLogicConfig) => {
-        return entity === patchLogicConfig.entity &&
-          versionCompare(dataVersion, patchLogicConfig.version) < 0 &&
-          versionCompare(patchLogicConfig.version, appVersion) <= 0;
-      });
+      map.get(patchLogicConfig.version)?.push(patchLogicConfig);
+      return map;
+    }, new Map<string, PatchLogicConfig[]>());
 
-    for (const patchLogic of matchingPatchLogics) {
-      console.info(`Running Patch Logic ${patchLogic.name}`);
-      const distributedLogicDocs: LogicResultDoc[] = [];
-      const start = performance.now();
-      const patchLogicResult = await patchLogic.patchLogicFn(dstPath, data);
-      const end = performance.now();
-      const execTime = end - start;
+  for (const [patchVersion, patchLogicConfigs] of matchingPatchLogicsByVersion) {
+    const start = performance.now();
+    const logicResultsForMetricExecution = await db.runTransaction(async (txn) => {
+      const logicResults: LogicResult[] = [];
+      const snapshot = await txn.get(db.doc(dstPath));
+      const data = snapshot.data();
+      if (!data) {
+        console.error("Document does not exist");
+        return logicResults;
+      }
+      const dataVersion = data["@dataVersion"] || "0.0.0";
 
-      const patchLogicResultDocs = patchLogicResult.documents;
+      // run only if patch version is higher than the dataVersion
+      if (versionCompare(dataVersion, patchVersion) >= 0) return logicResults;
+
+      console.info(`Running Patch Logics for version ${patchVersion}`);
+      console.debug("Original Document", data);
+      for (const patchLogic of patchLogicConfigs) {
+        console.info("Running Patch Logic:", patchLogic.name,);
+        const patchLogicStart = performance.now();
+        const patchLogicResult = await patchLogic.patchLogicFn(dstPath, data);
+        const patchLogicEnd = performance.now();
+        const execTime = patchLogicEnd - patchLogicStart;
+        logicResults.push({...patchLogicResult, execTime});
+      }
+
+      const patchLogicResultDocs =
+          logicResults.flatMap((logicResult) => logicResult.documents);
 
       for (const doc of [...patchLogicResultDocs]) {
         if (doc.action === "delete") continue;
@@ -122,14 +129,15 @@ export const runPatchLogics = async (appVersion: string, dstPath: string): Promi
           action: "merge",
           dstPath: doc.dstPath,
           doc: {
-            "@dataVersion": patchLogic.version,
+            "@dataVersion": patchVersion,
           },
         });
       }
 
       const dstPathPatchLogicDocsMap: Map<string, LogicResultDoc[]> =
-        await expandConsolidateAndGroupByDstPath(patchLogicResultDocs);
+          await expandConsolidateAndGroupByDstPath(patchLogicResultDocs);
 
+      const distributedLogicDocs: LogicResultDoc[] = [];
       dstPathPatchLogicDocsMap.forEach((value) => {
         value.forEach(async (logicResultDoc) => {
           await distributeDoc(logicResultDoc, undefined, txn);
@@ -137,15 +145,27 @@ export const runPatchLogics = async (appVersion: string, dstPath: string): Promi
         });
       });
 
-      await queueRunViewLogics(appVersion, ...distributedLogicDocs);
+      console.debug("Distributed Logic Docs", distributedLogicDocs);
 
-      logicResults.push({
-        ...patchLogicResult,
-        documents: distributedLogicDocs,
-        execTime,
-        timeFinished: admin.firestore.Timestamp.now(),
-      });
+      await queueRunViewLogics(patchVersion, ...distributedLogicDocs);
+
+      console.info(`Finished Patch Logic for version ${patchVersion}`);
+      return logicResults.map((result) => ({
+        ...result, timeFinished: admin.firestore.Timestamp.now(),
+      }));
+    });
+
+    const end = performance.now();
+    const execTime = end - start;
+    const distributeFnLogicResult: LogicResult = {
+      name: "runPatchLogics",
+      status: "finished",
+      documents: [],
+      execTime: execTime,
+    };
+
+    if ( logicResultsForMetricExecution.length > 0 ) {
+      await _mockable.createMetricExecution([...logicResultsForMetricExecution, distributeFnLogicResult]);
     }
-    return logicResults;
-  });
+  }
 };
