@@ -171,7 +171,7 @@ export function initializeEmberFlow(
     {
       ref: "forms/{userId}/{formId}",
       region: projectConfig.region,
-      memory: "256MiB",
+      memory: "512MiB",
     },
     useBillProtect(onFormSubmit)
   );
