@@ -1,5 +1,5 @@
 // You should import from the path to the ember-flow package in your project
-import {view} from "../utils/db-structure";
+import {propView, view} from "../utils/db-structure";
 
 export enum Entity {
     User = "user", // do not delete
@@ -29,21 +29,19 @@ export enum Entity {
 export const dbStructure = {
   servers: {
     [Entity.Server]: {
-      createdBy: view(Entity.User, ["name", "email"]),
+      createdBy: propView("map", Entity.User, ["name", "email"]),
       channels: {
         [Entity.Channel]: {
-          "createdBy": view(Entity.User, ["name", "email"]),
+          "createdBy": propView("map", Entity.User, ["name", "email"]),
           "members": {
-            [view(Entity.User, ["name"])]: {},
+            [propView("array-map", Entity.User, ["name"])]: {},
           },
         },
       },
       members: {
-        [Entity.Member]: {
-          [view(Entity.User, ["name"])]: {},
-        },
+        [Entity.Member]: [view(Entity.User, ["name"])],
       },
-      followers: [view(Entity.User, ["name", "email"])],
+      followers: [propView("array-map", Entity.User, ["name", "email"])],
     },
   },
   topics: {
@@ -53,31 +51,34 @@ export const dbStructure = {
       },
       menuItems: {
         [Entity.MenuItem]: {
-          recipe: view(Entity.Topic, []),
+          recipe: [
+            propView("map", Entity.Topic, [], {}, "0.0.1"),
+            propView("array-map", Entity.Topic, [], {}, "0.0.2"),
+            view(Entity.Topic, [], {}, "0.0.3"),
+            view(Entity.Server, [], {}, "0.0.4"),
+          ],
           ingredients: {
-            [Entity.MenuItemIngredient]: {
-              [view(Entity.RecipeIngredient, [], {syncCreate: true})]: {},
-            },
+            [Entity.MenuItemIngredient]: [view(Entity.RecipeIngredient, [], {syncCreate: true})],
           },
         },
       },
-      createdBy: view(Entity.User, ["name", "email"]),
+      createdBy: [propView("map", Entity.User, ["name", "email"])],
       orders: {
         [Entity.Order]: {
-          createdBy: view(Entity.User, ["name", "email"]),
+          createdBy: [propView("map", Entity.User, ["name", "email"])],
           menus: {
             [Entity.OrderMenuItem]: {
-              createdBy: view(Entity.User, ["name", "email"]),
+              createdBy: [propView("map", Entity.User, ["name", "email"])],
             },
           },
         },
       },
       prepAreas: {
         [Entity.PrepArea]: {
-          "createdBy": view(Entity.User, ["name", "email"]),
+          "createdBy": [propView("map", Entity.User, ["name", "email"])],
           "menus": {
             [Entity.PrepAreaMenuItem]: {
-              createdBy: view(Entity.User, ["name", "email"]),
+              createdBy: [propView("map", Entity.User, ["name", "email"])],
             },
           },
         },
@@ -88,7 +89,7 @@ export const dbStructure = {
     [Entity.User]: {
       feeds: {
         [Entity.Feed]: {
-          createdBy: view(Entity.User, ["name", "email"]),
+          createdBy: [propView("map", Entity.User, ["name", "email"])],
         },
       },
       friends: {

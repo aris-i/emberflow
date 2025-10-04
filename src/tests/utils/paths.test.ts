@@ -1,4 +1,10 @@
-import {expandAndGroupDocPathsByEntity, hydrateDocPath, filterSubDocPathsByEntity, _mockable as pathsMockable} from "../../utils/paths";
+import {
+  expandAndGroupDocPathsByEntity,
+  hydrateDocPath,
+  filterSubDocPathsByEntity,
+  _mockable as pathsMockable,
+  findMatchingDocPathRegex,
+} from "../../utils/paths";
 import {fetchIds} from "../../utils/query";
 import {ProjectConfig, QueryCondition} from "../../types";
 import {initializeEmberFlow} from "../../index";
@@ -29,6 +35,47 @@ jest.mock("../../utils/query", () => ({
   fetchIds: jest.fn(),
 }));
 
+describe("findMatchingDocPathRegex", () => {
+  beforeEach(() => {
+    initializeEmberFlow(
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      [],
+      [],
+      [],
+      []
+    );
+  });
+
+  it("should return entity and regex for root level path", () => {
+    const path = "topics/topicId";
+    const res = findMatchingDocPathRegex(path);
+    expect(res).toEqual({
+      entity: Entity.Topic,
+      regex: /^topics\/([^/]+)$/,
+    });
+  });
+
+  it("should return entity and regex for second level path", () => {
+    const path = "topics/topicId/ingredients/ingredientId";
+    const res = findMatchingDocPathRegex(path);
+    expect(res).toEqual({
+      entity: Entity.RecipeIngredient,
+      regex: /^topics\/([^/]+)\/ingredients\/([^/]+)$/,
+    });
+  });
+
+  it("should return entity and regex for view document path", () => {
+    const path = "topics/topicId/menuItems/menuItemId/ingredients/ingredientId";
+    const res = findMatchingDocPathRegex(path);
+    expect(res).toEqual({
+      entity: Entity.MenuItemIngredient,
+      regex: /^topics\/([^/]+)\/menuItems\/([^/]+)\/ingredients\/([^/]+)$/,
+    });
+  });
+});
 
 describe("hydrateDocPath", () => {
   beforeEach(() => {
