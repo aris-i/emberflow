@@ -720,26 +720,23 @@ export async function distributeFnTransactional(
 ): Promise<LogicResultDoc[]> {
   const distributedLogicResultDocs: LogicResultDoc[] = [];
 
-  const distributeTransactionalLogicResults= async () => {
-    const transactionalResults = logicResults.filter((result) => result.transactional);
-    if (transactionalResults.length === 0) {
-      console.info("No transactional logic results to distribute");
-      return;
-    }
-    // We always distribute transactional results first
-    const transactionalDstPathLogicDocsMap =
-            await expandConsolidateAndGroupByDstPath(transactionalResults.map(
-              (result) => result.documents).flat());
+  const transactionalResults = logicResults.filter((result) => result.transactional);
+  if (transactionalResults.length === 0) {
+    console.info("No transactional logic results to distribute");
+    return distributedLogicResultDocs;
+  }
+  // We always distribute transactional results first
+  const transactionalDstPathLogicDocsMap = await expandConsolidateAndGroupByDstPath(
+    transactionalResults.flatMap((result) => result.documents)
+  );
     // Write to firestore in one transaction
-    for (const [_, logicDocs] of transactionalDstPathLogicDocsMap) {
-      for (const logicDoc of logicDocs) {
-        distributedLogicResultDocs.push(logicDoc);
-        await distributeDoc(logicDoc, undefined, txn);
-      }
+  for (const [_, logicDocs] of transactionalDstPathLogicDocsMap) {
+    for (const logicDoc of logicDocs) {
+      distributedLogicResultDocs.push(logicDoc);
+      await distributeDoc(logicDoc, undefined, txn);
     }
-  };
+  }
 
-  await distributeTransactionalLogicResults();
 
   return distributedLogicResultDocs;
 }

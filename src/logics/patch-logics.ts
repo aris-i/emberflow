@@ -1,4 +1,4 @@
-import {LogicResult, LogicResultDoc, PatchLogicConfig} from "../types";
+import {LogicResult, PatchLogicConfig} from "../types";
 import {findMatchingDocPathRegex} from "../utils/paths";
 import {
   admin,
@@ -10,8 +10,8 @@ import {CloudEvent} from "firebase-functions/core";
 import {MessagePublishedData} from "firebase-functions/pubsub";
 import {pubsubUtils} from "../utils/pubsub";
 import {
-  _mockable, distributeDoc,
-  expandConsolidateAndGroupByDstPath,
+  _mockable,
+  distributeFnTransactional,
 } from "../index-utils";
 import {queueRunViewLogics} from "./view-logics";
 
@@ -105,45 +105,32 @@ export const runPatchLogics = async (appVersion: string, dstPath: string): Promi
       const dataVersion = data["@dataVersion"] || "0.0.0";
 
       // run only if patch version is higher than the dataVersion
-      if (versionCompare(dataVersion, patchVersion) >= 0) return logicResults;
+      if (versionCompare(dataVersion, patchVersion) >= 0) {
+        console.info(`Skipping Patch Logics for version ${patchVersion} as it is not higher than data version ${dataVersion}`);
+        return logicResults;
+      }
 
       console.info(`Running Patch Logics for version ${patchVersion}`);
       console.debug("Original Document", data);
-      for (const patchLogic of patchLogicConfigs) {
-        console.info("Running Patch Logic:", patchLogic.name,);
-        const patchLogicStart = performance.now();
-        const patchLogicResult = await patchLogic.patchLogicFn(dstPath, data);
-        const patchLogicEnd = performance.now();
-        const execTime = patchLogicEnd - patchLogicStart;
+      for (const patchLogicConfig of patchLogicConfigs) {
+        console.info("Running Patch Logic:", patchLogicConfig.name,);
+        const patchLogicStartTime = performance.now();
+        const patchLogicResult = await patchLogicConfig.patchLogicFn(dstPath, data);
+        const patchLogicEndTime = performance.now();
+        const execTime = patchLogicEndTime - patchLogicStartTime;
         logicResults.push({...patchLogicResult, execTime});
       }
 
-      const patchLogicResultDocs =
-          logicResults.flatMap((logicResult) => logicResult.documents);
-
-      for (const doc of [...patchLogicResultDocs]) {
-        if (doc.action === "delete") continue;
-
-        // this will be consolidated later
-        patchLogicResultDocs.push({
-          action: "merge",
-          dstPath: doc.dstPath,
-          doc: {
-            "@dataVersion": patchVersion,
-          },
-        });
-      }
-
-      const dstPathPatchLogicDocsMap: Map<string, LogicResultDoc[]> =
-          await expandConsolidateAndGroupByDstPath(patchLogicResultDocs);
-
-      const distributedLogicDocs: LogicResultDoc[] = [];
-      dstPathPatchLogicDocsMap.forEach((value) => {
-        value.forEach(async (logicResultDoc) => {
-          await distributeDoc(logicResultDoc, undefined, txn);
-          distributedLogicDocs.push(logicResultDoc);
+      logicResults.forEach((logicResult) => {
+        logicResult.transactional = true;
+        logicResult.documents.forEach((document) => {
+          if (["merge", "create"].includes(document.action) && document.doc) {
+            document.doc["@dataVersion"] = patchVersion;
+          }
         });
       });
+
+      const distributedLogicDocs = await distributeFnTransactional(txn, logicResults);
 
       console.debug("Distributed Logic Docs", distributedLogicDocs);
 
@@ -157,7 +144,7 @@ export const runPatchLogics = async (appVersion: string, dstPath: string): Promi
 
     const end = performance.now();
     const execTime = end - start;
-    const distributeFnLogicResult: LogicResult = {
+    const runPatchMetricsLogicResult: LogicResult = {
       name: "runPatchLogics",
       status: "finished",
       documents: [],
@@ -165,7 +152,7 @@ export const runPatchLogics = async (appVersion: string, dstPath: string): Promi
     };
 
     if ( logicResultsForMetricExecution.length > 0 ) {
-      await _mockable.createMetricExecution([...logicResultsForMetricExecution, distributeFnLogicResult]);
+      await _mockable.createMetricExecution([...logicResultsForMetricExecution, runPatchMetricsLogicResult]);
     }
   }
 };
