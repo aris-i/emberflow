@@ -123,7 +123,7 @@ describe("runPatchLogics", () => {
     status: "finished",
     documents: [],
   });
-  const userLogicFn2 = jest.fn().mockResolvedValue({
+  const userLogicFn2Result = {
     status: "finished",
     documents: [{
       "action": "merge",
@@ -132,8 +132,9 @@ describe("runPatchLogics", () => {
       },
       "dstPath": "users/userId",
     }],
-  });
-  const additionalUserLogicFn2 = jest.fn().mockResolvedValue({
+  };
+  const userLogicFn2 = jest.fn().mockResolvedValue(userLogicFn2Result);
+  const additionalUserLogicFn2Result = {
     status: "finished",
     documents: [
       {
@@ -144,8 +145,9 @@ describe("runPatchLogics", () => {
         "dstPath": "users/userId",
       },
     ],
-  });
-  const userLogicFn2p5 = jest.fn().mockResolvedValue({
+  };
+  const additionalUserLogicFn2 = jest.fn().mockResolvedValue(additionalUserLogicFn2Result);
+  const userLogicFn2p5Result = {
     status: "finished",
     documents: [{
       "action": "merge",
@@ -154,7 +156,8 @@ describe("runPatchLogics", () => {
       },
       "dstPath": "users/userId",
     }],
-  });
+  };
+  const userLogicFn2p5 = jest.fn().mockResolvedValue(userLogicFn2p5Result);
   const topicLogicFn1 = jest.fn().mockResolvedValue({
     status: "finished",
     documents: [],
@@ -226,6 +229,14 @@ describe("runPatchLogics", () => {
   };
 
   beforeEach(() => {
+    jest.spyOn(admin.firestore(), "doc").mockReturnValue(({
+      get: jest.fn().mockResolvedValue({
+        data: jest.fn().mockReturnValue({
+          "userId": "userId",
+          "@dataVersion": dataVersion,
+        }),
+      }),
+    } as unknown) as admin.firestore.DocumentReference<admin.firestore.DocumentData>);
     jest.spyOn(paths, "findMatchingDocPathRegex").mockReturnValue({
       entity: "user",
       regex: /users/,
@@ -233,7 +244,6 @@ describe("runPatchLogics", () => {
     createMetricExecutionSpy = jest.spyOn(indexUtils._mockable, "createMetricExecution").mockResolvedValue();
     queueRunViewLogicsSpy = jest.spyOn(viewLogics, "queueRunViewLogics").mockResolvedValue();
     runTransactionSpy = jest.spyOn(db, "runTransaction")
-      .mockImplementationOnce(async (callback: any) => callback(txnResult1))
       .mockImplementationOnce(async (callback: any) => callback(txnResult1))
       .mockImplementationOnce(async (callback: any) => callback(txnResult2));
     distributeFnTransactionalSpy = jest.spyOn(indexUtils, "distributeFnTransactional")
@@ -275,7 +285,7 @@ describe("runPatchLogics", () => {
       patchLogics
     );
     await runPatchLogics(appVersion, dstPath);
-    expect(runTransactionSpy).toHaveBeenCalledTimes(3); // for version 1.0.0, 2.0.0 and 2.5.0
+    expect(runTransactionSpy).toHaveBeenCalledTimes(2); // for version 2.0.0 and 2.5.0
   });
 
   it("should run all patch logics between dataVersion and appVersion", async () => {
@@ -319,28 +329,26 @@ describe("runPatchLogics", () => {
     expect(distributeFnTransactionalSpy).toHaveBeenCalledTimes(2);
     expect(distributeFnTransactionalSpy).toHaveBeenNthCalledWith(1, txnResult1, [
       {
-        status: "finished",
+        ...userLogicFn2Result,
         documents: [{
-          "action": "merge",
+          ...userLogicFn2Result.documents[0],
           "doc": {
-            "firstName": "John",
+            ...userLogicFn2Result.documents[0].doc,
             "@dataVersion": "2.0.0",
           },
-          "dstPath": "users/userId",
         }],
         transactional: true,
         execTime: expect.any(Number),
       },
       {
-        status: "finished",
+        ...additionalUserLogicFn2Result,
         documents: [
           {
-            "action": "merge",
+            ...additionalUserLogicFn2Result.documents[0],
             "doc": {
-              "lastName": "Doe",
+              ...additionalUserLogicFn2Result.documents[0].doc,
               "@dataVersion": "2.0.0",
             },
-            "dstPath": "users/userId",
           },
         ],
         transactional: true,
@@ -349,14 +357,13 @@ describe("runPatchLogics", () => {
     ]);
     expect(distributeFnTransactionalSpy).toHaveBeenNthCalledWith(2, txnResult2, [
       {
-        status: "finished",
+        ...userLogicFn2p5Result,
         documents: [{
-          "action": "merge",
+          ...userLogicFn2p5Result.documents[0],
           "doc": {
-            "fullName": "John Doe",
+            ...userLogicFn2p5Result.documents[0].doc,
             "@dataVersion": "2.5.0",
           },
-          "dstPath": "users/userId",
         }],
         execTime: expect.any(Number),
         transactional: true,

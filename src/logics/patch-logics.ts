@@ -75,9 +75,20 @@ export const runPatchLogics = async (appVersion: string, dstPath: string): Promi
     console.error("Entity should not be blank");
     return;
   }
+  const docRef = await db.doc(dstPath);
+  const docSnap = await docRef.get();
+  const document = docSnap.data();
+
+  if (!document) {
+    console.error("Document does not exist");
+    return;
+  }
+  const dataVersion = document["@dataVersion"] || "0.0.0";
+
   const matchingPatchLogics = _mockable.getPatchLogicConfigs()
     .filter((patchLogicConfig) => {
       return entity === patchLogicConfig.entity &&
+        versionCompare(dataVersion, patchLogicConfig.version) < 0 &&
         versionCompare(patchLogicConfig.version, appVersion) <= 0;
     });
 
@@ -87,7 +98,6 @@ export const runPatchLogics = async (appVersion: string, dstPath: string): Promi
       if (!map.has(patchLogicConfig.version)) {
         map.set(patchLogicConfig.version, []);
       }
-
       map.get(patchLogicConfig.version)?.push(patchLogicConfig);
       return map;
     }, new Map<string, PatchLogicConfig[]>());
@@ -96,26 +106,26 @@ export const runPatchLogics = async (appVersion: string, dstPath: string): Promi
     const start = performance.now();
     const logicResultsForMetricExecution = await db.runTransaction(async (txn) => {
       const logicResults: LogicResult[] = [];
-      const snapshot = await txn.get(db.doc(dstPath));
-      const data = snapshot.data();
-      if (!data) {
+      const txnDocSnap = await txn.get(db.doc(dstPath));
+      const txnDocument = txnDocSnap.data();
+      if (!txnDocument) {
         console.error("Document does not exist");
         return logicResults;
       }
-      const dataVersion = data["@dataVersion"] || "0.0.0";
+      const txnDataVersion = txnDocument["@dataVersion"] || "0.0.0";
 
       // run only if patch version is higher than the dataVersion
-      if (versionCompare(dataVersion, patchVersion) >= 0) {
+      if (versionCompare(txnDataVersion, patchVersion) >= 0) {
         console.info(`Skipping Patch Logics for version ${patchVersion} as it is not higher than data version ${dataVersion}`);
         return logicResults;
       }
 
       console.info(`Running Patch Logics for version ${patchVersion}`);
-      console.debug("Original Document", data);
+      console.debug("Original Document", txnDocument);
       for (const patchLogicConfig of patchLogicConfigs) {
         console.info("Running Patch Logic:", patchLogicConfig.name,);
         const patchLogicStartTime = performance.now();
-        const patchLogicResult = await patchLogicConfig.patchLogicFn(dstPath, data);
+        const patchLogicResult = await patchLogicConfig.patchLogicFn(dstPath, txnDocument);
         const patchLogicEndTime = performance.now();
         const execTime = patchLogicEndTime - patchLogicStartTime;
         logicResults.push({...patchLogicResult, execTime});
