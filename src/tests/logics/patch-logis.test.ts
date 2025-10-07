@@ -7,7 +7,7 @@ import {
 import {firestore} from "firebase-admin";
 import * as paths from "../../utils/paths";
 import * as admin from "firebase-admin";
-import {LogicResultDoc, PatchLogicConfig, ProjectConfig} from "../../types";
+import {PatchLogicConfig, ProjectConfig} from "../../types";
 import {
   db,
   initializeEmberFlow,
@@ -115,16 +115,14 @@ describe("versionCompare", () => {
 
 describe("runPatchLogics", () => {
   let queueRunViewLogicsSpy : jest.SpyInstance;
-  let expandConsolidateAndGroupByDstPathSpy: jest.SpyInstance;
-  let distributeDocSpy: jest.SpyInstance;
   let runTransactionSpy: jest.SpyInstance;
   let createMetricExecutionSpy: jest.SpyInstance;
+  let distributeFnTransactionalSpy: jest.SpyInstance;
 
   const userLogicFn1 = jest.fn().mockResolvedValue({
     status: "finished",
     documents: [],
   });
-
   const userLogicFn2 = jest.fn().mockResolvedValue({
     status: "finished",
     documents: [{
@@ -135,7 +133,6 @@ describe("runPatchLogics", () => {
       "dstPath": "users/userId",
     }],
   });
-
   const additionalUserLogicFn2 = jest.fn().mockResolvedValue({
     status: "finished",
     documents: [
@@ -148,24 +145,20 @@ describe("runPatchLogics", () => {
       },
     ],
   });
-
-  const userLogicFn2p5Documents = [{
-    "action": "merge",
-    "doc": {
-      fullName: "John Doe",
-    },
-    "dstPath": "users/userId",
-  }];
   const userLogicFn2p5 = jest.fn().mockResolvedValue({
     status: "finished",
-    documents: userLogicFn2p5Documents,
+    documents: [{
+      "action": "merge",
+      "doc": {
+        fullName: "John Doe",
+      },
+      "dstPath": "users/userId",
+    }],
   });
-
   const topicLogicFn1 = jest.fn().mockResolvedValue({
     status: "finished",
     documents: [],
   });
-
   const userLogicFn3 = jest.fn().mockResolvedValue({
     status: "finished",
     documents: [],
@@ -213,32 +206,6 @@ describe("runPatchLogics", () => {
   const dataVersion = "1.0.0";
   const appVersion = "2.9.0";
 
-  const expandConsolidateResult1 = new Map<string, LogicResultDoc[]>([
-    ["users/userId", [
-      {
-        action: "merge",
-        dstPath: "users/userId",
-        doc: {
-          "firstName": "John",
-          "lastName": "Doe",
-          "@dataVersion": "2.0.0",
-        },
-      },
-    ]],
-  ]);
-  const expandConsolidateResult2 = new Map<string, LogicResultDoc[]>([
-    ["users/userId", [
-      {
-        action: "merge",
-        dstPath: "users/userId",
-        doc: {
-          "fullName": "John Doe",
-          "@dataVersion": "2.5.0",
-        },
-      },
-    ]],
-  ]);
-
   const txnResult1 = {
     get: jest.fn().mockResolvedValue({
       data: jest.fn().mockReturnValue({
@@ -265,13 +232,31 @@ describe("runPatchLogics", () => {
     });
     createMetricExecutionSpy = jest.spyOn(indexUtils._mockable, "createMetricExecution").mockResolvedValue();
     queueRunViewLogicsSpy = jest.spyOn(viewLogics, "queueRunViewLogics").mockResolvedValue();
-    expandConsolidateAndGroupByDstPathSpy = jest.spyOn(indexUtils, "expandConsolidateAndGroupByDstPath")
-      .mockResolvedValueOnce(expandConsolidateResult1).mockResolvedValueOnce(expandConsolidateResult2);
-    distributeDocSpy = jest.spyOn(indexUtils, "distributeDoc").mockResolvedValue();
     runTransactionSpy = jest.spyOn(db, "runTransaction")
       .mockImplementationOnce(async (callback: any) => callback(txnResult1))
       .mockImplementationOnce(async (callback: any) => callback(txnResult1))
       .mockImplementationOnce(async (callback: any) => callback(txnResult2));
+    distributeFnTransactionalSpy = jest.spyOn(indexUtils, "distributeFnTransactional")
+      .mockResolvedValueOnce([
+        {
+          action: "merge",
+          dstPath: "users/userId",
+          doc: {
+            "firstName": "John",
+            "lastName": "Doe",
+            "@dataVersion": "2.0.0",
+          },
+        },
+      ]).mockResolvedValueOnce([
+        {
+          action: "merge",
+          dstPath: "users/userId",
+          doc: {
+            "fullName": "John Doe",
+            "@dataVersion": "2.5.0",
+          },
+        },
+      ]);
   });
   afterEach(() => {
     jest.restoreAllMocks();
@@ -331,12 +316,52 @@ describe("runPatchLogics", () => {
     );
     await runPatchLogics(appVersion, dstPath);
 
-    expect(expandConsolidateAndGroupByDstPathSpy).toHaveBeenCalledTimes(2);
-    expect(distributeDocSpy).toHaveBeenCalledTimes(2);
-    expect(distributeDocSpy).toHaveBeenNthCalledWith(1,
-      expandConsolidateResult1.get("users/userId")?.[0], undefined, txnResult1);
-    expect(distributeDocSpy).toHaveBeenNthCalledWith(2,
-      expandConsolidateResult2.get("users/userId")?.[0], undefined, txnResult2);
+    expect(distributeFnTransactionalSpy).toHaveBeenCalledTimes(2);
+    expect(distributeFnTransactionalSpy).toHaveBeenNthCalledWith(1, txnResult1, [
+      {
+        status: "finished",
+        documents: [{
+          "action": "merge",
+          "doc": {
+            "firstName": "John",
+            "@dataVersion": "2.0.0",
+          },
+          "dstPath": "users/userId",
+        }],
+        transactional: true,
+        execTime: expect.any(Number),
+      },
+      {
+        status: "finished",
+        documents: [
+          {
+            "action": "merge",
+            "doc": {
+              "lastName": "Doe",
+              "@dataVersion": "2.0.0",
+            },
+            "dstPath": "users/userId",
+          },
+        ],
+        transactional: true,
+        execTime: expect.any(Number),
+      },
+    ]);
+    expect(distributeFnTransactionalSpy).toHaveBeenNthCalledWith(2, txnResult2, [
+      {
+        status: "finished",
+        documents: [{
+          "action": "merge",
+          "doc": {
+            "fullName": "John Doe",
+            "@dataVersion": "2.5.0",
+          },
+          "dstPath": "users/userId",
+        }],
+        execTime: expect.any(Number),
+        transactional: true,
+      },
+    ]);
     expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(2);
   });
 
@@ -361,13 +386,15 @@ describe("runPatchLogics", () => {
         execTime: expect.any(Number),
         status: "finished",
         timeFinished: expect.any(Timestamp),
-        documents: [{action: "merge", doc: {firstName: "John"}, dstPath: "users/userId"}],
+        documents: [{"action": "merge", "doc": {"firstName": "John", "@dataVersion": "2.0.0"}, "dstPath": "users/userId"}],
+        transactional: true,
       },
       {
         execTime: expect.any(Number),
         status: "finished",
         timeFinished: expect.any(Timestamp),
-        documents: [{action: "merge", doc: {lastName: "Doe"}, dstPath: "users/userId"}],
+        documents: [{action: "merge", doc: {"lastName": "Doe", "@dataVersion": "2.0.0"}, dstPath: "users/userId"}],
+        transactional: true,
       },
       {
         execTime: expect.any(Number),
@@ -383,7 +410,8 @@ describe("runPatchLogics", () => {
         execTime: expect.any(Number),
         status: "finished",
         timeFinished: expect.any(Timestamp),
-        documents: [{action: "merge", doc: {fullName: "John Doe"}, dstPath: "users/userId"}],
+        documents: [{action: "merge", doc: {"fullName": "John Doe", "@dataVersion": "2.5.0"}, dstPath: "users/userId"}],
+        transactional: true,
       },
       {
         execTime: expect.any(Number),
