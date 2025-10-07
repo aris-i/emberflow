@@ -75,7 +75,7 @@ export const runPatchLogics = async (appVersion: string, dstPath: string): Promi
     console.error("Entity should not be blank");
     return;
   }
-  const docRef = await db.doc(dstPath);
+  const docRef = db.doc(dstPath);
   const docSnap = await docRef.get();
   const document = docSnap.data();
 
