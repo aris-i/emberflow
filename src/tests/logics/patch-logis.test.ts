@@ -229,6 +229,7 @@ describe("runPatchLogics", () => {
   };
 
   beforeEach(() => {
+    jest.spyOn(indexUtils, "createMetricLogicDoc").mockResolvedValue();
     jest.spyOn(admin.firestore(), "doc").mockReturnValue(({
       get: jest.fn().mockResolvedValue({
         data: jest.fn().mockReturnValue({
