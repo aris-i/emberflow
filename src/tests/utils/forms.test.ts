@@ -6,7 +6,7 @@ import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
 import * as adminClient from "emberflow-admin-client/lib";
 import * as forms from "../../utils/forms";
 import {initializeEmberFlow, SUBMIT_FORM_TOPIC, SUBMIT_FORM_TOPIC_NAME} from "../../index";
-import {ProjectConfig, SubmitFormDoc} from "../../types";
+import {ProjectConfig} from "../../types";
 import * as admin from "firebase-admin";
 import {dbStructure, Entity} from "../../sample-custom/db-structure";
 import {securityConfigs} from "../../sample-custom/security";
@@ -53,7 +53,7 @@ describe("queueSubmitForm", () => {
   });
 
   it("should queue docs for distribution later", async () => {
-    const formData: SubmitFormDoc = {
+    const formData: FormData = {
       "@docPath": "users/test-uid",
       "@actionType": "create",
       "@appVersion": "0.0.1",

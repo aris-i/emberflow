@@ -8,7 +8,6 @@ import {
   LogicResultDoc,
   RunBusinessLogicStatus,
   SecurityFn,
-  SubmitFormDoc,
   TxnGet,
   ValidateFormResult,
   ViewLogicConfig,
@@ -50,6 +49,7 @@ import FieldValue = firestore.FieldValue;
 import Timestamp = firestore.Timestamp;
 import Transaction = firestore.Transaction;
 import {versionCompare} from "./logics/patch-logics";
+import {FormData} from "emberflow-admin-client/lib/types";
 
 export const _mockable = {
   getViewLogicConfigs: () => viewLogicConfigs,
@@ -163,9 +163,9 @@ export async function distributeDoc(
     } else {
       console.debug("Queuing submit form...");
       await queueSubmitForm({
-        ...doc as SubmitFormDoc,
+        ...doc,
         "@docPath": dstPath,
-      });
+      } as FormData);
     }
   }
 }
