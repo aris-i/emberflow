@@ -8,7 +8,6 @@ import {
   LogicResultDoc,
   RunBusinessLogicStatus,
   SecurityFn,
-  SubmitFormDoc,
   TxnGet,
   ValidateFormResult,
   ViewLogicConfig,
@@ -50,6 +49,7 @@ import FieldValue = firestore.FieldValue;
 import Timestamp = firestore.Timestamp;
 import Transaction = firestore.Transaction;
 import {versionCompare} from "./logics/patch-logics";
+import {FormData} from "emberflow-admin-client/lib/types";
 
 export const _mockable = {
   getViewLogicConfigs: () => viewLogicConfigs,
@@ -162,7 +162,10 @@ export async function distributeDoc(
       console.error("Submit-form is not supported in transactional logic result");
     } else {
       console.debug("Queuing submit form...");
-      await queueSubmitForm(doc as SubmitFormDoc);
+      await queueSubmitForm({
+        ...doc,
+        "@docPath": dstPath,
+      } as FormData);
     }
   }
 }

@@ -6,9 +6,8 @@ import {submitForm} from "emberflow-admin-client/lib";
 import {pubsubUtils} from "./pubsub";
 import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
 import {deleteCollection} from "./misc";
-import {SubmitFormDoc} from "../types";
 
-export async function queueSubmitForm(formData: SubmitFormDoc) {
+export async function queueSubmitForm(formData: FormData) {
   try {
     const messageId = await SUBMIT_FORM_TOPIC.publishMessage({json: formData});
     console.log(`queueSubmitForm: Message ${messageId} published.`);
