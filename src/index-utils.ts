@@ -162,7 +162,10 @@ export async function distributeDoc(
       console.error("Submit-form is not supported in transactional logic result");
     } else {
       console.debug("Queuing submit form...");
-      await queueSubmitForm(doc as SubmitFormDoc);
+      await queueSubmitForm({
+        ...doc as SubmitFormDoc,
+        "@docPath": dstPath,
+      });
     }
   }
 }
