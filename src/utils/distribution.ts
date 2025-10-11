@@ -30,7 +30,6 @@ export const queueForDistributionLater = async (targetVersion: string, ...logicR
         {json: {doc: logicResultDoc, targetVersion}}
       );
       console.log(`queueForDistributionLater: Message ${forDistributionMessageId} published.`);
-      console.debug(`queueForDistributionLater: ${logicResultDoc}`);
     }
   } catch (error: unknown) {
     if (error instanceof Error) {
@@ -78,8 +77,6 @@ export const queueInstructions = async (dstPath: string, instructions: { [p: str
   try {
     const messageId = await INSTRUCTIONS_TOPIC.publishMessage({json: {dstPath, instructions}});
     console.log(`queueInstructions: Message ${messageId} published.`);
-    console.debug(`queueInstructions: ${dstPath}`);
-    console.debug(`queueInstructions: ${instructions}`);
   } catch (error: unknown) {
     if (error instanceof Error) {
       console.error(`Received error while publishing: ${error.message}`);

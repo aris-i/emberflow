@@ -802,13 +802,6 @@ describe("onFormSubmit", () => {
         },
       );
 
-    const viewLogicResults: LogicResult[] = [{
-      name: "User ViewLogic",
-      status: "finished",
-      timeFinished: _mockable.createNowTimestamp(),
-      documents: logicResults.map((result) => result.documents).flat(),
-    }];
-
     const expandConsolidateAndGroupByDstPathMock =
       jest.spyOn(indexutils, "expandConsolidateAndGroupByDstPath")
         .mockResolvedValueOnce(transactionalDstPathLogicDocsMap)
@@ -828,7 +821,6 @@ describe("onFormSubmit", () => {
         docsByDocPath: lowPriorityDocsByDocPath,
         otherDocsByDocPath: lowPriorityOtherDocsByDocPath,
       });
-    jest.spyOn(indexutils, "runViewLogics").mockResolvedValue(viewLogicResults);
     jest.spyOn(indexutils, "distributeFnNonTransactional");
     jest.spyOn(indexutils, "distributeLater");
 

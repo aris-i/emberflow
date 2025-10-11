@@ -1,17 +1,18 @@
-import {
-  LogicResult,
-  LogicResultDoc,
-  ViewDefinition,
-  ViewLogicFn,
-} from "../types";
+import {LogicResult, LogicResultDoc, ViewDefinition, ViewLogicConfig, ViewLogicFn} from "../types";
 import {db, docPaths, docPathsRegex, VIEW_LOGICS_TOPIC, VIEW_LOGICS_TOPIC_NAME} from "../index";
 import * as admin from "firebase-admin";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
 import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
-import {_mockable, distributeFnNonTransactional, expandConsolidateAndGroupByDstPath, runViewLogics} from "../index-utils";
+import {_mockable, distributeFnNonTransactional, expandConsolidateAndGroupByDstPath} from "../index-utils";
 import {pubsubUtils} from "../utils/pubsub";
 import {reviveDateAndTimestamp} from "../utils/misc";
-import {_mockable as pathsMockable, getDestPropAndDestPropId, getParentPath} from "../utils/paths";
+import {
+  _mockable as pathsMockable,
+  findMatchingDocPathRegex,
+  getDestPropAndDestPropId,
+  getParentPath,
+} from "../utils/paths";
+import {versionCompare} from "./patch-logics";
 
 export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[] {
   const {
@@ -391,6 +392,10 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
 export async function queueRunViewLogics(targetVersion: string, ...logicResultDocs: LogicResultDoc[]) {
   try {
     for (const logicResultDoc of logicResultDocs) {
+      if (!findMatchingViewLogics(logicResultDoc, targetVersion)?.size) {
+        continue;
+      }
+
       const {
         action,
         dstPath,
@@ -426,6 +431,28 @@ export async function queueRunViewLogics(targetVersion: string, ...logicResultDo
   }
 }
 
+export async function runViewLogics(logicResultDoc: LogicResultDoc, targetVersion: string): Promise<LogicResult[]> {
+  const matchingLogics = findMatchingViewLogics(logicResultDoc, targetVersion);
+  if (!matchingLogics || matchingLogics.size === 0) {
+    console.log("No matching view logics found");
+    return [];
+  }
+
+  const logicResults = [];
+  for (const logic of matchingLogics.values()) {
+    const start = performance.now();
+    const viewLogicResult = await logic.viewLogicFn(logicResultDoc);
+    const end = performance.now();
+    const execTime = end - start;
+    logicResults.push({
+      ...viewLogicResult,
+      execTime,
+      timeFinished: admin.firestore.Timestamp.now(),
+    });
+  }
+  return logicResults;
+}
+
 export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishedData>) {
   if (await pubsubUtils.isProcessed(VIEW_LOGICS_TOPIC_NAME, event.id)) {
     console.log("Skipping duplicate message");
@@ -439,7 +466,7 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
 
     console.info("Running View Logics");
     const start = performance.now();
-    const viewLogicResults = await runViewLogics(logicResultDoc, targetVersion);
+    const viewLogicResults: LogicResult[] = await exports.runViewLogics(logicResultDoc, targetVersion);
     const end = performance.now();
     const execTime = end - start;
     const distributeFnLogicResult: LogicResult = {
@@ -463,3 +490,55 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
     throw new Error("No json in message");
   }
 }
+
+export const findMatchingViewLogics = (logicResultDoc: LogicResultDoc, targetVersion: string) => {
+  const {
+    action,
+    doc,
+    instructions,
+    dstPath,
+  } = logicResultDoc;
+  const modifiedFields: string[] = [];
+  if (doc) {
+    modifiedFields.push(...Object.keys(doc));
+  }
+  if (instructions) {
+    modifiedFields.push(...Object.keys(instructions));
+  }
+  const {entity} = findMatchingDocPathRegex(dstPath);
+  if (!entity) {
+    console.error("Entity should not be blank");
+    return undefined;
+  }
+
+  const {destProp} = getDestPropAndDestPropId(dstPath);
+
+  const matchingLogics = _mockable.getViewLogicConfigs().filter((viewLogicConfig) => {
+    if (action === "delete") {
+      return viewLogicConfig.entity === entity &&
+                (destProp ? viewLogicConfig.destProp === destProp : true) &&
+                versionCompare(viewLogicConfig.version, targetVersion) <= 0;
+    }
+
+    return viewLogicConfig.actionTypes.includes(action) &&
+            (
+              viewLogicConfig.modifiedFields === "all" ||
+                viewLogicConfig.modifiedFields.some((field) => modifiedFields.includes(field))
+            ) &&
+            viewLogicConfig.entity === entity && (destProp ? viewLogicConfig.destProp === destProp : true) &&
+            versionCompare(viewLogicConfig.version, targetVersion) <= 0;
+  })
+    .reduce((acc, viewLogicConfig) => {
+      const {name} = viewLogicConfig;
+      if (!acc.has(name)) {
+        acc.set(name, viewLogicConfig);
+      } else {
+        const viewLogicConfigPrev = acc.get(name)!;
+        if (versionCompare(viewLogicConfigPrev.version, viewLogicConfig.version) < 0) {
+          acc.set(name, viewLogicConfig);
+        }
+      }
+      return acc;
+    }, new Map<string, ViewLogicConfig>());
+  return matchingLogics;
+};

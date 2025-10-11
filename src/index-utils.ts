@@ -10,7 +10,6 @@ import {
   SecurityFn,
   TxnGet,
   ValidateFormResult,
-  ViewLogicConfig,
 } from "./types";
 import {database, firestore} from "firebase-admin";
 import {
@@ -23,12 +22,7 @@ import {
   validatorConfigs,
   viewLogicConfigs,
 } from "./index";
-import {
-  _mockable as _pathMockable,
-  expandAndGroupDocPathsByEntity,
-  findMatchingDocPathRegex,
-  getDestPropAndDestPropId,
-} from "./utils/paths";
+import {_mockable as _pathMockable, expandAndGroupDocPathsByEntity, getDestPropAndDestPropId} from "./utils/paths";
 import {deepEqual, deleteCollection} from "./utils/misc";
 import {CloudFunctionsServiceClient} from "@google-cloud/functions";
 import {BatchUtil} from "./utils/batch";
@@ -41,6 +35,8 @@ import {
 } from "./utils/distribution";
 import {FirestoreEvent} from "firebase-functions/lib/v2/providers/firestore";
 import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
+import {versionCompare} from "./logics/patch-logics";
+import {FormData} from "emberflow-admin-client/lib/types";
 import QueryDocumentSnapshot = firestore.QueryDocumentSnapshot;
 import DocumentReference = FirebaseFirestore.DocumentReference;
 import DocumentData = FirebaseFirestore.DocumentData;
@@ -48,8 +44,6 @@ import Reference = database.Reference;
 import FieldValue = firestore.FieldValue;
 import Timestamp = firestore.Timestamp;
 import Transaction = firestore.Transaction;
-import {versionCompare} from "./logics/patch-logics";
-import {FormData} from "emberflow-admin-client/lib/types";
 
 export const _mockable = {
   getViewLogicConfigs: () => viewLogicConfigs,
@@ -279,7 +273,6 @@ function getMatchingLogics(actionType: ActionType, modifiedFields: DocumentData,
         acc[index!] = logicConfig; // Replace with the latest version
       }
     }
-    logicConfigs.push(logicConfig);
     return acc;
   }, [] as LogicConfig[]);
 }
@@ -504,74 +497,6 @@ export const expandConsolidateAndGroupByDstPath = async (logicDocs: LogicResultD
 
   return consolidated;
 };
-
-export async function runViewLogics(logicResultDoc: LogicResultDoc, targetVersion: string): Promise<LogicResult[]> {
-  const {
-    action,
-    doc,
-    instructions,
-    dstPath,
-  } = logicResultDoc;
-  const modifiedFields: string[] = [];
-  if (doc) {
-    modifiedFields.push(...Object.keys(doc));
-  }
-  if (instructions) {
-    modifiedFields.push(...Object.keys(instructions));
-  }
-  const {entity} = findMatchingDocPathRegex(dstPath);
-  if (!entity) {
-    console.error("Entity should not be blank");
-    return [];
-  }
-
-  const {destProp} = getDestPropAndDestPropId(dstPath);
-
-  const matchingLogics = _mockable.getViewLogicConfigs().filter((viewLogicConfig) => {
-    if (action === "delete") {
-      return viewLogicConfig.entity === entity &&
-          (destProp ? viewLogicConfig.destProp === destProp : true) &&
-          versionCompare(viewLogicConfig.version, targetVersion) <= 0;
-    }
-
-    return viewLogicConfig.actionTypes.includes(action) &&
-        (
-          viewLogicConfig.modifiedFields === "all" ||
-            viewLogicConfig.modifiedFields.some((field) => modifiedFields.includes(field))
-        ) &&
-        viewLogicConfig.entity === entity && (destProp ? viewLogicConfig.destProp === destProp : true) &&
-      versionCompare(viewLogicConfig.version, targetVersion) <= 0;
-  })
-    .reduce((acc, viewLogicConfig) => {
-      const {name} = viewLogicConfig;
-      if (!acc.has(name)) {
-        acc.set(name, viewLogicConfig);
-      } else {
-        const viewLogicConfigPrev = acc.get(name)!;
-        if (versionCompare(viewLogicConfigPrev.version, viewLogicConfig.version) < 0) {
-          acc.set(name, viewLogicConfig);
-        }
-      }
-      return acc;
-    }, new Map<string, ViewLogicConfig>())
-    .values();
-
-  // TODO: Handle errors
-
-  const logicResults = [];
-  for (const logic of matchingLogics) {
-    const start = performance.now();
-    const viewLogicResult = await logic.viewLogicFn(logicResultDoc);
-    const end = performance.now();
-    const execTime = end - start;
-    logicResults.push({
-      ...viewLogicResult,
-      execTime,
-      timeFinished: admin.firestore.Timestamp.now(),
-    });
-  }
-  return logicResults;
-}
 
 export async function onDeleteFunction(event: FirestoreEvent<QueryDocumentSnapshot | undefined, {deleteFuncId: string}>) {
   const data = event.data;

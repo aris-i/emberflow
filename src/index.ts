@@ -47,7 +47,7 @@ import {internalDbStructure, InternalEntity} from "./db-structure";
 import {cleanActionsAndForms, onMessageSubmitFormQueue} from "./utils/forms";
 import {PubSub, Topic} from "@google-cloud/pubsub";
 import {onMessagePublished} from "firebase-functions/v2/pubsub";
-import {reviveDateAndTimestamp, trimStrings} from "./utils/misc";
+import {logMemoryUsage, reviveDateAndTimestamp, trimStrings} from "./utils/misc";
 import {instructionsReducer, onMessageForDistributionQueue, onMessageInstructionsQueue} from "./utils/distribution";
 import {cleanPubSubProcessedIds} from "./utils/pubsub";
 import {onSchedule} from "firebase-functions/v2/scheduler";
@@ -171,7 +171,9 @@ export function initializeEmberFlow(
     {
       ref: "forms/{userId}/{formId}",
       region: projectConfig.region,
-      memory: "512MiB",
+      memory: "256MiB",
+      concurrency: 80,
+      maxInstances: 20,
     },
     useBillProtect(onFormSubmit)
   );
@@ -267,6 +269,7 @@ export async function onFormSubmit(
 ) {
   console.log("Running onFormSubmit");
   const {userId, formId} = event.params;
+  logMemoryUsage(`${formId}: Start Running onFormSubmit`);
   const formSnapshot = event.data;
   const formRef = formSnapshot.ref;
   const start = performance.now();
@@ -307,7 +310,6 @@ export async function onFormSubmit(
       return;
     }
 
-    // Create Action form
     console.info("Validating @actionType");
     const actionType = form["@actionType"];
     if (!actionType) {
@@ -336,6 +338,7 @@ export async function onFormSubmit(
     const logicDocsThatWereAlreadyDistributed: LogicResultDoc[] = [];
     const actionRef = _mockable.initActionRef(formId);
     let targetVersion = appVersion;
+    logMemoryUsage(`${formId}: Starting Transaction`);
     const runTransactionStatus = await db.runTransaction(async (txn) => {
       const docRef = db.doc(docPath);
       const document = (await txn.get(docRef)).data() || {};
@@ -359,6 +362,7 @@ export async function onFormSubmit(
         await formRef.update({"@status": "validation-error", "@messages": JSON.stringify(validationResult)});
         return "form-validation-error";
       }
+      logMemoryUsage(`${formId}: After Validating form`);
 
       // Let's get the user data
       let user;
@@ -396,6 +400,7 @@ export async function onFormSubmit(
           return "security-error";
         }
       }
+      logMemoryUsage(`${formId}: After Validating Security`);
 
       await formRef.update({"@status": "processing"});
 
@@ -437,6 +442,7 @@ export async function onFormSubmit(
         execTime: businessLogicEnd - businessLogicStart,
       };
       logicResults.push(runBusinessLogicsMetrics);
+      logMemoryUsage(`${formId}: After Running Business Logics`);
 
       let errorMessage= "";
 
@@ -470,6 +476,7 @@ export async function onFormSubmit(
         }
       }
       await saveLogicResults();
+      logMemoryUsage(`${formId}: After Saving Logic Logics`);
 
       const distributeTransactionalLogicResultsStart = performance.now();
       logicDocsThatWereAlreadyDistributed.push(...await distributeFnTransactional(txn, runBusinessLogicStatus.logicResults));
@@ -480,9 +487,11 @@ export async function onFormSubmit(
         documents: [],
         execTime: distributeTransactionalLogicResultsEnd - distributeTransactionalLogicResultsStart,
       };
+      logMemoryUsage(`${formId}: After Distributing Transactional Logic Logics`);
       logicResults.push(distributeTransactionalLogicResults);
       return "transaction-complete";
     });
+    logMemoryUsage(`${formId}: After Running Transaction`);
 
     if (runTransactionStatus.includes("error")) {
       console.warn("Error in transaction", runTransactionStatus);
@@ -492,6 +501,7 @@ export async function onFormSubmit(
     logicDocsThatWereAlreadyDistributed.push(...await distributeNonTransactionalLogicResults(
       runBusinessLogicStatus.logicResults, docPath, targetVersion
     ));
+    logMemoryUsage(`${formId}: After Distributing Non Transactional Logic Logics`);
     const distributeNonTransactionalLogicResultsEnd = performance.now();
     const distributeNonTransactionalPerfLogicResults: LogicResult = {
       name: "distributeNonTransactionalLogicResults",
@@ -504,11 +514,14 @@ export async function onFormSubmit(
     await formRef.update({"@status": "finished"});
 
     await queueRunViewLogics(targetVersion, ...logicDocsThatWereAlreadyDistributed);
+    logMemoryUsage(`${formId}: After Saving Transactional Logic Logics`);
 
     await queueRunPatchLogics(
       appVersion,
       ...new Set([docPath, ...logicDocsThatWereAlreadyDistributed.map((doc) => doc.dstPath)])
     );
+    logMemoryUsage(`${formId}: After Queuing Run Patch Logics`);
+
 
     const end = performance.now();
     const execTime = end - start;
@@ -525,6 +538,7 @@ export async function onFormSubmit(
 
     await indexUtilsMockable.createMetricExecution(logicResults);
     console.info("Finished");
+    logMemoryUsage(`${formId}: Finshed onFormSubmit`);
   } catch (error) {
     console.error("Error in onFormSubmit", error);
     const end = performance.now();

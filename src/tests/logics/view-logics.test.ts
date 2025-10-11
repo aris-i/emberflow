@@ -3,6 +3,7 @@ import {
   LogicResultDoc,
   ViewDefinition,
   ProjectConfig,
+  ViewLogicConfig,
 } from "../../types";
 
 const isProcessedMock = jest.fn();
@@ -1077,12 +1078,17 @@ describe("createViewLogicFn", () => {
 
 describe("queueRunViewLogics", () => {
   let publishMessageSpy: jest.SpyInstance;
+  let findMatchingViewLogicsSpy: jest.SpyInstance;
   beforeEach(() => {
     jest.restoreAllMocks();
     publishMessageSpy = jest.spyOn(VIEW_LOGICS_TOPIC, "publishMessage")
       .mockImplementation(() => {
         return "message-id";
       });
+    // mock findMatchingViewLogics
+    findMatchingViewLogicsSpy = jest.spyOn(viewLogics, "findMatchingViewLogics").mockReturnValue(new Map([
+      ["0.0.1", {} as ViewLogicConfig],
+    ]));
   });
   const targetVersion = "1.0.0";
 
@@ -1095,6 +1101,7 @@ describe("queueRunViewLogics", () => {
     };
     await viewLogics.queueRunViewLogics(targetVersion, doc1);
 
+    expect(findMatchingViewLogicsSpy).toHaveBeenCalled();
     expect(publishMessageSpy).toHaveBeenCalledWith({json: {"doc": doc1, "targetVersion": targetVersion}});
   });
 });
@@ -1182,7 +1189,7 @@ describe("onMessageViewLogicsQueue", () => {
 
   beforeEach(() => {
     createMetricExecutionSpy = jest.spyOn(indexUtils._mockable, "createMetricExecution").mockResolvedValue();
-    runViewLogicsSpy = jest.spyOn(indexUtils, "runViewLogics").mockResolvedValue(viewLogicsResult);
+    runViewLogicsSpy = jest.spyOn(viewLogics, "runViewLogics").mockResolvedValue(viewLogicsResult);
     expandConsolidateAndGroupByDstPathSpy = jest.spyOn(indexUtils, "expandConsolidateAndGroupByDstPath").mockResolvedValue(expandConsolidateResult);
     distributeSpy = jest.spyOn(indexUtils, "distributeFnNonTransactional").mockResolvedValue([]);
   });
