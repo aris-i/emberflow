@@ -35,7 +35,10 @@ export async function onMessageSubmitFormQueue(event: CloudEvent<MessagePublishe
   const appVersion = formData["@appVersion"];
   delete formData["@submitFormAs"];
   delete formData["@appVersion"];
-  formData = await submitForm(formData, submitFormAs, appVersion);
+  formData = await submitForm(formData, {
+    uid: submitFormAs,
+    appVersion,
+  });
   const status = formData["@status"];
   const messages = formData["@messages"];
   console.debug("Form submission status:", status, messages);

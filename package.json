@@ -1,6 +1,6 @@
 {
   "name": "emberflow",
-  "version": "1.4.43",
+  "version": "1.4.44",
   "description": "A Firebase Cloud Functions library for handling document changes in a structured way",
   "main": "lib/index.js",
   "types": "lib/index.d.js",
@@ -38,7 +38,7 @@
     "@google-cloud/billing": "^3.4.0",
     "@google-cloud/functions": "^2.5.0",
     "@google-cloud/pubsub": "^4.0.7",
-    "emberflow-admin-client": "^1.2.7",
+    "emberflow-admin-client": "^1.2.9",
     "object-sizeof": "^2.6.5"
   }
 }

@@ -116,7 +116,7 @@ describe("onMessageSubmitFormQueue", () => {
     } as CloudEvent<MessagePublishedData>;
     const result = await forms.onMessageSubmitFormQueue(event);
 
-    expect(submitFormSpy).toHaveBeenCalledWith(formData, submitFormAs, appVersion);
+    expect(submitFormSpy).toHaveBeenCalledWith(formData, {uid: submitFormAs, appVersion});
     expect(trackProcessedIdsMock).toHaveBeenCalledWith(SUBMIT_FORM_TOPIC_NAME, event.id);
     expect(result).toEqual("Processed form data");
   });
