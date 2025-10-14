@@ -3,6 +3,7 @@ import Timestamp = firestore.Timestamp;
 import GeoPoint = firestore.GeoPoint;
 import Query = firestore.Query;
 import {BatchUtil} from "./batch";
+import sizeof from "object-sizeof/index";
 
 function isObject(item: any): boolean {
   return (typeof item === "object" && !Array.isArray(item) && item !== null);
@@ -229,3 +230,22 @@ export const trimStrings = (json: { [key: string]: any }) => {
 
   return json;
 };
+
+export function logMemoryUsage(suffixLabel: string) {
+  const mem = process.memoryUsage();
+
+  const formatMB = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+
+  console.log(`Memory Usage: ${suffixLabel}:`);
+  console.log(`  • rss       : ${formatMB(mem.rss)} (Total memory including stack/code)`);
+  console.log(`  • heapTotal : ${formatMB(mem.heapTotal)} (Allocated JS heap)`);
+  console.log(`  • heapUsed  : ${formatMB(mem.heapUsed)} (Used JS heap)`);
+  console.log(`  • external  : ${formatMB(mem.external)} (Buffers and native modules)`);
+  console.log(`  • arrayBuffers: ${formatMB(mem.arrayBuffers)} (ArrayBuffer memory)`);
+}
+
+export function logObjectSize(obj: any, label = "Object Size") {
+  const sizeInBytes = sizeof(obj);
+  const sizeInMB = (sizeInBytes / 1024 / 1024).toFixed(2);
+  console.log(`${label}: ${sizeInBytes} bytes (${sizeInMB} MB)`);
+}

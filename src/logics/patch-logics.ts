@@ -18,6 +18,11 @@ import {queueRunViewLogics} from "./view-logics";
 export async function queueRunPatchLogics(appVersion: string, ...dstPaths: string[]) {
   try {
     for (const dstPath of dstPaths) {
+      const {patchLogicConfigs, dataVersion} = await findMatchingPatchLogics(appVersion, dstPath);
+      if (dataVersion === undefined || patchLogicConfigs === undefined || patchLogicConfigs.length === 0) {
+        console.log("No patch logics found for", dstPath);
+        continue;
+      }
       const messageId = await PATCH_LOGICS_TOPIC.publishMessage({json: {appVersion, dstPath}});
       console.log(`queueRunPatchLogics: Message ${messageId} published.`);
       console.debug(`queueRunPatchLogics: ${dstPath}`);
@@ -69,11 +74,11 @@ export function versionCompare(version1: string, version2: string): number {
   return 0; // equal
 }
 
-export const runPatchLogics = async (appVersion: string, dstPath: string): Promise<void> => {
+export const findMatchingPatchLogics = async (appVersion: string, dstPath: string) => {
   const {entity} = findMatchingDocPathRegex(dstPath);
   if (!entity) {
     console.error("Entity should not be blank");
-    return;
+    return {patchLogicConfigs: undefined, dataVersion: undefined};
   }
   const docRef = db.doc(dstPath);
   const docSnap = await docRef.get();
@@ -81,18 +86,27 @@ export const runPatchLogics = async (appVersion: string, dstPath: string): Promi
 
   if (!document) {
     console.error("Document does not exist");
-    return;
+    return {patchLogicConfigs: undefined, dataVersion: undefined};
   }
-  const dataVersion = document["@dataVersion"] || "0.0.0";
+  const dataVersion= document["@dataVersion"] as string || "0.0.0";
 
-  const matchingPatchLogics = _mockable.getPatchLogicConfigs()
+  const patchLogicConfigs = _mockable.getPatchLogicConfigs()
     .filter((patchLogicConfig) => {
       return entity === patchLogicConfig.entity &&
-        versionCompare(dataVersion, patchLogicConfig.version) < 0 &&
-        versionCompare(patchLogicConfig.version, appVersion) <= 0;
+                versionCompare(dataVersion, patchLogicConfig.version) < 0 &&
+                versionCompare(patchLogicConfig.version, appVersion) <= 0;
     });
+  return {patchLogicConfigs, dataVersion};
+};
 
-  const matchingPatchLogicsByVersion = matchingPatchLogics
+export const runPatchLogics = async (appVersion: string, dstPath: string): Promise<void> => {
+  const {patchLogicConfigs, dataVersion} = await findMatchingPatchLogics(appVersion, dstPath);
+  if (!patchLogicConfigs || patchLogicConfigs.length === 0) {
+    console.info("No matching patch logics found for", dstPath);
+    return;
+  }
+
+  const matchingPatchLogicsByVersion = patchLogicConfigs
     .sort((a, b) =>versionCompare(a.version, b.version))
     .reduce((map, patchLogicConfig) => {
       if (!map.has(patchLogicConfig.version)) {

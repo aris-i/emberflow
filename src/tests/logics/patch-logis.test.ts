@@ -1,9 +1,3 @@
-import {
-  onMessageRunPatchLogicsQueue,
-  queueRunPatchLogics,
-  runPatchLogics,
-  versionCompare,
-} from "../../logics/patch-logics";
 import {firestore} from "firebase-admin";
 import * as paths from "../../utils/paths";
 import * as admin from "firebase-admin";
@@ -47,17 +41,33 @@ initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfigs, 
 describe("queueRunPatchLogics", () => {
   const messageId = "test-message-id";
   let publishMessageSpy: jest.SpyInstance;
+  let findMatchingPatchLogicsSpy: jest.SpyInstance;
+
+  const patchLogicConfigs: PatchLogicConfig[] = [
+    {
+      name: "User Patch Version 1",
+      entity: "user",
+      patchLogicFn: jest.fn(),
+      version: "1.0.0",
+    },
+  ];
+
   beforeEach(() => {
-    jest.restoreAllMocks();
     publishMessageSpy = jest.spyOn(PATCH_LOGICS_TOPIC, "publishMessage")
       .mockResolvedValue(messageId as never);
+    findMatchingPatchLogicsSpy = jest.spyOn(patchLogics, "findMatchingPatchLogics");
+  });
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   it("should queue docs to run patch logics", async () => {
     const appVersion = "3.0.0";
     const dstPath = "users/userId";
-    await queueRunPatchLogics(appVersion, dstPath);
+    findMatchingPatchLogicsSpy.mockResolvedValue({patchLogicConfigs, dataVersion: "1.0.0"});
+    await patchLogics.queueRunPatchLogics(appVersion, dstPath);
 
+    expect(findMatchingPatchLogicsSpy).toHaveBeenCalledTimes(1);
     expect(publishMessageSpy).toHaveBeenCalledWith({json: {appVersion, dstPath}});
   });
 
@@ -68,48 +78,64 @@ describe("queueRunPatchLogics", () => {
       "users/userId2",
       "users/userId3",
     ];
-    await queueRunPatchLogics(appVersion, ...dstPathList);
+    findMatchingPatchLogicsSpy.mockResolvedValue({patchLogicConfigs, dataVersion: "1.0.0"});
+    await patchLogics.queueRunPatchLogics(appVersion, ...dstPathList);
 
+    expect(findMatchingPatchLogicsSpy).toHaveBeenCalledTimes(3);
     expect(publishMessageSpy).toHaveBeenNthCalledWith(1, {json: {appVersion, dstPath: dstPathList[0]}});
     expect(publishMessageSpy).toHaveBeenNthCalledWith(2, {json: {appVersion, dstPath: dstPathList[1]}});
     expect(publishMessageSpy).toHaveBeenNthCalledWith(3, {json: {appVersion, dstPath: dstPathList[2]}});
+  });
+
+  it("should not  queue dstPaths if no matching patch logics", async () => {
+    const appVersion = "3.0.0";
+    const dstPathList = [
+      "users/userId",
+      "users/userId2",
+      "users/userId3",
+    ];
+    findMatchingPatchLogicsSpy.mockResolvedValue({patchLogicConfigs: undefined, dataVersion: undefined});
+    await patchLogics.queueRunPatchLogics(appVersion, ...dstPathList);
+
+    expect(findMatchingPatchLogicsSpy).toHaveBeenCalledTimes(3);
+    expect(publishMessageSpy).toHaveBeenCalledTimes(0);
   });
 });
 
 describe("versionCompare", () => {
   it("returns 0 when versions are identical", () => {
-    expect(versionCompare("1.2.3", "1.2.3")).toBe(0);
-    expect(versionCompare("1", "1")).toBe(0);
+    expect(patchLogics.versionCompare("1.2.3", "1.2.3")).toBe(0);
+    expect(patchLogics.versionCompare("1", "1")).toBe(0);
   });
 
   it("returns a negative number when first is lower", () => {
-    expect(versionCompare("1.2.3", "1.2.4")).toBe(-1);
-    expect(versionCompare("1.2", "1.2.1")).toBe(-1);
-    expect(versionCompare("1", "1.0.1")).toBe(-1);
+    expect(patchLogics.versionCompare("1.2.3", "1.2.4")).toBe(-1);
+    expect(patchLogics.versionCompare("1.2", "1.2.1")).toBe(-1);
+    expect(patchLogics.versionCompare("1", "1.0.1")).toBe(-1);
   });
 
   it("returns a positive number when first is higher", () => {
-    expect(versionCompare("1.2.5", "1.2.4")).toBe(1);
-    expect(versionCompare("2.0", "1.9.9")).toBe(1);
-    expect(versionCompare("1.0.1", "1")).toBe(1);
+    expect(patchLogics.versionCompare("1.2.5", "1.2.4")).toBe(1);
+    expect(patchLogics.versionCompare("2.0", "1.9.9")).toBe(1);
+    expect(patchLogics.versionCompare("1.0.1", "1")).toBe(1);
   });
 
   it("handles leading zeros correctly", () => {
-    expect(versionCompare("01.02.03", "1.2.3")).toBe(0);
-    expect(versionCompare("01.10", "1.2")).toBe(1);
+    expect(patchLogics.versionCompare("01.02.03", "1.2.3")).toBe(0);
+    expect(patchLogics.versionCompare("01.10", "1.2")).toBe(1);
   });
 
   it("handles different segment lengths gracefully", () => {
-    expect(versionCompare("1.2", "1.2.0.0")).toBe(0);
-    expect(versionCompare("1.2.0.1", "1.2")).toBe(1);
+    expect(patchLogics.versionCompare("1.2", "1.2.0.0")).toBe(0);
+    expect(patchLogics.versionCompare("1.2.0.1", "1.2")).toBe(1);
   });
 
   it("treats non-numeric segments as 0", () => {
     // Because parseInt of non-numeric yields NaN, then || 0 → 0
-    expect(versionCompare("1.a.3", "1.0.3")).toBe(0);
-    expect(versionCompare("1.a.4", "1.0.3")).toBe(1);
-    expect(versionCompare("1.a.4", "1.0.3")).toBe(1);
-    expect(versionCompare("1.a.4", "1.0.3")).toBe(1);
+    expect(patchLogics.versionCompare("1.a.3", "1.0.3")).toBe(0);
+    expect(patchLogics.versionCompare("1.a.4", "1.0.3")).toBe(1);
+    expect(patchLogics.versionCompare("1.a.4", "1.0.3")).toBe(1);
+    expect(patchLogics.versionCompare("1.a.4", "1.0.3")).toBe(1);
   });
 });
 
@@ -167,7 +193,7 @@ describe("runPatchLogics", () => {
     documents: [],
   });
 
-  const patchLogics: PatchLogicConfig[] = [
+  const patchLogicConfigs: PatchLogicConfig[] = [
     {
       name: "User Patch Version 1",
       entity: "user",
@@ -283,9 +309,9 @@ describe("runPatchLogics", () => {
       securityConfigs,
       validatorConfigs,
       [],
-      patchLogics
+      patchLogicConfigs
     );
-    await runPatchLogics(appVersion, dstPath);
+    await patchLogics.runPatchLogics(appVersion, dstPath);
     expect(runTransactionSpy).toHaveBeenCalledTimes(2); // for version 2.0.0 and 2.5.0
   });
 
@@ -300,9 +326,9 @@ describe("runPatchLogics", () => {
       securityConfigs,
       validatorConfigs,
       [],
-      patchLogics
+      patchLogicConfigs
     );
-    await runPatchLogics(appVersion, dstPath);
+    await patchLogics.runPatchLogics(appVersion, dstPath);
 
     expect(userLogicFn1).not.toHaveBeenCalled(); // below data version
     expect(userLogicFn2).toHaveBeenCalled();
@@ -323,9 +349,9 @@ describe("runPatchLogics", () => {
       securityConfigs,
       validatorConfigs,
       [],
-      patchLogics
+      patchLogicConfigs
     );
-    await runPatchLogics(appVersion, dstPath);
+    await patchLogics.runPatchLogics(appVersion, dstPath);
 
     expect(distributeFnTransactionalSpy).toHaveBeenCalledTimes(2);
     expect(distributeFnTransactionalSpy).toHaveBeenNthCalledWith(1, txnResult1, [
@@ -384,9 +410,9 @@ describe("runPatchLogics", () => {
       securityConfigs,
       validatorConfigs,
       [],
-      patchLogics
+      patchLogicConfigs
     );
-    await runPatchLogics(appVersion, dstPath);
+    await patchLogics.runPatchLogics(appVersion, dstPath);
     expect(createMetricExecutionSpy).toHaveBeenCalledTimes(2);
     // version 2.0.0
     expect(createMetricExecutionSpy).toHaveBeenNthCalledWith(1,
@@ -469,7 +495,7 @@ describe("onMessageRunPatchLogicsQueue", () => {
   });
 
   it("should distribute patch logic result docs", async () => {
-    const result = await onMessageRunPatchLogicsQueue(event);
+    const result = await patchLogics.onMessageRunPatchLogicsQueue(event);
 
     expect(isProcessedSpy).toHaveBeenCalledWith(PATCH_LOGICS_TOPIC_NAME, event.id);
     expect(runPatchLogicsSpy).toHaveBeenCalledWith(targetVersion, dstPath);

@@ -1,36 +1,37 @@
 import * as admin from "firebase-admin";
-import * as indexUtils from "../index-utils";
 import {firestore} from "firebase-admin";
-import {initializeEmberFlow, _mockable, db} from "../index";
+import * as indexUtils from "../index-utils";
+import {cleanMetricComputations, cleanMetricExecutions, createMetricComputation} from "../index-utils";
+import {_mockable, db, initializeEmberFlow} from "../index";
 import {
   Action,
   LogicConfig,
   LogicResult,
-  LogicResultDocAction,
   LogicResultDoc,
+  LogicResultDocAction,
   ProjectConfig,
-  ViewLogicConfig, TxnGet, ValidatorConfig, SecurityConfig, SubmitFormDoc,
+  SecurityConfig,
+  SubmitFormDoc,
+  TxnGet,
+  ValidatorConfig,
+  ViewLogicConfig,
 } from "../types";
-import {Entity, dbStructure} from "../sample-custom/db-structure";
+import {dbStructure, Entity} from "../sample-custom/db-structure";
 import {securityConfigs} from "../sample-custom/security";
 import {validatorConfigs} from "../sample-custom/validators";
-import Timestamp = firestore.Timestamp;
 import {expandAndGroupDocPathsByEntity} from "../utils/paths";
 import {BatchUtil} from "../utils/batch";
 import * as distribution from "../utils/distribution";
 import * as forms from "../utils/forms";
 import {DocumentReference} from "firebase-admin/lib/firestore";
-import CollectionReference = firestore.CollectionReference;
 import * as misc from "../utils/misc";
 import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
-import {
-  cleanMetricComputations,
-  cleanMetricExecutions,
-  createMetricComputation,
-} from "../index-utils";
 import * as viewLogics from "../logics/view-logics";
+import {runViewLogics} from "../logics/view-logics";
 import {patchLogicConfigs} from "../sample-custom/patch-logics";
 import {FormActionType} from "emberflow-admin-client/lib/types";
+import Timestamp = firestore.Timestamp;
+import CollectionReference = firestore.CollectionReference;
 
 // should mock when using initializeEmberFlow and testing db.doc() calls count
 jest.spyOn(indexUtils, "createMetricLogicDoc").mockResolvedValue();
@@ -1737,8 +1738,8 @@ describe("runViewLogics", () => {
     viewLogicFn1V2Point5.mockResolvedValue({});
     viewLogicFn2.mockResolvedValue({});
 
-    const results1 = await indexUtils.runViewLogics(logicResult1, targetVersion);
-    const results2 = await indexUtils.runViewLogics(logicResult2, targetVersion);
+    const results1 = await runViewLogics(logicResult1, targetVersion);
+    const results2 = await runViewLogics(logicResult2, targetVersion);
     const results = [...results1, ...results2];
 
     expect(viewLogicFn1V2Point5).toHaveBeenCalledTimes(2);
