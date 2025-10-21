@@ -637,10 +637,11 @@ describe("distributeLater", () => {
       ["/users/test-user-id/documents/doc2", [doc2]],
     ]);
     const targetVersion = "1.0.0";
-    await indexUtils.distributeLater(usersDocsByDstPath, targetVersion);
+    const appVersion = "1.0.0";
+    await indexUtils.distributeLater(usersDocsByDstPath, appVersion, targetVersion);
 
     expect(queueForDistributionLaterSpy).toHaveBeenCalledTimes(1);
-    expect(queueForDistributionLaterSpy).toHaveBeenCalledWith(targetVersion, doc1, doc2);
+    expect(queueForDistributionLaterSpy).toHaveBeenCalledWith(appVersion, targetVersion, doc1, doc2);
   });
 });
 
