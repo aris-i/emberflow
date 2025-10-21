@@ -66,6 +66,7 @@ describe("queueForDistributionLater", () => {
       });
   });
   const targetVersion = "1.0.0";
+  const appVersion = "1.0.0";
 
   it("should queue docs for distribution later", async () => {
     const doc1: LogicResultDoc = {
@@ -74,9 +75,9 @@ describe("queueForDistributionLater", () => {
       doc: {name: "test-doc-name-updated"},
       dstPath: "/users/test-user-id/documents/doc1",
     };
-    await distribution.queueForDistributionLater(targetVersion, doc1);
+    await distribution.queueForDistributionLater(appVersion, targetVersion, doc1);
 
-    expect(publishMessageSpy).toHaveBeenCalledWith({json: {doc: doc1, targetVersion}});
+    expect(publishMessageSpy).toHaveBeenCalledWith({json: {doc: doc1, targetVersion, appVersion}});
   });
 });
 
@@ -93,6 +94,7 @@ describe("onMessageForDistributionQueue", () => {
     queueRunPatchLogicsSpy = jest.spyOn(patchLogics, "queueRunPatchLogics").mockResolvedValue();
   });
   const targetVersion = "1.0.0";
+  const appVersion = "1.0.0";
 
   it("should skip duplicate message", async () => {
     isProcessedMock.mockResolvedValueOnce(true);
@@ -134,6 +136,7 @@ describe("onMessageForDistributionQueue", () => {
           json: {
             doc: doc1,
             targetVersion,
+            appVersion,
           },
         },
       },
@@ -141,8 +144,8 @@ describe("onMessageForDistributionQueue", () => {
     const result = await distribution.onMessageForDistributionQueue(event);
 
     expect(distributeDocSpy).toHaveBeenCalledWith(doc1);
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(targetVersion, doc1);
-    expect(queueRunPatchLogicsSpy).toHaveBeenCalledWith(doc1.dstPath);
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith( targetVersion, doc1);
+    expect(queueRunPatchLogicsSpy).toHaveBeenCalledWith(appVersion, doc1.dstPath);
     expect(trackProcessedIdsMock).toHaveBeenCalledWith(FOR_DISTRIBUTION_TOPIC_NAME, event.id);
     expect(result).toEqual("Processed for distribution later");
   });
@@ -161,13 +164,14 @@ describe("onMessageForDistributionQueue", () => {
           json: {
             doc: doc1,
             targetVersion,
+            appVersion,
           },
         },
       },
     } as CloudEvent<MessagePublishedData>;
     const result = await distribution.onMessageForDistributionQueue(event);
 
-    expect(queueForDistributionLaterSpy).toHaveBeenCalledWith(targetVersion, {...doc1, priority: "high"});
+    expect(queueForDistributionLaterSpy).toHaveBeenCalledWith(appVersion, targetVersion, {...doc1, priority: "high"});
     expect(trackProcessedIdsMock).toHaveBeenCalledWith(FOR_DISTRIBUTION_TOPIC_NAME, event.id);
     expect(result).toEqual("Processed for distribution later");
   });
@@ -186,13 +190,14 @@ describe("onMessageForDistributionQueue", () => {
           json: {
             doc: doc1,
             targetVersion,
+            appVersion,
           },
         },
       },
     } as CloudEvent<MessagePublishedData>;
     const result = await distribution.onMessageForDistributionQueue(event);
 
-    expect(queueForDistributionLaterSpy).toHaveBeenCalledWith(targetVersion, {...doc1, priority: "normal"});
+    expect(queueForDistributionLaterSpy).toHaveBeenCalledWith(appVersion, targetVersion, {...doc1, priority: "normal"});
     expect(trackProcessedIdsMock).toHaveBeenCalledWith(FOR_DISTRIBUTION_TOPIC_NAME, event.id);
     expect(result).toEqual("Processed for distribution later");
   });
