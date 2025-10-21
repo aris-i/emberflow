@@ -116,11 +116,15 @@ export interface ViewLogicConfig{
     version: string;
 }
 
+export type PatchConfigFilterFn = (
+  data: DocumentData,
+) => boolean;
 export type PatchLogicFn = (dstPath: string, data: DocumentData) => Promise<LogicResult>;
 export interface PatchLogicConfig{
     name: string;
     entity: string;
     patchLogicFn: PatchLogicFn;
+    addtlFilterFn?: PatchConfigFilterFn;
     version: string; // i.e. "xx.yy.zz"
 }
 

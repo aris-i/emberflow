@@ -93,8 +93,9 @@ export const findMatchingPatchLogics = async (appVersion: string, dstPath: strin
   const patchLogicConfigs = _mockable.getPatchLogicConfigs()
     .filter((patchLogicConfig) => {
       return entity === patchLogicConfig.entity &&
-                versionCompare(dataVersion, patchLogicConfig.version) < 0 &&
-                versionCompare(patchLogicConfig.version, appVersion) <= 0;
+        versionCompare(dataVersion, patchLogicConfig.version) < 0 &&
+        versionCompare(patchLogicConfig.version, appVersion) <= 0 &&
+        (patchLogicConfig.addtlFilterFn ? patchLogicConfig.addtlFilterFn(document) : true);
     });
   return {patchLogicConfigs, dataVersion};
 };

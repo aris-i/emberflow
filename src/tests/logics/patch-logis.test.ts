@@ -184,6 +184,10 @@ describe("runPatchLogics", () => {
     }],
   };
   const userLogicFn2p5 = jest.fn().mockResolvedValue(userLogicFn2p5Result);
+  const userLogicFn2p7 = jest.fn().mockResolvedValue({
+    status: "finished",
+    documents: [],
+  });
   const topicLogicFn1 = jest.fn().mockResolvedValue({
     status: "finished",
     documents: [],
@@ -216,7 +220,15 @@ describe("runPatchLogics", () => {
       name: "User Patch Version 2.5",
       entity: "user",
       patchLogicFn: userLogicFn2p5,
+      addtlFilterFn: (data) => data["@prod"],
       version: "2.5.0",
+    },
+    {
+      name: "User Patch Version 2.7",
+      entity: "user",
+      patchLogicFn: userLogicFn2p7,
+      addtlFilterFn: (data) => !data["@prod"],
+      version: "2.7.0",
     },
     {
       name: "Topic Patch Version 1",
@@ -260,6 +272,7 @@ describe("runPatchLogics", () => {
       get: jest.fn().mockResolvedValue({
         data: jest.fn().mockReturnValue({
           "userId": "userId",
+          "@prod": true,
           "@dataVersion": dataVersion,
         }),
       }),
@@ -334,6 +347,7 @@ describe("runPatchLogics", () => {
     expect(userLogicFn2).toHaveBeenCalled();
     expect(additionalUserLogicFn2).toHaveBeenCalled();
     expect(userLogicFn2p5).toHaveBeenCalled();
+    expect(userLogicFn2p7).not.toHaveBeenCalled(); // invalid addtlFilterFn
     expect(topicLogicFn1).not.toHaveBeenCalled(); // wrong entity
     expect(userLogicFn3).not.toHaveBeenCalled(); // ahead the app version
   });
