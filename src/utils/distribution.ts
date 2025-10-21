@@ -23,11 +23,11 @@ import {getDestPropAndDestPropId} from "./paths";
 import {queueRunViewLogics} from "../logics/view-logics";
 import {queueRunPatchLogics} from "../logics/patch-logics";
 
-export const queueForDistributionLater = async (targetVersion: string, ...logicResultDocs: LogicResultDoc[]) => {
+export const queueForDistributionLater = async (appVersion: string, targetVersion: string, ...logicResultDocs: LogicResultDoc[]) => {
   try {
     for (const logicResultDoc of logicResultDocs) {
       const forDistributionMessageId = await FOR_DISTRIBUTION_TOPIC.publishMessage(
-        {json: {doc: logicResultDoc, targetVersion}}
+        {json: {doc: logicResultDoc, targetVersion, appVersion}}
       );
       console.log(`queueForDistributionLater: Message ${forDistributionMessageId} published.`);
     }
@@ -47,7 +47,7 @@ export async function onMessageForDistributionQueue(event: CloudEvent<MessagePub
     return;
   }
   try {
-    const {targetVersion, doc} = event.data.message.json;
+    const {appVersion, targetVersion, doc} = event.data.message.json;
     const logicResultDoc = reviveDateAndTimestamp(doc) as LogicResultDoc;
     console.log("Received user logic result doc:", logicResultDoc);
 
@@ -56,13 +56,13 @@ export async function onMessageForDistributionQueue(event: CloudEvent<MessagePub
     if (priority === "high") {
       await distributeDoc(logicResultDoc);
       await queueRunViewLogics(targetVersion, logicResultDoc);
-      await queueRunPatchLogics(logicResultDoc.dstPath);
+      await queueRunPatchLogics(appVersion, logicResultDoc.dstPath);
     } else if (priority === "normal") {
       logicResultDoc.priority = "high";
-      await queueForDistributionLater(targetVersion, logicResultDoc);
+      await queueForDistributionLater(appVersion, targetVersion, logicResultDoc);
     } else if (priority === "low") {
       logicResultDoc.priority = "normal";
-      await queueForDistributionLater(targetVersion, logicResultDoc);
+      await queueForDistributionLater(appVersion, targetVersion, logicResultDoc);
     }
 
     await pubsubUtils.trackProcessedIds(FOR_DISTRIBUTION_TOPIC_NAME, event.id);

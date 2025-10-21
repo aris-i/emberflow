@@ -185,10 +185,10 @@ export async function distributeFnNonTransactional(docsByDstPath: Map<string, Lo
   return forRunViewLogicQueuing;
 }
 
-export async function distributeLater(docsByDstPath: Map<string, LogicResultDoc[]>, targetVersion: string) {
+export async function distributeLater(docsByDstPath: Map<string, LogicResultDoc[]>, appVersion: string, targetVersion: string) {
   console.log("Submitting to form for later processing...");
   const documents = Array.from(docsByDstPath.values()).flat();
-  await queueForDistributionLater(targetVersion, ...documents);
+  await queueForDistributionLater(appVersion, targetVersion, ...documents);
 }
 
 export async function validateForm(

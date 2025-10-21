@@ -499,7 +499,7 @@ export async function onFormSubmit(
     }
     const distributeNonTransactionalLogicResultsStart = performance.now();
     logicDocsThatWereAlreadyDistributed.push(...await distributeNonTransactionalLogicResults(
-      runBusinessLogicStatus.logicResults, docPath, targetVersion
+      runBusinessLogicStatus.logicResults, docPath, appVersion, targetVersion,
     ));
     logMemoryUsage(`${formId}: After Distributing Non Transactional Logic Logics`);
     const distributeNonTransactionalLogicResultsEnd = performance.now();
@@ -557,7 +557,8 @@ export async function onFormSubmit(
 async function distributeNonTransactionalLogicResults(
   logicResults: LogicResult[],
   docPath: string,
-  targetVersion: string
+  appVersion: string,
+  targetVersion: string,
 ): Promise<LogicResultDoc[]> {
   const forRunViewLogicQueuing: LogicResultDoc[] = [];
   const nonTransactionalResults = logicResults.filter((result) => !result.transactional);
@@ -598,7 +599,7 @@ async function distributeNonTransactionalLogicResults(
     otherDocsByDocPath: normalPriorityOtherDocsByDocPath,
   } = groupDocsByTargetDocPath(normalPriorityDstPathLogicDocsMap, docPath);
   forRunViewLogicQueuing.push(...await distributeFnNonTransactional(normalPriorityDocsByDocPath));
-  await distributeLater(normalPriorityOtherDocsByDocPath, targetVersion);
+  await distributeLater(normalPriorityOtherDocsByDocPath, appVersion, targetVersion);
 
   console.info(`Consolidating and Distributing Low Priority Logic Results: ${lowPriorityDocs.length}`);
   const lowPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
@@ -607,8 +608,8 @@ async function distributeNonTransactionalLogicResults(
     docsByDocPath: lowPriorityDocsByDocPath,
     otherDocsByDocPath: lowPriorityOtherDocsByDocPath,
   } = groupDocsByTargetDocPath(lowPriorityDstPathLogicDocsMap, docPath);
-  await distributeLater(lowPriorityDocsByDocPath, targetVersion);
-  await distributeLater(lowPriorityOtherDocsByDocPath, targetVersion);
+  await distributeLater(lowPriorityDocsByDocPath, appVersion, targetVersion);
+  await distributeLater(lowPriorityOtherDocsByDocPath, appVersion, targetVersion);
 
   return forRunViewLogicQueuing;
 }
