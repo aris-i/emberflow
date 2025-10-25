@@ -1119,6 +1119,8 @@ describe("runBusinessLogics", () => {
     const logicFn2V2 = jest.fn().mockResolvedValue({status: "finished"});
     const logicFn3 = jest.fn().mockResolvedValue({status: "finished"});
     const logicFn3V2 = jest.fn().mockResolvedValue({status: "error", message: "Error message"});
+    const logicFn4V2 = jest.fn().mockResolvedValue({status: "finished"});
+    const logicFn5V2 = jest.fn().mockResolvedValue({status: "finished"});
 
     const logics: LogicConfig[] = [
       {
@@ -1177,6 +1179,24 @@ describe("runBusinessLogics", () => {
         logicFn: logicFn3V2,
         version: "2.4.6",
       },
+      {
+        name: "Logic4",
+        actionTypes: ["create"],
+        modifiedFields: ["field1"],
+        entities: ["user"],
+        logicFn: logicFn4V2,
+        version: "2.4.6",
+        obsoleteAfterVersion: "2.5.0",
+      },
+      {
+        name: "Logic5",
+        actionTypes: ["create"],
+        modifiedFields: ["field1"],
+        entities: ["user"],
+        logicFn: logicFn5V2,
+        version: "1.0.0",
+        obsoleteAfterVersion: "2.4.9",
+      },
     ];
     initializeEmberFlow(
       projectConfig,
@@ -1197,16 +1217,22 @@ describe("runBusinessLogics", () => {
     const targetVersion = "2.5";
     const runStatus = await indexUtils.runBusinessLogics(txnGet, newAction, targetVersion);
 
-    expect(logicFn1).not.toHaveBeenCalled();
+    expect(logicFn1).not.toHaveBeenCalled(); // old logic
     expect(logicFn1V2).toHaveBeenCalledWith(txnGet, newAction, new Map());
-    expect(logicFn1V3).not.toHaveBeenCalled();
-    expect(logicFn2).not.toHaveBeenCalled();
+    expect(logicFn1V3).not.toHaveBeenCalled(); // ahead the target version
+    expect(logicFn2).not.toHaveBeenCalled(); // old logic
     expect(logicFn2V2).toHaveBeenCalledWith(txnGet, newAction, new Map());
-    expect(logicFn3).not.toHaveBeenCalled();
-    expect(logicFn3V2).not.toHaveBeenCalled();
+    expect(logicFn3).not.toHaveBeenCalled(); // unmatched modifiedFields
+    expect(logicFn3V2).not.toHaveBeenCalled(); // unmatched modifiedFields
+    expect(logicFn4V2).toHaveBeenCalledWith(txnGet, newAction, new Map());
+    expect(logicFn5V2).not.toHaveBeenCalled(); // target version passed the obsoleteAfterVersion
     expect(runStatus).toEqual({
       status: "done",
       logicResults: [{
+        status: "finished",
+        execTime: expect.any(Number),
+        timeFinished: expect.any(Timestamp),
+      }, {
         status: "finished",
         execTime: expect.any(Number),
         timeFinished: expect.any(Timestamp),

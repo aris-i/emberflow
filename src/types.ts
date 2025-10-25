@@ -103,6 +103,7 @@ export interface LogicConfig{
     addtlFilterFn?: LogicConfigFilterFn;
     logicFn: LogicFn;
     version: string; // i.e. "xx.yy.zz"
+    obsoleteAfterVersion?: string;
 }
 
 export type ViewLogicFn = (logicResultDoc: LogicResultDoc) => Promise<LogicResult>;
