@@ -674,7 +674,6 @@ describe("createViewLogicFn", () => {
     };
     const result = await logicFn[1](logicResultDoc);
 
-    console.log(result);
     expect(result.documents[0].dstPath).toBe("topics/topic22/prepAreas/prepArea2/menus/menuItem789/@views/topics+topic21+prepAreas+prepArea2+menus+prepAreaMenuItem34+orderItem");
   });
 
@@ -1032,7 +1031,6 @@ describe("createViewLogicFn", () => {
       it("should auto create source document if there is a matching path in @syncCreateViews", async () => {
         const result = await logicFn[0](logicResultDoc);
         expect(result.documents.length).toBe(5);
-        console.log(result.documents);
 
         expect(result.documents[0].dstPath).toBe(`${dstPath1}/ingredient1`);
         expect(result.documents[0].doc).toBe(logicResultDoc.doc);

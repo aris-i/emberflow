@@ -581,7 +581,6 @@ describe("onFormSubmit", () => {
 
     // Test that the runBusinessLogics function was called with the correct parameters
     const actionRef = _mockable.initActionRef(event.params.formId);
-    console.debug("debug", transactionSetMock.mock.calls);
     expect(transactionSetMock).toHaveBeenNthCalledWith(1, actionRef, expectedAction);
 
     // form should still finish successfully

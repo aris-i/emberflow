@@ -255,6 +255,7 @@ function getMatchingLogics(actionType: ActionType, modifiedFields: DocumentData,
         (logic.modifiedFields === "all" || logic.modifiedFields.some((field) => field in modifiedFields)) &&
         (logic.entities === "all" || logic.entities.includes(entity)) &&
       (logic.addtlFilterFn ? logic.addtlFilterFn(actionType, modifiedFields, document, entity, metadata) : true) &&
+      (logic.obsoleteAfterVersion ? versionCompare(targetVersion, logic.obsoleteAfterVersion) <= 0 : true) &&
           versionCompare(logic.version, targetVersion) <= 0
     );
   });
