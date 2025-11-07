@@ -159,7 +159,7 @@ export const runPatchLogics = async (appVersion: string, dstPath: string): Promi
 
       console.debug("Distributed Logic Docs", distributedLogicDocs);
 
-      await queueRunViewLogics(patchVersion, ...distributedLogicDocs);
+      await queueRunViewLogics(patchVersion, distributedLogicDocs);
 
       console.info(`Finished Patch Logic for version ${patchVersion}`);
       return logicResults.map((result) => ({

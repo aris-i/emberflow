@@ -167,12 +167,35 @@ describe("createViewLogicFn", () => {
         collection: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
             get: colGetMock,
+            orderBy: jest.fn().mockReturnValue({
+              limit: jest.fn().mockReturnValue({
+                get: colGetMock,
+              }),
+            }),
             where: jest.fn().mockReturnValue({
               get: colGetMock,
+              orderBy: jest.fn().mockReturnValue({
+                limit: jest.fn().mockReturnValue({
+                  get: colGetMock,
+                  startAfter: jest.fn().mockReturnValue({
+                    get: colGetMock,
+                  }),
+                }),
+              }),
               where: jest.fn().mockReturnValue({
                 get: colGetMock,
+                orderBy: jest.fn().mockReturnValue({
+                  limit: jest.fn().mockReturnValue({
+                    get: colGetMock,
+                  }),
+                }),
                 where: jest.fn().mockReturnValue({
                   get: colGetMock,
+                  orderBy: jest.fn().mockReturnValue({
+                    limit: jest.fn().mockReturnValue({
+                      get: colGetMock,
+                    }),
+                  }),
                 }),
               }),
             }),
@@ -181,6 +204,7 @@ describe("createViewLogicFn", () => {
       } as unknown as DocumentReference;
     });
   });
+  const targetVersion = "1.0.0";
 
   it("should log error document does not have @id", async () => {
     jest.spyOn(console, "error").mockImplementation();
@@ -194,7 +218,7 @@ describe("createViewLogicFn", () => {
       },
       priority: "normal",
     };
-    const result = await logicFn[1](logicResultDoc);
+    const result = await logicFn[1](logicResultDoc, targetVersion);
     expect(result.documents.length).toEqual(0);
     expect(console.error).toHaveBeenCalledWith("Document does not have an @id attribute");
   });
@@ -212,7 +236,7 @@ describe("createViewLogicFn", () => {
       },
       priority: "normal",
     };
-    const result = await logicFn[1](logicResultDoc);
+    const result = await logicFn[1](logicResultDoc, targetVersion);
     expect(result.documents.length).toEqual(0);
     expect(console.error).toHaveBeenCalledWith("srcPath should not have a placeholder");
   });
@@ -220,7 +244,7 @@ describe("createViewLogicFn", () => {
   it("should create @views doc", async () => {
     let logicFn = viewLogics.createViewLogicFn(vd1);
 
-    let result = await logicFn[1](createLogicResultDoc);
+    let result = await logicFn[1](createLogicResultDoc, targetVersion);
     expect(result.documents.length).toEqual(1);
     expect(result.documents[0]).toHaveProperty("action", "create");
     expect(result.documents[0]).toHaveProperty("dstPath", "users/1234/@views/users+1234");
@@ -232,10 +256,7 @@ describe("createViewLogicFn", () => {
 
     logicFn = viewLogics.createViewLogicFn(vd2);
 
-    result = await logicFn[1]({
-      ...createLogicResultDoc,
-      dstPath: "users/1234/posts/987#followers[1234]",
-    });
+    result = await logicFn[1]({...createLogicResultDoc, dstPath: "users/1234/posts/987#followers[1234]"}, targetVersion);
     expect(result.documents.length).toEqual(2);
     expect(result.documents[0]).toHaveProperty("action", "create");
     expect(result.documents[0])
@@ -254,10 +275,7 @@ describe("createViewLogicFn", () => {
 
     logicFn = viewLogics.createViewLogicFn(vd3);
 
-    result = await logicFn[1]({
-      ...createLogicResultDoc,
-      dstPath: "servers/123#createdBy",
-    });
+    result = await logicFn[1]({...createLogicResultDoc, dstPath: "servers/123#createdBy"}, targetVersion);
     expect(result.documents.length).toEqual(1);
     expect(result.documents[0]).toHaveProperty("action", "create");
     expect(result.documents[0])
@@ -273,17 +291,15 @@ describe("createViewLogicFn", () => {
   it("should delete @views doc", async () => {
     let logicFn = viewLogics.createViewLogicFn(vd1);
 
-    let result = await logicFn[1](deleteLogicResultDoc);
+    let result = await logicFn[1](deleteLogicResultDoc, targetVersion);
     expect(result.documents.length).toEqual(1);
     expect(result.documents[0]).toHaveProperty("action", "delete");
     expect(result.documents[0]).toHaveProperty("dstPath", "users/1234/@views/users+1234");
 
     logicFn = viewLogics.createViewLogicFn(vd2);
 
-    result = await logicFn[1]({
-      ...deleteLogicResultDoc,
-      dstPath: "users/1234/posts/987#followers[1234]",
-    });
+    result = await logicFn[1]({...deleteLogicResultDoc, dstPath: "users/1234/posts/987#followers[1234]",
+    }, targetVersion);
     expect(result.documents.length).toEqual(2);
     expect(result.documents[0]).toHaveProperty("action", "delete");
     expect(result.documents[0])
@@ -296,10 +312,7 @@ describe("createViewLogicFn", () => {
 
     logicFn = viewLogics.createViewLogicFn(vd3);
 
-    result = await logicFn[1]({
-      ...deleteLogicResultDoc,
-      dstPath: "servers/123#createdBy",
-    });
+    result = await logicFn[1]({...deleteLogicResultDoc, dstPath: "servers/123#createdBy"}, targetVersion);
     expect(result.documents.length).toEqual(1);
     expect(result.documents[0]).toHaveProperty("action", "delete");
     expect(result.documents[0])
@@ -322,7 +335,7 @@ describe("createViewLogicFn", () => {
     const logicFn = viewLogics.createViewLogicFn(vd1);
 
     // Call the logic function with the test action
-    const result = await logicFn[0](mergeLogicResultDoc);
+    const result = await logicFn[0](mergeLogicResultDoc, targetVersion);
 
     expect(colGetMock).toHaveBeenCalledTimes(1);
     expect(docUpdateMock).not.toHaveBeenCalled();
@@ -352,7 +365,7 @@ describe("createViewLogicFn", () => {
     const logicFn = viewLogics.createViewLogicFn(vd1);
 
     // Call the logic function with the test action
-    const result = await logicFn[0](newDeleteLogicResultDoc);
+    const result = await logicFn[0](newDeleteLogicResultDoc, targetVersion);
 
     expect(colGetMock).toHaveBeenCalledTimes(1);
     expect(docUpdateMock).not.toHaveBeenCalled();
@@ -393,7 +406,7 @@ describe("createViewLogicFn", () => {
     const logicFn = viewLogics.createViewLogicFn(vd1);
 
     // Call the logic function with the test action
-    const result = await logicFn[0](mergeLogicResultDoc);
+    const result = await logicFn[0](mergeLogicResultDoc, targetVersion);
 
     expect(colGetMock).toHaveBeenCalledTimes(1);
     expect(docSpy).toHaveBeenCalledWith("users/1234/@views/users+456+friends+1234");
@@ -538,7 +551,7 @@ describe("createViewLogicFn", () => {
     const logicFn = viewLogics.createViewLogicFn(vd1);
 
     // Call the logic function with the test action
-    const result = await logicFn[0](mergeLogicResultDoc);
+    const result = await logicFn[0](mergeLogicResultDoc, targetVersion);
 
     expect(result).toBeDefined();
     expect(result.documents).toBeDefined();
@@ -560,7 +573,7 @@ describe("createViewLogicFn", () => {
     const logicFn2 = viewLogics.createViewLogicFn(vd2);
 
     // Call the logic function with the test action
-    const result2 = await logicFn2[0](mergeLogicResultDoc);
+    const result2 = await logicFn2[0](mergeLogicResultDoc, targetVersion);
 
     // Add your expectations here, e.g., result.documents should have the correct properties and values
     expect(result2).toBeDefined();
@@ -587,7 +600,7 @@ describe("createViewLogicFn", () => {
     expect(document).toHaveProperty("dstPath", "users/890/posts/654+followers[1234]");
     expect(document.doc).toEqual({"name": "John Doe", "@updatedByViewDefinitionAt": expect.any(Timestamp)});
 
-    const resultDelete = await logicFn[0](deleteLogicResultDoc);
+    const resultDelete = await logicFn[0](deleteLogicResultDoc, targetVersion);
 
     expect(resultDelete).toBeDefined();
     expect(resultDelete.documents).toBeDefined();
@@ -605,7 +618,7 @@ describe("createViewLogicFn", () => {
     const logicFn3 = viewLogics.createViewLogicFn(vd3);
 
     // Call the logic function with the test action
-    const result3 = await logicFn3[0](userLogicResultDoc);
+    const result3 = await logicFn3[0](userLogicResultDoc, targetVersion);
 
     expect(result3).toBeDefined();
     expect(result3.documents).toBeDefined();
@@ -645,7 +658,7 @@ describe("createViewLogicFn", () => {
       },
       priority: "normal",
     };
-    const result = await logicFn[1](logicResultDoc);
+    const result = await logicFn[1](logicResultDoc, targetVersion);
 
     expect(result.documents[0].dstPath).toBe("topics/topic21/orders/order123/menus/menuItem789/@views/topics+topic21+prepAreas+prepArea2+menus+prepAreaMenuItem34");
   });
@@ -672,7 +685,7 @@ describe("createViewLogicFn", () => {
         "topicId": "topic22",
       },
     };
-    const result = await logicFn[1](logicResultDoc);
+    const result = await logicFn[1](logicResultDoc, targetVersion);
 
     expect(result.documents[0].dstPath).toBe("topics/topic22/prepAreas/prepArea2/menus/menuItem789/@views/topics+topic21+prepAreas+prepArea2+menus+prepAreaMenuItem34+orderItem");
   });
@@ -698,7 +711,7 @@ describe("createViewLogicFn", () => {
         "@id": "menuItem789",
       },
     };
-    const result = await logicFn[1](logicResultDoc);
+    const result = await logicFn[1](logicResultDoc, targetVersion);
     expect(result.status).toBe("error");
     expect(result.message).toBe("srcPath should not have a placeholder");
   });
@@ -837,7 +850,7 @@ describe("createViewLogicFn", () => {
 
     const logicFn = viewLogics.createViewLogicFn(vd1);
 
-    const result = await logicFn[0](mergeLogicResultDoc);
+    const result = await logicFn[0](mergeLogicResultDoc, targetVersion);
 
     expect(result).toBeDefined();
     expect(result.documents).toBeDefined();
@@ -889,7 +902,7 @@ describe("createViewLogicFn", () => {
 
     const logicFn = viewLogics.createViewLogicFn(vd1);
 
-    const result = await logicFn[0](mergeLogicResultDoc);
+    const result = await logicFn[0](mergeLogicResultDoc, targetVersion);
 
     expect(result).toBeDefined();
     expect(result.documents).toBeDefined();
@@ -902,6 +915,115 @@ describe("createViewLogicFn", () => {
     document = result.documents[1];
     expect(document).toHaveProperty("action", "delete");
     expect(document).toHaveProperty("dstPath", "users/1234/@views/users+789+friends+1234");
+  });
+
+  it("should only execute 100 @views per batch, then queue the succeeding ones", async () => {
+    docGetMock.mockResolvedValue({
+      data: () => {
+        return {
+          "@viewsAlreadyBuilt+friend": false,
+        };
+      },
+      exists: true,
+    });
+    colGetMock.mockResolvedValueOnce({
+      docs: [...(Array.from({length: 99}, () => ({
+        id: "users+456+friends+1234",
+        ref: {
+          path: "users/1234/@views/users+456+friends+1234",
+        },
+        data: ()=> {
+          return {
+            "@id": "users+userId+friends+1234",
+            "destEntity": "user",
+            "path": "users/userId/friends/1234",
+            "srcProps": ["age", "avatar", "name"],
+          };
+        },
+      }))),
+      {
+        "id": "100thViewId",
+        "ref": {
+          path: "users/1234/@views/100thViewId",
+        },
+        "data": ()=> {
+          return {
+            "@id": "100thViewId",
+            "destEntity": "user",
+            "path": "users/userId/friends/1234",
+            "srcProps": ["age", "avatar", "name"],
+          };
+        },
+      },
+      ],
+    });
+    const queueRunViewLogicsSpy =
+      jest.spyOn(viewLogics, "queueRunViewLogics").mockResolvedValue();
+
+    const logicFn = viewLogics.createViewLogicFn(vd1);
+
+    const result = await logicFn[0](mergeLogicResultDoc, targetVersion);
+
+    expect(result).toBeDefined();
+    expect(result.documents).toBeDefined();
+    expect(result.documents.length).toEqual(100);
+
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
+    expect(queueRunViewLogicsSpy).toHaveBeenNthCalledWith(1, targetVersion, [mergeLogicResultDoc], "100thViewId");
+  });
+
+  it("should be able to process succeeding batches of @views", async () => {
+    docGetMock.mockResolvedValueOnce({
+      data: () => {
+        return {
+          "@viewsAlreadyBuilt+friend": false,
+        };
+      },
+      exists: true,
+    }).mockResolvedValueOnce({
+      "data": () => {
+        return {
+          "@id": "100thViewId",
+          "destEntity": "user",
+          "path": "users/userId/friends/1234",
+          "srcProps": ["age", "avatar", "name"],
+        };
+      },
+      "exists": true,
+    });
+    colGetMock.mockResolvedValueOnce({
+      docs: [{
+        id: "users+456+friends+1234+prop1",
+        ref: {
+          path: "users/1234/@views/users+456+friends+1234",
+        },
+        data: () => {
+          return {
+            "path": "users/456/friends/1234#prop1",
+            "srcProps": ["age", "avatar", "name"],
+          };
+        },
+      }, {
+        id: "users+789+friends+1234+prop1[propId1]",
+        ref: {
+          path: "users/1234/@views/users+789+friends+1234",
+        },
+        data: () => {
+          return {
+            "path": "users/789/friends/1234#prop1[propId1]",
+            "srcProps": ["age", "avatar", "name"],
+          };
+        },
+      }],
+    });
+
+    const logicFn = viewLogics.createViewLogicFn(vd1);
+
+    const result = await logicFn[0](mergeLogicResultDoc, targetVersion, "100thViewId");
+
+    expect(result).toBeDefined();
+    expect(result.documents).toBeDefined();
+    expect(result.documents.length).toEqual(2);
   });
 
   describe("SyncCreate ViewLogic", () => {
@@ -932,7 +1054,7 @@ describe("createViewLogicFn", () => {
       it("should return finished logicResult with 2 documents", async () => {
         jest.spyOn(pathsMockable, "doesPathExists").mockResolvedValue(false);
 
-        const result = await logicFn[1](logicResultDoc);
+        const result = await logicFn[1](logicResultDoc, targetVersion);
         expect(result.name).toBe("menuItemIngredient Dst-to-Src");
         expect(result.status).toBe("finished");
         expect(result.timeFinished).toBe(undefined);
@@ -941,7 +1063,7 @@ describe("createViewLogicFn", () => {
       it("should create @syncCreateView in global collection", async () => {
         jest.spyOn(pathsMockable, "doesPathExists").mockResolvedValue(false);
 
-        const result = await logicFn[1](logicResultDoc);
+        const result = await logicFn[1](logicResultDoc, targetVersion);
         expect(result.documents[1].dstPath).toBe("@syncCreateViews/topics+topic21+menus+menu1+ingredients");
         expect(result.documents[1].doc).toEqual({
           "destEntity": "menuItemIngredient",
@@ -959,7 +1081,7 @@ describe("createViewLogicFn", () => {
         jest.spyOn(pathsMockable, "doesPathExists").mockResolvedValue(false);
         const errorSpy = jest.spyOn(console, "error").mockImplementation();
 
-        const result = await logicFn[1](invalidLogicResultDoc);
+        const result = await logicFn[1](invalidLogicResultDoc, targetVersion);
         expect(errorSpy).toHaveBeenCalledWith("invalid syncCreate dstPath, topics/topic21/menus/menu1#ingredients");
         expect(result.documents.length).toEqual(1);
         expect(result.documents[0].dstPath).not.toBe("@syncCreateViews/topics+topic21+menus+menu1+ingredients");
@@ -969,7 +1091,7 @@ describe("createViewLogicFn", () => {
         const infoSpy = jest.spyOn(console, "info").mockImplementation();
         jest.spyOn(pathsMockable, "doesPathExists").mockResolvedValue(true);
 
-        const result = await logicFn[1](logicResultDoc);
+        const result = await logicFn[1](logicResultDoc, targetVersion);
         expect(infoSpy).toHaveBeenCalledWith("@syncCreateViews/topics+topic21+menus+menu1+ingredients already exists — skipping creation.");
         expect(result.documents.length).toEqual(1);
         expect(result.documents[0].dstPath).not.toBe("@syncCreateViews/topics+topic21+menus+menu1+ingredients");
@@ -1029,7 +1151,7 @@ describe("createViewLogicFn", () => {
       pathsMockable.doesPathExists = doesPathExistsMock;
 
       it("should auto create source document if there is a matching path in @syncCreateViews", async () => {
-        const result = await logicFn[0](logicResultDoc);
+        const result = await logicFn[0](logicResultDoc, targetVersion);
         expect(result.documents.length).toBe(5);
 
         expect(result.documents[0].dstPath).toBe(`${dstPath1}/ingredient1`);
@@ -1040,7 +1162,7 @@ describe("createViewLogicFn", () => {
       });
 
       it("should manually create @view document for each newly created views", async () => {
-        const result = await logicFn[0](logicResultDoc);
+        const result = await logicFn[0](logicResultDoc, targetVersion);
 
         const atViewsCollectionPath = `${srcCollection}/ingredient1/@views`;
         expect(result.documents[1].dstPath).toBe(
@@ -1061,7 +1183,7 @@ describe("createViewLogicFn", () => {
       });
 
       it("should add the docId in the @{field} if there is a destProp", async () => {
-        const result = await logicFn[0](logicResultDoc);
+        const result = await logicFn[0](logicResultDoc, targetVersion);
 
         expect(result.documents[4].dstPath).toBe(
           "topics/topic21/preparationAreas/prepArea1/menus/menu1");
@@ -1097,7 +1219,7 @@ describe("queueRunViewLogics", () => {
       doc: {name: "test-doc-name-merge"},
       dstPath: "users/test-user-id/documents/doc1",
     };
-    await viewLogics.queueRunViewLogics(targetVersion, doc1);
+    await viewLogics.queueRunViewLogics(targetVersion, [doc1]);
 
     expect(findMatchingViewLogicsSpy).toHaveBeenCalled();
     expect(publishMessageSpy).toHaveBeenCalledWith({json: {"doc": doc1, "targetVersion": targetVersion}});

@@ -106,7 +106,7 @@ export interface LogicConfig{
     obsoleteAfterVersion?: string;
 }
 
-export type ViewLogicFn = (logicResultDoc: LogicResultDoc) => Promise<LogicResult>;
+export type ViewLogicFn = (logicResultDoc: LogicResultDoc, targetVersion: string, lastProcessedId?: string) => Promise<LogicResult>;
 export interface ViewLogicConfig{
     name: string;
     actionTypes: LogicResultDocAction[];
