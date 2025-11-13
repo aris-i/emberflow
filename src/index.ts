@@ -615,14 +615,44 @@ async function distributeNonTransactionalLogicResults(
 }
 
 const onUserRegister = async (user: UserRecord) => {
+  const {
+    uid,
+    displayName,
+    photoURL,
+    email,
+    providerData,
+  } = user;
+
+  const {
+    displayName: providerDisplayName = "",
+    photoURL: providerPhotoURL = "",
+    email: providerEmail= "",
+  } = providerData[0] || {};
+
+  function splitDisplayName(displayName: string) {
+    const parts = displayName.trim().split(/\s+/); // split by any whitespace
+
+    if (parts.length === 0) {
+      return {firstName: "", lastName: ""};
+    }
+
+    if (parts.length === 1) {
+      return {firstName: parts[0], lastName: ""};
+    }
+
+    // For 2+ words, assume the last word is the last name
+    const lastName = parts.pop();
+    const firstName = parts.join(" "); // join remaining words as first name
+
+    return {firstName, lastName};
+  }
+
   await db.doc(`users/${user.uid}`).set({
-    "@id": user.uid,
-    "firstName": user.displayName || "",
-    "lastName": "",
-    "avatarUrl": user.photoURL || "",
-    "username": user.email || "",
-    "email": user.email || "",
+    "@id": uid,
+    ...splitDisplayName(displayName || providerDisplayName),
+    "avatarUrl": photoURL || providerPhotoURL,
+    "username": email || providerEmail,
+    "email": email || providerEmail,
     "registeredAt": admin.firestore.Timestamp.now(),
-    "tokens": [],
   });
 };
