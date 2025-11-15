@@ -1,7 +1,7 @@
 import {firestore} from "firebase-admin";
 import * as paths from "../../utils/paths";
 import * as admin from "firebase-admin";
-import {PatchLogicConfig, ProjectConfig} from "../../types";
+import {LogicResult, LogicResultDoc, PatchLogicConfig, ProjectConfig} from "../../types";
 import {
   db,
   initializeEmberFlow,
@@ -140,109 +140,83 @@ describe("versionCompare", () => {
 });
 
 describe("runPatchLogics", () => {
+  const dstPath = "users/userId";
   let queueRunViewLogicsSpy : jest.SpyInstance;
   let runTransactionSpy: jest.SpyInstance;
   let createMetricExecutionSpy: jest.SpyInstance;
   let distributeFnTransactionalSpy: jest.SpyInstance;
 
-  const userLogicFn1 = jest.fn().mockResolvedValue({
-    status: "finished",
-    documents: [],
-  });
-  const userLogicFn2Result = {
-    status: "finished",
-    documents: [{
-      "action": "merge",
-      "doc": {
-        firstName: "John",
-      },
-      "dstPath": "users/userId",
-    }],
-  };
-  const userLogicFn2 = jest.fn().mockResolvedValue(userLogicFn2Result);
-  const additionalUserLogicFn2Result = {
-    status: "finished",
-    documents: [
-      {
-        "action": "merge",
-        "doc": {
-          lastName: "Doe",
-        },
-        "dstPath": "users/userId",
-      },
-    ],
-  };
-  const additionalUserLogicFn2 = jest.fn().mockResolvedValue(additionalUserLogicFn2Result);
-  const userLogicFn2p5Result = {
-    status: "finished",
-    documents: [{
-      "action": "merge",
-      "doc": {
-        fullName: "John Doe",
-      },
-      "dstPath": "users/userId",
-    }],
-  };
-  const userLogicFn2p5 = jest.fn().mockResolvedValue(userLogicFn2p5Result);
-  const userLogicFn2p7 = jest.fn().mockResolvedValue({
-    status: "finished",
-    documents: [],
-  });
-  const topicLogicFn1 = jest.fn().mockResolvedValue({
-    status: "finished",
-    documents: [],
-  });
-  const userLogicFn3 = jest.fn().mockResolvedValue({
-    status: "finished",
-    documents: [],
+  // declare globally for test file scope
+  let userLogicFn2Result: LogicResult;
+  let additionalUserLogicFn2Result: LogicResult;
+  let userLogicFn2p5Result: LogicResult;
+
+  let userLogicFn1: jest.Mock;
+  let userLogicFn2: jest.Mock;
+  let additionalUserLogicFn2: jest.Mock;
+  let userLogicFn2p5: jest.Mock;
+  let userLogicFn2p7: jest.Mock;
+  let topicLogicFn1: jest.Mock;
+  let userLogicFn3: jest.Mock;
+
+  let patchLogicConfigs: PatchLogicConfig[];
+
+  beforeEach(() => {
+    // Recreate result objects — so tests never share references
+    userLogicFn2Result = {
+      name: "userLogicFn2",
+      status: "finished",
+      documents: [{
+        action: "create",
+        doc: {firstName: "John", lastName: "Doe"},
+        dstPath: "users/userId/friends/friendId",
+      }],
+    };
+
+    additionalUserLogicFn2Result = {
+      name: "additionalUserLogicFn2",
+      status: "finished",
+      documents: [{
+        action: "create",
+        doc: {firstName: "Maria", lastName: "Doe"},
+        dstPath: "users/userId/friends/friendId2",
+      }],
+    };
+
+    userLogicFn2p5Result = {
+      name: "userLogicFn2p5",
+      status: "finished",
+      documents: [{
+        action: "merge",
+        doc: {token: "New title"},
+        dstPath: "users/userId/todos/todoId#title",
+      }],
+    };
+
+    // Recreate mocks
+    userLogicFn1 = jest.fn().mockResolvedValue({status: "finished", documents: []});
+    userLogicFn2 = jest.fn().mockResolvedValue(userLogicFn2Result);
+    additionalUserLogicFn2 = jest.fn().mockResolvedValue(additionalUserLogicFn2Result);
+    userLogicFn2p5 = jest.fn().mockResolvedValue(userLogicFn2p5Result);
+    userLogicFn2p7 = jest.fn().mockResolvedValue({status: "finished", documents: []});
+    topicLogicFn1 = jest.fn().mockResolvedValue({status: "finished", documents: []});
+    userLogicFn3 = jest.fn().mockResolvedValue({status: "finished", documents: []});
+
+    patchLogicConfigs = [
+      {name: "User Patch Version 1", entity: "user", patchLogicFn: userLogicFn1, version: "1.0.0"},
+      {name: "User Patch Version 2", entity: "user", patchLogicFn: userLogicFn2, version: "2.0.0"},
+      {name: "Additional User Patch Version 2", entity: "user", patchLogicFn: additionalUserLogicFn2, version: "2.0.0"},
+      {name: "User Patch Version 2.5", entity: "user", patchLogicFn: userLogicFn2p5, addtlFilterFn: (d) => d["@prod"], version: "2.5.0"},
+      {name: "User Patch Version 2.7", entity: "user", patchLogicFn: userLogicFn2p7, addtlFilterFn: (d) => !d["@prod"], version: "2.7.0"},
+      {name: "Topic Patch Version 1", entity: "topic", patchLogicFn: topicLogicFn1, version: "1.0.0"},
+      {name: "User Patch Version 3", entity: "user", patchLogicFn: userLogicFn3, version: "3.0.0"},
+    ];
   });
 
-  const patchLogicConfigs: PatchLogicConfig[] = [
-    {
-      name: "User Patch Version 1",
-      entity: "user",
-      patchLogicFn: userLogicFn1,
-      version: "1.0.0",
-    },
-    {
-      name: "User Patch Version 2",
-      entity: "user",
-      patchLogicFn: userLogicFn2,
-      version: "2.0.0",
-    },
-    {
-      name: "Additional User Patch Version 2",
-      entity: "user",
-      patchLogicFn: additionalUserLogicFn2,
-      version: "2.0.0",
-    },
-    {
-      name: "User Patch Version 2.5",
-      entity: "user",
-      patchLogicFn: userLogicFn2p5,
-      addtlFilterFn: (data) => data["@prod"],
-      version: "2.5.0",
-    },
-    {
-      name: "User Patch Version 2.7",
-      entity: "user",
-      patchLogicFn: userLogicFn2p7,
-      addtlFilterFn: (data) => !data["@prod"],
-      version: "2.7.0",
-    },
-    {
-      name: "Topic Patch Version 1",
-      entity: "topic",
-      patchLogicFn: topicLogicFn1,
-      version: "1.0.0",
-    },
-    {
-      name: "User Patch Version 3",
-      entity: "user",
-      patchLogicFn: userLogicFn3,
-      version: "3.0.0",
-    },
-  ];
+  test("example test using global result", async () => {
+    await userLogicFn2(); // runs mock
+    expect(userLogicFn2Result?.documents?.[0].doc?.firstName).toBe("John");
+  });
 
   const dataVersion = "1.0.0";
   const appVersion = "2.9.0";
@@ -267,6 +241,7 @@ describe("runPatchLogics", () => {
   };
 
   beforeEach(() => {
+    jest.clearAllMocks();
     jest.spyOn(indexUtils, "createMetricLogicDoc").mockResolvedValue();
     jest.spyOn(admin.firestore(), "doc").mockReturnValue(({
       get: jest.fn().mockResolvedValue({
@@ -289,22 +264,31 @@ describe("runPatchLogics", () => {
     distributeFnTransactionalSpy = jest.spyOn(indexUtils, "distributeFnTransactional")
       .mockResolvedValueOnce([
         {
-          action: "merge",
-          dstPath: "users/userId",
-          doc: {
-            "firstName": "John",
-            "lastName": "Doe",
-            "@dataVersion": "2.0.0",
-          },
+          ...userLogicFn2Result.documents[0],
+          doc: {...userLogicFn2Result.documents[0].doc, dataVersion: "2.0.0"},
+        },
+        {
+          ...userLogicFn2p5Result.documents[0],
+          doc: {...userLogicFn2p5Result.documents[0].doc, dataVersion: "2.0.0"},
+        },
+        {
+          action: "merge", dstPath,
+          doc: {dataVersion: "2.0.0"},
         },
       ]).mockResolvedValueOnce([
         {
-          action: "merge",
-          dstPath: "users/userId",
-          doc: {
-            "fullName": "John Doe",
-            "@dataVersion": "2.5.0",
-          },
+          "action": "merge",
+          "doc": {token: "New title", dataVersion: "2.5.0"},
+          "dstPath": "users/userId/todos/todoId#title",
+        },
+        {
+          "action": "merge",
+          "doc": {dataVersion: "2.5.0"},
+          "dstPath": "users/userId/todos/todoId",
+        },
+        {
+          action: "merge", dstPath,
+          doc: {dataVersion: "2.5.0"},
         },
       ]);
   });
@@ -312,8 +296,13 @@ describe("runPatchLogics", () => {
     jest.restoreAllMocks();
   });
 
+  const dataVersionLogicResultDoc: LogicResultDoc = {
+    action: "merge",
+    doc: {"@dataVersion": "2.0.0"},
+    dstPath,
+  };
+
   it("should appropriately group the matched logics by version then run transactions for each group", async () => {
-    const dstPath = "users/userId";
     initializeEmberFlow(
       projectConfig,
       admin,
@@ -329,8 +318,6 @@ describe("runPatchLogics", () => {
   });
 
   it("should run all patch logics between dataVersion and appVersion", async () => {
-    const dstPath = "users/userId";
-
     initializeEmberFlow(
       projectConfig,
       admin,
@@ -353,8 +340,6 @@ describe("runPatchLogics", () => {
   });
 
   it("should distribute all consolidated logic result docs", async () => {
-    const dstPath = "users/userId";
-
     initializeEmberFlow(
       projectConfig,
       admin,
@@ -377,7 +362,7 @@ describe("runPatchLogics", () => {
             ...userLogicFn2Result.documents[0].doc,
             "@dataVersion": "2.0.0",
           },
-        }],
+        }, dataVersionLogicResultDoc],
         transactional: true,
         execTime: expect.any(Number),
       },
@@ -390,7 +375,7 @@ describe("runPatchLogics", () => {
               ...additionalUserLogicFn2Result.documents[0].doc,
               "@dataVersion": "2.0.0",
             },
-          },
+          }, dataVersionLogicResultDoc,
         ],
         transactional: true,
         execTime: expect.any(Number),
@@ -401,10 +386,14 @@ describe("runPatchLogics", () => {
         ...userLogicFn2p5Result,
         documents: [{
           ...userLogicFn2p5Result.documents[0],
-          "doc": {
-            ...userLogicFn2p5Result.documents[0].doc,
-            "@dataVersion": "2.5.0",
-          },
+          "doc": {...userLogicFn2p5Result.documents[0].doc},
+        }, {
+          "action": "merge",
+          "doc": {"@dataVersion": "2.5.0"},
+          "dstPath": "users/userId/todos/todoId",
+        }, {
+          "action": "merge", dstPath,
+          "doc": {"@dataVersion": "2.5.0"},
         }],
         execTime: expect.any(Number),
         transactional: true,
@@ -414,8 +403,6 @@ describe("runPatchLogics", () => {
   });
 
   it("should run createMetricExecution per group patch", async () => {
-    const dstPath = "users/userId";
-
     initializeEmberFlow(
       projectConfig,
       admin,
@@ -431,18 +418,34 @@ describe("runPatchLogics", () => {
     // version 2.0.0
     expect(createMetricExecutionSpy).toHaveBeenNthCalledWith(1,
       [{
-        execTime: expect.any(Number),
-        status: "finished",
-        timeFinished: expect.any(Timestamp),
-        documents: [{"action": "merge", "doc": {"firstName": "John", "@dataVersion": "2.0.0"}, "dstPath": "users/userId"}],
-        transactional: true,
+        "name": "userLogicFn2",
+        "execTime": expect.any(Number),
+        "status": "finished",
+        "timeFinished": expect.any(Timestamp),
+        "documents": [{
+          ...userLogicFn2Result.documents[0],
+          "doc": {
+            ...userLogicFn2Result.documents[0].doc,
+            "@dataVersion": "2.0.0",
+          },
+        }, dataVersionLogicResultDoc],
+        "transactional": true,
       },
       {
-        execTime: expect.any(Number),
-        status: "finished",
-        timeFinished: expect.any(Timestamp),
-        documents: [{action: "merge", doc: {"lastName": "Doe", "@dataVersion": "2.0.0"}, dstPath: "users/userId"}],
-        transactional: true,
+        "name": "additionalUserLogicFn2",
+        "execTime": expect.any(Number),
+        "status": "finished",
+        "timeFinished": expect.any(Timestamp),
+        "documents": [
+          {
+            ...additionalUserLogicFn2Result.documents[0],
+            "doc": {
+              ...additionalUserLogicFn2Result.documents[0].doc,
+              "@dataVersion": "2.0.0",
+            },
+          }, dataVersionLogicResultDoc,
+        ],
+        "transactional": true,
       },
       {
         execTime: expect.any(Number),
@@ -455,11 +458,22 @@ describe("runPatchLogics", () => {
     // version 2.5.0
     expect(createMetricExecutionSpy).toHaveBeenNthCalledWith(2,
       [{
-        execTime: expect.any(Number),
-        status: "finished",
-        timeFinished: expect.any(Timestamp),
-        documents: [{action: "merge", doc: {"fullName": "John Doe", "@dataVersion": "2.5.0"}, dstPath: "users/userId"}],
-        transactional: true,
+        "name": "userLogicFn2p5",
+        "execTime": expect.any(Number),
+        "status": "finished",
+        "timeFinished": expect.any(Timestamp),
+        "documents": [{
+          ...userLogicFn2p5Result.documents[0],
+          "doc": {...userLogicFn2p5Result.documents[0].doc},
+        }, {
+          "action": "merge",
+          "doc": {"@dataVersion": "2.5.0"},
+          "dstPath": "users/userId/todos/todoId",
+        }, {
+          "action": "merge", dstPath,
+          "doc": {"@dataVersion": "2.5.0"},
+        }],
+        "transactional": true,
       },
       {
         execTime: expect.any(Number),
