@@ -1333,7 +1333,7 @@ describe("onMessageViewLogicsQueue", () => {
     const viewLogicsResultDocs = viewLogicsResult.map((logicResult) => logicResult.documents).flat();
     const result = await viewLogics.onMessageViewLogicsQueue(event);
 
-    expect(runViewLogicsSpy).toHaveBeenCalledWith(doc1, "1.0.0");
+    expect(runViewLogicsSpy).toHaveBeenCalledWith(doc1, "1.0.0", undefined);
     expect(createMetricExecutionSpy).toHaveBeenCalledWith([...viewLogicsResult, distributeFnLogicResult]);
     expect(expandConsolidateAndGroupByDstPathSpy).toHaveBeenCalledWith(viewLogicsResultDocs);
     expect(distributeSpy).toHaveBeenCalledWith(expandConsolidateResult);

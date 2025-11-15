@@ -251,10 +251,10 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       }
     }
     const atViewsDocs = (await query.get()).docs;
-    const newLastProcessedId = atViewsDocs.length ? atViewsDocs[atViewsDocs.length - 1].id : undefined;
 
     if (atViewsDocs.length === 100) {
       console.log("Processing limit reached. The remaining views will be processed in the next batch");
+      const newLastProcessedId = atViewsDocs[atViewsDocs.length - 1].id;
       exports.queueRunViewLogics(targetVersion, [logicResultDoc], newLastProcessedId);
     }
 
@@ -433,7 +433,7 @@ export async function queueRunViewLogics(
           }
         }
         const messageId = await VIEW_LOGICS_TOPIC.publishMessage({json: {
-          doc: logicResultDoc, targetVersion, ...(lastProcessedId ? [lastProcessedId] : []),
+          doc: logicResultDoc, targetVersion, lastProcessedId,
         }});
         console.log(`queueRunViewLogics: Message ${messageId} published.`);
         console.debug(`queueRunViewLogics: ${logicResultDoc}`);
@@ -459,8 +459,7 @@ export async function runViewLogics(logicResultDoc: LogicResultDoc, targetVersio
   const logicResults = [];
   for (const logic of matchingLogics.values()) {
     const start = performance.now();
-    const viewLogicResult = await logic.viewLogicFn(
-      logicResultDoc, targetVersion, ...(lastProcessedId ? [lastProcessedId] : []));
+    const viewLogicResult = await logic.viewLogicFn(logicResultDoc, targetVersion, lastProcessedId);
     const end = performance.now();
     const execTime = end - start;
     logicResults.push({
@@ -485,9 +484,7 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
 
     console.info("Running View Logics");
     const start = performance.now();
-    const viewLogicResults: LogicResult[] = await exports.runViewLogics(
-      logicResultDoc, targetVersion, ...(lastProcessedId ? [lastProcessedId] : []),
-    );
+    const viewLogicResults: LogicResult[] = await exports.runViewLogics(logicResultDoc, targetVersion, lastProcessedId);
     const end = performance.now();
     const execTime = end - start;
     const distributeFnLogicResult: LogicResult = {

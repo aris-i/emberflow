@@ -1773,7 +1773,7 @@ describe("runViewLogics", () => {
     expect(viewLogicFn1V2Point5.mock.calls[0][0]).toBe(logicResult1);
     expect(viewLogicFn1V2Point5.mock.calls[1][0]).toBe(logicResult2);
     expect(viewLogicFn2).toHaveBeenCalledTimes(1);
-    expect(viewLogicFn2).toHaveBeenCalledWith(logicResult2, targetVersion);
+    expect(viewLogicFn2).toHaveBeenCalledWith(logicResult2, targetVersion, undefined);
     expect(results).toHaveLength(3);
   });
 });
