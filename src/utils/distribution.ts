@@ -55,7 +55,7 @@ export async function onMessageForDistributionQueue(event: CloudEvent<MessagePub
     const {priority = "normal"} = logicResultDoc;
     if (priority === "high") {
       await distributeDoc(logicResultDoc);
-      await queueRunViewLogics(targetVersion, logicResultDoc);
+      await queueRunViewLogics(targetVersion, [logicResultDoc]);
       await queueRunPatchLogics(appVersion, logicResultDoc.dstPath);
     } else if (priority === "normal") {
       logicResultDoc.priority = "high";

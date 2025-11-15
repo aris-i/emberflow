@@ -869,7 +869,7 @@ describe("onFormSubmit", () => {
     // Should run views update using the target version
     expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(
       "1.0.0",
-      ...distributedLogicResultDocs,
+      distributedLogicResultDocs,
     );
 
     // Should run patches update using the app version along with the consolidated paths
