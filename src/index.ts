@@ -513,7 +513,7 @@ export async function onFormSubmit(
 
     await formRef.update({"@status": "finished"});
 
-    await queueRunViewLogics(targetVersion, ...logicDocsThatWereAlreadyDistributed);
+    await queueRunViewLogics(targetVersion, logicDocsThatWereAlreadyDistributed);
     logMemoryUsage(`${formId}: After Saving Transactional Logic Logics`);
 
     await queueRunPatchLogics(

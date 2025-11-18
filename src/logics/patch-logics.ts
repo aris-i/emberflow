@@ -136,7 +136,6 @@ export const runPatchLogics = async (appVersion: string, dstPath: string): Promi
       }
 
       console.info(`Running Patch Logics for version ${patchVersion}`);
-      console.debug("Original Document", txnDocument);
       for (const patchLogicConfig of patchLogicConfigs) {
         console.info("Running Patch Logic:", patchLogicConfig.name,);
         const patchLogicStartTime = performance.now();
@@ -146,20 +145,39 @@ export const runPatchLogics = async (appVersion: string, dstPath: string): Promi
         logicResults.push({...patchLogicResult, execTime});
       }
 
-      logicResults.forEach((logicResult) => {
+      for (const logicResult of logicResults) {
         logicResult.transactional = true;
-        logicResult.documents.forEach((document) => {
-          if (["merge", "create"].includes(document.action) && document.doc) {
-            document.doc["@dataVersion"] = patchVersion;
+        const documentsSnapshot = [...logicResult.documents];
+        for (const document of documentsSnapshot) {
+          const logicResultDocPath = document.dstPath;
+
+          if (["merge", "create"].includes(document.action)) {
+            if (logicResultDocPath.includes("#")) {
+              const rootPath = logicResultDocPath.split("#")[0];
+              logicResult.documents.push({
+                action: "merge",
+                dstPath: rootPath,
+                doc: {"@dataVersion": patchVersion},
+              });
+            } else {
+              document.doc = {
+                ...(document.doc || {}),
+                "@dataVersion": patchVersion,
+              };
+            }
           }
+        }
+        logicResult.documents.push({
+          action: "merge", dstPath,
+          doc: {"@dataVersion": patchVersion},
         });
-      });
+      }
 
       const distributedLogicDocs = await distributeFnTransactional(txn, logicResults);
 
       console.debug("Distributed Logic Docs", distributedLogicDocs);
 
-      await queueRunViewLogics(patchVersion, ...distributedLogicDocs);
+      await queueRunViewLogics(patchVersion, distributedLogicDocs);
 
       console.info(`Finished Patch Logic for version ${patchVersion}`);
       return logicResults.map((result) => ({

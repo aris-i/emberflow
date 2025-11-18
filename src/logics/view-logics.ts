@@ -75,7 +75,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     return `${srcPath}/@views/${viewDocId}`;
   }
 
-  const srcToDstLogicFn: ViewLogicFn = async (logicResultDoc: LogicResultDoc) => {
+  const srcToDstLogicFn: ViewLogicFn = async (logicResultDoc, targetVersion, lastProcessedId) => {
     const {
       doc: srcDoc,
       instructions: srcInstructions,
@@ -241,7 +241,22 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     if (defDestProp) {
       query = query.where("destProp", "==", defDestProp.name);
     }
+    query = query.orderBy("@dateCreated").limit(100);
+
+    if (lastProcessedId) {
+      const lastDocRef = db.doc(`${srcPath}/@views/${lastProcessedId}`);
+      const lastDocSnap = await lastDocRef.get();
+      if (lastDocSnap.exists) {
+        query = query.startAfter(lastDocSnap);
+      }
+    }
     const atViewsDocs = (await query.get()).docs;
+
+    if (atViewsDocs.length === 100) {
+      console.log("Processing limit reached. The remaining views will be processed in the next batch");
+      const newLastProcessedId = atViewsDocs[atViewsDocs.length - 1].id;
+      exports.queueRunViewLogics(targetVersion, [logicResultDoc], newLastProcessedId);
+    }
 
     await syncAtViewsSrcPropsIfDifferentFromViewDefinition();
 
@@ -278,7 +293,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     return logicResultDocs;
   }
 
-  const dstToSrcLogicFn: ViewLogicFn = async (logicResultDoc: LogicResultDoc) => {
+  const dstToSrcLogicFn: ViewLogicFn = async (logicResultDoc) => {
     const logicResult: LogicResult = {
       name: `${logicName} Dst-to-Src`,
       status: "finished",
@@ -389,7 +404,8 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
   return [srcToDstLogicFn, dstToSrcLogicFn];
 }
 
-export async function queueRunViewLogics(targetVersion: string, ...logicResultDocs: LogicResultDoc[]) {
+export async function queueRunViewLogics(
+  targetVersion: string, logicResultDocs: LogicResultDoc[], lastProcessedId?: string) {
   try {
     for (const logicResultDoc of logicResultDocs) {
       if (!findMatchingViewLogics(logicResultDoc, targetVersion)?.size) {
@@ -416,7 +432,9 @@ export async function queueRunViewLogics(targetVersion: string, ...logicResultDo
             logicResultDoc.doc = data;
           }
         }
-        const messageId = await VIEW_LOGICS_TOPIC.publishMessage({json: {doc: logicResultDoc, targetVersion}});
+        const messageId = await VIEW_LOGICS_TOPIC.publishMessage({json: {
+          doc: logicResultDoc, targetVersion, lastProcessedId,
+        }});
         console.log(`queueRunViewLogics: Message ${messageId} published.`);
         console.debug(`queueRunViewLogics: ${logicResultDoc}`);
       }
@@ -431,7 +449,7 @@ export async function queueRunViewLogics(targetVersion: string, ...logicResultDo
   }
 }
 
-export async function runViewLogics(logicResultDoc: LogicResultDoc, targetVersion: string): Promise<LogicResult[]> {
+export async function runViewLogics(logicResultDoc: LogicResultDoc, targetVersion: string, lastProcessedId?: string): Promise<LogicResult[]> {
   const matchingLogics = findMatchingViewLogics(logicResultDoc, targetVersion);
   if (!matchingLogics || matchingLogics.size === 0) {
     console.log("No matching view logics found");
@@ -441,7 +459,7 @@ export async function runViewLogics(logicResultDoc: LogicResultDoc, targetVersio
   const logicResults = [];
   for (const logic of matchingLogics.values()) {
     const start = performance.now();
-    const viewLogicResult = await logic.viewLogicFn(logicResultDoc);
+    const viewLogicResult = await logic.viewLogicFn(logicResultDoc, targetVersion, lastProcessedId);
     const end = performance.now();
     const execTime = end - start;
     logicResults.push({
@@ -460,13 +478,13 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
   }
 
   try {
-    const {targetVersion, doc} = event.data.message.json;
+    const {targetVersion, doc, lastProcessedId} = event.data.message.json;
     const logicResultDoc = reviveDateAndTimestamp(doc) as LogicResultDoc;
     console.log("Received logic result doc:", logicResultDoc);
 
     console.info("Running View Logics");
     const start = performance.now();
-    const viewLogicResults: LogicResult[] = await exports.runViewLogics(logicResultDoc, targetVersion);
+    const viewLogicResults: LogicResult[] = await exports.runViewLogics(logicResultDoc, targetVersion, lastProcessedId);
     const end = performance.now();
     const execTime = end - start;
     const distributeFnLogicResult: LogicResult = {
@@ -510,7 +528,6 @@ export const findMatchingViewLogics = (logicResultDoc: LogicResultDoc, targetVer
     console.error("Entity should not be blank");
     return undefined;
   }
-
   const {destProp} = getDestPropAndDestPropId(dstPath);
 
   const matchingLogics = _mockable.getViewLogicConfigs().filter((viewLogicConfig) => {
