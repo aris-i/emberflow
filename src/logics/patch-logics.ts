@@ -151,7 +151,7 @@ export const runPatchLogics = async (appVersion: string, dstPath: string): Promi
         for (const document of documentsSnapshot) {
           const logicResultDocPath = document.dstPath;
 
-          if (["merge", "create"].includes(document.action) && document.doc) {
+          if (["merge", "create"].includes(document.action)) {
             if (logicResultDocPath.includes("#")) {
               const rootPath = logicResultDocPath.split("#")[0];
               logicResult.documents.push({
@@ -160,7 +160,10 @@ export const runPatchLogics = async (appVersion: string, dstPath: string): Promi
                 doc: {"@dataVersion": patchVersion},
               });
             } else {
-              document.doc["@dataVersion"] = patchVersion;
+              document.doc = {
+                ...(document.doc || {}),
+                "@dataVersion": patchVersion,
+              };
             }
           }
         }
