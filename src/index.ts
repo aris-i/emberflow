@@ -12,7 +12,7 @@ import {
   PatchLogicConfig,
   ProjectConfig,
   RunBusinessLogicStatus,
-  SecurityConfig,
+  SecurityConfig, UserRegisterFn,
   ValidatorConfig,
   ViewDefinition,
   ViewLogicConfig,
@@ -91,6 +91,7 @@ export let VIEW_LOGICS_TOPIC: Topic;
 export let PATCH_LOGICS_TOPIC: Topic;
 export let FOR_DISTRIBUTION_TOPIC: Topic;
 export let INSTRUCTIONS_TOPIC: Topic;
+let userRegisterFn: UserRegisterFn | undefined;
 
 export const _mockable = {
   createNowTimestamp: () => admin.firestore.Timestamp.now(),
@@ -106,6 +107,7 @@ export function initializeEmberFlow(
   customValidatorConfigs: ValidatorConfig[],
   customLogicConfigs: LogicConfig[],
   customPatchLogicConfigs: PatchLogicConfig[],
+  customUserRegisterFn?: UserRegisterFn,
 ) : {
     docPaths: Record<string, string>;
     colPaths: Record<string, string>;
@@ -123,6 +125,7 @@ export function initializeEmberFlow(
   validatorConfigs = [...customValidatorConfigs];
   logicConfigs = [...customLogicConfigs];
   patchLogicConfigs = [...customPatchLogicConfigs];
+  userRegisterFn = customUserRegisterFn;
   initClient(admin.app(), "service", "0.0.0");
   SUBMIT_FORM_TOPIC = pubsub.topic(SUBMIT_FORM_TOPIC_NAME);
   VIEW_LOGICS_TOPIC = pubsub.topic(VIEW_LOGICS_TOPIC_NAME);
@@ -614,7 +617,7 @@ async function distributeNonTransactionalLogicResults(
   return forRunViewLogicQueuing;
 }
 
-const onUserRegister = async (user: UserRecord) => {
+export const onUserRegister = async (user: UserRecord) => {
   const {
     uid,
     displayName,
@@ -647,12 +650,33 @@ const onUserRegister = async (user: UserRecord) => {
     return {firstName, lastName};
   }
 
-  await db.doc(`users/${user.uid}`).set({
-    "@id": uid,
-    ...splitDisplayName(displayName || providerDisplayName),
-    "avatarUrl": photoURL || providerPhotoURL,
-    "username": email || providerEmail,
-    "email": email || providerEmail,
-    "registeredAt": admin.firestore.Timestamp.now(),
+  await db.runTransaction(async (txn) => {
+    const logicResults: LogicResult[] = [];
+
+    if (userRegisterFn) {
+      const txnGet = extractTransactionGetOnly(txn);
+      const customUserRegisterFnLogicResult = await userRegisterFn(txnGet, user);
+      logicResults.push(customUserRegisterFnLogicResult);
+    }
+
+    const userRegisterFnLogicResult: LogicResult = {
+      name: "onUserRegister",
+      status: "finished",
+      documents: [{
+        action: "create",
+        dstPath: `users/${user.uid}`,
+        doc: {
+          ...splitDisplayName(displayName || providerDisplayName),
+          "@id": uid,
+          "avatarUrl": photoURL || providerPhotoURL,
+          "username": email || providerEmail,
+          "email": email || providerEmail,
+          "registeredAt": _mockable.createNowTimestamp(),
+        },
+      }],
+    };
+    logicResults.push(userRegisterFnLogicResult);
+
+    await distributeFnTransactional(txn, logicResults);
   });
 };

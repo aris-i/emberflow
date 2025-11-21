@@ -3,6 +3,7 @@ import {firestore} from "firebase-admin";
 import Timestamp = firestore.Timestamp;
 import DocumentData = firestore.DocumentData;
 import {FormData} from "emberflow-admin-client/lib/types";
+import {UserRecord} from "firebase-admin/auth";
 
 export type FirebaseAdmin = typeof admin;
 
@@ -196,3 +197,5 @@ export type RunBusinessLogicStatus = {
     status: "running" | "done" | "no-matching-logics",
     logicResults: LogicResult[],
 };
+
+export type UserRegisterFn = (txnGet: TxnGet, user: UserRecord) => Promise<LogicResult>;
