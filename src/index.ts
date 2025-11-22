@@ -13,6 +13,7 @@ import {
   ProjectConfig,
   RunBusinessLogicStatus,
   SecurityConfig,
+  UserRegisterFn,
   ValidatorConfig,
   ViewDefinition,
   ViewLogicConfig,
@@ -91,6 +92,7 @@ export let VIEW_LOGICS_TOPIC: Topic;
 export let PATCH_LOGICS_TOPIC: Topic;
 export let FOR_DISTRIBUTION_TOPIC: Topic;
 export let INSTRUCTIONS_TOPIC: Topic;
+let userRegisterFn: UserRegisterFn | undefined;
 
 export const _mockable = {
   createNowTimestamp: () => admin.firestore.Timestamp.now(),
@@ -106,6 +108,7 @@ export function initializeEmberFlow(
   customValidatorConfigs: ValidatorConfig[],
   customLogicConfigs: LogicConfig[],
   customPatchLogicConfigs: PatchLogicConfig[],
+  customUserRegisterFn?: UserRegisterFn,
 ) : {
     docPaths: Record<string, string>;
     colPaths: Record<string, string>;
@@ -123,6 +126,7 @@ export function initializeEmberFlow(
   validatorConfigs = [...customValidatorConfigs];
   logicConfigs = [...customLogicConfigs];
   patchLogicConfigs = [...customPatchLogicConfigs];
+  userRegisterFn = customUserRegisterFn;
   initClient(admin.app(), "service", "0.0.0");
   SUBMIT_FORM_TOPIC = pubsub.topic(SUBMIT_FORM_TOPIC_NAME);
   VIEW_LOGICS_TOPIC = pubsub.topic(VIEW_LOGICS_TOPIC_NAME);
@@ -614,7 +618,7 @@ async function distributeNonTransactionalLogicResults(
   return forRunViewLogicQueuing;
 }
 
-const onUserRegister = async (user: UserRecord) => {
+export const onUserRegister = async (user: UserRecord) => {
   const {
     uid,
     displayName,
@@ -647,12 +651,45 @@ const onUserRegister = async (user: UserRecord) => {
     return {firstName, lastName};
   }
 
-  await db.doc(`users/${user.uid}`).set({
-    "@id": uid,
-    ...splitDisplayName(displayName || providerDisplayName),
-    "avatarUrl": photoURL || providerPhotoURL,
-    "username": email || providerEmail,
-    "email": email || providerEmail,
-    "registeredAt": admin.firestore.Timestamp.now(),
+  const start = performance.now();
+  const logicResultForMetricExecution = await db.runTransaction(async (txn) => {
+    txn.set(db.doc(`users/${user.uid}`), {
+      "@id": uid,
+      ...splitDisplayName(displayName || providerDisplayName),
+      "avatarUrl": photoURL || providerPhotoURL,
+      "username": email || providerEmail,
+      "email": email || providerEmail,
+      "registeredAt": admin.firestore.Timestamp.now(),
+    });
+
+    const customUserRegisterFn = userRegisterFn;
+    if (!customUserRegisterFn) return;
+
+    const logicStart = performance.now();
+    const txnGet = extractTransactionGetOnly(txn);
+    const customUserRegisterFnLogicResult = await customUserRegisterFn(txnGet, user);
+    const logicEnd = performance.now();
+    distributeFnTransactional(txn, [customUserRegisterFnLogicResult]);
+
+    return {
+      ...customUserRegisterFnLogicResult,
+      execTime: logicEnd - logicStart,
+      timeFinished: admin.firestore.Timestamp.now(),
+    } as LogicResult;
   });
+
+  const end = performance.now();
+  const execTime = end - start;
+  const onUserRegisterMetricsLogicResult: LogicResult = {
+    name: "onUserRegister",
+    status: "finished",
+    documents: [],
+    execTime: execTime,
+  };
+  const metricResults = [onUserRegisterMetricsLogicResult];
+  if (logicResultForMetricExecution) {
+    metricResults.push(logicResultForMetricExecution);
+  }
+
+  await indexUtilsMockable.createMetricExecution(metricResults);
 };

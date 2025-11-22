@@ -1,4 +1,4 @@
-import {_mockable, initializeEmberFlow, onFormSubmit} from "../index";
+import {_mockable, db, initializeEmberFlow, onFormSubmit, onUserRegister} from "../index";
 import * as indexutils from "../index-utils";
 import * as transactionutils from "../utils/transaction";
 import * as admin from "firebase-admin";
@@ -27,6 +27,8 @@ import Database = database.Database;
 import {expandConsolidateAndGroupByDstPath, groupDocsByTargetDocPath} from "../index-utils";
 import FieldValue = firestore.FieldValue;
 import * as distribution from "../utils/distribution";
+import {UserRecord} from "firebase-admin/lib/auth";
+import Transaction = firestore.Transaction;
 
 const projectConfig: ProjectConfig = {
   projectId: "your-project-id",
@@ -78,6 +80,9 @@ const transactionMock = {
 jest.spyOn(admin, "firestore")
   .mockImplementation(() => {
     return {
+      Timestamp: {
+        now: jest.fn(() => Timestamp.now()),
+      },
       collection: jest.fn(() => collectionMock),
       doc: jest.fn(() => docMock),
       runTransaction: jest.fn((fn) => fn(transactionMock)),
@@ -881,5 +886,120 @@ describe("onFormSubmit", () => {
       "users/user-2",
       "users/user-1/activities/activity-1",
     );
+  });
+});
+
+describe("onUserRegister", () => {
+  const user = {
+    uid: "userId",
+    displayName: "John Doe",
+    photoURL: "https://example.com/photo.jpg",
+    email: "john@example.com",
+    providerData: [
+      {
+        displayName: "John Doe",
+        photoURL: "https://example.com/provider-photo.jpg",
+        email: "provider@example.com",
+      },
+    ],
+  } as unknown as UserRecord;
+
+
+  let runTransactionSpy: jest.SpyInstance;
+  let distributeFnTransactionalSpy: jest.SpyInstance;
+
+  const customUserRegisterLogicResult: LogicResult = {
+    status: "finished",
+    name: "customUserRegisterLogic",
+    documents: [{
+      action: "create",
+      dstPath: `users/${user.uid}`,
+      doc: {newField: "newValue"},
+    }],
+  };
+  const userRegisterLogicResult: LogicResult = {
+    name: "onUserRegister",
+    status: "finished",
+    documents: [{
+      "action": "create",
+      "dstPath": "users/userId",
+      "doc": {
+        "firstName": "John",
+        "lastName": "Doe",
+        "@id": user["uid"],
+        "avatarUrl": user["photoURL"],
+        "username": user["email"],
+        "email": user["email"],
+        "registeredAt": expect.any(Timestamp),
+      },
+    }],
+  };
+
+  const mockTxn = {
+    get: jest.fn().mockResolvedValue({}),
+  } as unknown as Transaction;
+
+  beforeEach(() => {
+    admin.initializeApp({databaseURL: "https://test-project.firebaseio.com"});
+  });
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("should run the onUserRegister correctly", async () => {
+    initializeEmberFlow(projectConfig, admin, dbStructure, Entity, [], [], [], []);
+    runTransactionSpy = jest.spyOn(db, "runTransaction")
+      .mockImplementationOnce(async (callback: any) => callback(mockTxn));
+    jest.spyOn(_mockable, "createNowTimestamp").mockReturnValue(Timestamp.now());
+    distributeFnTransactionalSpy = jest.spyOn(indexutils, "distributeFnTransactional")
+      .mockResolvedValueOnce([
+        {
+          "action": "create",
+          "dstPath": "users/userId",
+          "doc": {
+            "newField": "newValue",
+            "@id": user["uid"],
+            "avatarUrl": user["photoURL"],
+            "username": user["displayName"],
+            "email": user["email"],
+            "registeredAt": Timestamp.now(),
+          },
+        },
+      ]);
+
+    await onUserRegister(user);
+
+    expect(runTransactionSpy).toHaveBeenCalledTimes(1);
+    expect(distributeFnTransactionalSpy).toHaveBeenNthCalledWith(1, mockTxn, [userRegisterLogicResult]);
+  });
+
+  it("should run the onUserRegister along with the customUserRegisterFn", async () => {
+    const customUserRegisterLogicFn = jest.fn().mockResolvedValue(customUserRegisterLogicResult);
+    initializeEmberFlow(projectConfig, admin, dbStructure, Entity, [], [], [], [], customUserRegisterLogicFn);
+    runTransactionSpy = jest.spyOn(db, "runTransaction")
+      .mockImplementationOnce(async (callback: any) => callback(mockTxn));
+    jest.spyOn(_mockable, "createNowTimestamp").mockReturnValue(Timestamp.now());
+    distributeFnTransactionalSpy = jest.spyOn(indexutils, "distributeFnTransactional")
+      .mockResolvedValueOnce([
+        {
+          "action": "create",
+          "dstPath": "users/userId",
+          "doc": {
+            "newField": "newValue",
+            "@id": user["uid"],
+            "avatarUrl": user["photoURL"],
+            "username": user["displayName"],
+            "email": user["email"],
+            "registeredAt": Timestamp.now(),
+          },
+        },
+      ]);
+
+    await onUserRegister(user);
+
+    expect(runTransactionSpy).toHaveBeenCalledTimes(1);
+    expect(customUserRegisterLogicFn).toHaveBeenCalled();
+    expect(distributeFnTransactionalSpy).toHaveBeenNthCalledWith(1, mockTxn, [
+      customUserRegisterLogicResult, userRegisterLogicResult]);
   });
 });
