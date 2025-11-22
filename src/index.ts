@@ -651,7 +651,8 @@ export const onUserRegister = async (user: UserRecord) => {
     return {firstName, lastName};
   }
 
-  await db.runTransaction(async (txn) => {
+  const start = performance.now();
+  const logicResultForMetricExecution = await db.runTransaction(async (txn) => {
     txn.set(db.doc(`users/${user.uid}`), {
       "@id": uid,
       ...splitDisplayName(displayName || providerDisplayName),
@@ -662,12 +663,33 @@ export const onUserRegister = async (user: UserRecord) => {
     });
 
     const customUserRegisterFn = userRegisterFn;
-    if (customUserRegisterFn) {
-      const logicResults: LogicResult[] = [];
-      const txnGet = extractTransactionGetOnly(txn);
-      const customUserRegisterFnLogicResult = await customUserRegisterFn(txnGet, user);
-      logicResults.push(customUserRegisterFnLogicResult);
-      await distributeFnTransactional(txn, logicResults);
-    }
+    if (!customUserRegisterFn) return;
+
+    const logicStart = performance.now();
+    const txnGet = extractTransactionGetOnly(txn);
+    const customUserRegisterFnLogicResult = await customUserRegisterFn(txnGet, user);
+    const logicEnd = performance.now();
+    distributeFnTransactional(txn, [customUserRegisterFnLogicResult]);
+
+    return {
+      ...customUserRegisterFnLogicResult,
+      execTime: logicEnd - logicStart,
+      timeFinished: admin.firestore.Timestamp.now(),
+    } as LogicResult;
   });
+
+  const end = performance.now();
+  const execTime = end - start;
+  const onUserRegisterMetricsLogicResult: LogicResult = {
+    name: "onUserRegister",
+    status: "finished",
+    documents: [],
+    execTime: execTime,
+  };
+  const metricResults = [onUserRegisterMetricsLogicResult];
+  if (logicResultForMetricExecution) {
+    metricResults.push(logicResultForMetricExecution);
+  }
+
+  await indexUtilsMockable.createMetricExecution(metricResults);
 };
