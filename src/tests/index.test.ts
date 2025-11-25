@@ -80,9 +80,7 @@ const transactionMock = {
 jest.spyOn(admin, "firestore")
   .mockImplementation(() => {
     return {
-      Timestamp: {
-        now: jest.fn(() => Timestamp.now()),
-      },
+      Timestamp: {now: jest.fn(() => Timestamp.now())},
       collection: jest.fn(() => collectionMock),
       doc: jest.fn(() => docMock),
       runTransaction: jest.fn((fn) => fn(transactionMock)),
@@ -917,30 +915,18 @@ describe("onUserRegister", () => {
       doc: {newField: "newValue"},
     }],
   };
-  const userRegisterLogicResult: LogicResult = {
-    name: "onUserRegister",
-    status: "finished",
-    documents: [{
-      "action": "create",
-      "dstPath": "users/userId",
-      "doc": {
-        "firstName": "John",
-        "lastName": "Doe",
-        "@id": user["uid"],
-        "avatarUrl": user["photoURL"],
-        "username": user["email"],
-        "email": user["email"],
-        "registeredAt": expect.any(Timestamp),
-      },
-    }],
-  };
 
+  const createMetricExecutionSpy =
+    jest.spyOn(indexutils._mockable, "createMetricExecution");
+  const transactionSetMock = jest.fn();
   const mockTxn = {
+    set: transactionSetMock,
     get: jest.fn().mockResolvedValue({}),
   } as unknown as Transaction;
 
   beforeEach(() => {
     admin.initializeApp({databaseURL: "https://test-project.firebaseio.com"});
+    jest.spyOn(indexutils._mockable, "createMetricExecution").mockResolvedValue();
   });
   afterEach(() => {
     jest.clearAllMocks();
@@ -970,7 +956,10 @@ describe("onUserRegister", () => {
     await onUserRegister(user);
 
     expect(runTransactionSpy).toHaveBeenCalledTimes(1);
-    expect(distributeFnTransactionalSpy).toHaveBeenNthCalledWith(1, mockTxn, [userRegisterLogicResult]);
+    expect(transactionSetMock).toHaveBeenCalledTimes(1);
+    expect(createMetricExecutionSpy).toHaveBeenNthCalledWith(1, [
+      {name: "onUserRegister", execTime: expect.any(Number)},
+    ]);
   });
 
   it("should run the onUserRegister along with the customUserRegisterFn", async () => {
@@ -994,12 +983,15 @@ describe("onUserRegister", () => {
           },
         },
       ]);
-
     await onUserRegister(user);
 
     expect(runTransactionSpy).toHaveBeenCalledTimes(1);
+    expect(transactionSetMock).toHaveBeenCalledTimes(1);
     expect(customUserRegisterLogicFn).toHaveBeenCalled();
-    expect(distributeFnTransactionalSpy).toHaveBeenNthCalledWith(1, mockTxn, [
-      customUserRegisterLogicResult, userRegisterLogicResult]);
+    expect(distributeFnTransactionalSpy).toHaveBeenNthCalledWith(1, mockTxn, [customUserRegisterLogicResult]);
+    expect(createMetricExecutionSpy).toHaveBeenNthCalledWith(1, [
+      {name: "onUserRegister", execTime: expect.any(Number)},
+      {name: "customUserRegisterLogic", execTime: expect.any(Number)},
+    ]);
   });
 });

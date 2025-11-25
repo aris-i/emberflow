@@ -199,3 +199,8 @@ export type RunBusinessLogicStatus = {
 };
 
 export type UserRegisterFn = (txnGet: TxnGet, user: UserRecord) => Promise<LogicResult>;
+
+export type MetricExecution = {
+  name: string,
+  execTime: number,
+};

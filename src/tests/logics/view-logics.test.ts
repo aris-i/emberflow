@@ -26,6 +26,7 @@ import {DocumentReference} from "firebase-admin/lib/firestore";
 import Timestamp = firestore.Timestamp;
 import {_mockable as pathsMockable} from "../../utils/paths";
 import CollectionReference = firestore.CollectionReference;
+import {convertLogicResultsToMetricExecutions} from "../../index-utils";
 
 jest.mock("../../utils/pubsub", () => {
   return {
@@ -1334,7 +1335,8 @@ describe("onMessageViewLogicsQueue", () => {
     const result = await viewLogics.onMessageViewLogicsQueue(event);
 
     expect(runViewLogicsSpy).toHaveBeenCalledWith(doc1, "1.0.0", undefined);
-    expect(createMetricExecutionSpy).toHaveBeenCalledWith([...viewLogicsResult, distributeFnLogicResult]);
+    const expectedMetricExecutions = convertLogicResultsToMetricExecutions([...viewLogicsResult, distributeFnLogicResult]);
+    expect(createMetricExecutionSpy).toHaveBeenCalledWith(expectedMetricExecutions);
     expect(expandConsolidateAndGroupByDstPathSpy).toHaveBeenCalledWith(viewLogicsResultDocs);
     expect(distributeSpy).toHaveBeenCalledWith(expandConsolidateResult);
     expect(trackProcessedIdsMock).toHaveBeenCalledWith(VIEW_LOGICS_TOPIC_NAME, event.id);

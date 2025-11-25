@@ -3,7 +3,10 @@ import {db, docPaths, docPathsRegex, VIEW_LOGICS_TOPIC, VIEW_LOGICS_TOPIC_NAME} 
 import * as admin from "firebase-admin";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
 import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
-import {_mockable, distributeFnNonTransactional, expandConsolidateAndGroupByDstPath} from "../index-utils";
+import {
+  _mockable,
+  convertLogicResultsToMetricExecutions, distributeFnNonTransactional, expandConsolidateAndGroupByDstPath,
+} from "../index-utils";
 import {pubsubUtils} from "../utils/pubsub";
 import {reviveDateAndTimestamp} from "../utils/misc";
 import {
@@ -493,7 +496,8 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
       documents: [],
       execTime: execTime,
     };
-    await _mockable.createMetricExecution([...viewLogicResults, distributeFnLogicResult]);
+    const metricExecutions = convertLogicResultsToMetricExecutions([...viewLogicResults, distributeFnLogicResult]);
+    await _mockable.createMetricExecution(metricExecutions);
 
     const viewLogicResultDocs = viewLogicResults.map((result) => result.documents).flat();
     const dstPathViewLogicDocsMap: Map<string, LogicResultDoc[]> = await expandConsolidateAndGroupByDstPath(viewLogicResultDocs);

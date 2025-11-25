@@ -22,6 +22,7 @@ import {
   _mockable as indexUtilsMockable,
   cleanMetricComputations,
   cleanMetricExecutions,
+  convertLogicResultsToMetricExecutions,
   createMetricComputation,
   createMetricLogicDoc,
   delayFormSubmissionAndCheckIfCancelled,
@@ -540,7 +541,9 @@ export async function onFormSubmit(
     };
     logicResults.push(onFormSubmitLogicResult);
 
-    await indexUtilsMockable.createMetricExecution(logicResults);
+    const metricExecutions =
+      convertLogicResultsToMetricExecutions(logicResults);
+    await indexUtilsMockable.createMetricExecution(metricExecutions);
     console.info("Finished");
     logMemoryUsage(`${formId}: Finshed onFormSubmit`);
   } catch (error) {
@@ -652,14 +655,14 @@ export const onUserRegister = async (user: UserRecord) => {
   }
 
   const start = performance.now();
-  const logicResultForMetricExecution = await db.runTransaction(async (txn) => {
+  const customUserRegisterFnLogicResult = await db.runTransaction(async (txn) => {
     txn.set(db.doc(`users/${user.uid}`), {
       "@id": uid,
       ...splitDisplayName(displayName || providerDisplayName),
       "avatarUrl": photoURL || providerPhotoURL,
       "username": email || providerEmail,
       "email": email || providerEmail,
-      "registeredAt": admin.firestore.Timestamp.now(),
+      "registeredAt": _mockable.createNowTimestamp(),
     });
 
     const customUserRegisterFn = userRegisterFn;
@@ -674,7 +677,7 @@ export const onUserRegister = async (user: UserRecord) => {
     return {
       ...customUserRegisterFnLogicResult,
       execTime: logicEnd - logicStart,
-      timeFinished: admin.firestore.Timestamp.now(),
+      timeFinished: _mockable.createNowTimestamp(),
     } as LogicResult;
   });
 
@@ -686,10 +689,11 @@ export const onUserRegister = async (user: UserRecord) => {
     documents: [],
     execTime: execTime,
   };
-  const metricResults = [onUserRegisterMetricsLogicResult];
-  if (logicResultForMetricExecution) {
-    metricResults.push(logicResultForMetricExecution);
+  const logicResults = [onUserRegisterMetricsLogicResult];
+  if (customUserRegisterFnLogicResult) {
+    logicResults.push(customUserRegisterFnLogicResult);
   }
 
-  await indexUtilsMockable.createMetricExecution(metricResults);
+  const metricExecutions = convertLogicResultsToMetricExecutions(logicResults);
+  await indexUtilsMockable.createMetricExecution(metricExecutions);
 };
