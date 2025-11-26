@@ -8,7 +8,7 @@ import {
   LogicConfigModifiedFieldsType,
   LogicResult,
   LogicResultDoc,
-  LogicResultDocAction,
+  LogicResultDocAction, MetricExecution,
   PatchLogicConfig,
   ProjectConfig,
   RunBusinessLogicStatus,
@@ -655,7 +655,7 @@ export const onUserRegister = async (user: UserRecord) => {
   }
 
   const start = performance.now();
-  const customUserRegisterFnLogicResult = await db.runTransaction(async (txn) => {
+  const customUserRegisterMetricExecution = await db.runTransaction(async (txn) => {
     txn.set(db.doc(`users/${user.uid}`), {
       "@id": uid,
       ...splitDisplayName(displayName || providerDisplayName),
@@ -675,25 +675,20 @@ export const onUserRegister = async (user: UserRecord) => {
     distributeFnTransactional(txn, [customUserRegisterFnLogicResult]);
 
     return {
-      ...customUserRegisterFnLogicResult,
+      name: customUserRegisterFnLogicResult.name,
       execTime: logicEnd - logicStart,
-      timeFinished: _mockable.createNowTimestamp(),
-    } as LogicResult;
+    } as MetricExecution;
   });
 
   const end = performance.now();
   const execTime = end - start;
-  const onUserRegisterMetricsLogicResult: LogicResult = {
+  const onUserRegisterMetricExecution: MetricExecution = {
     name: "onUserRegister",
-    status: "finished",
-    documents: [],
     execTime: execTime,
   };
-  const logicResults = [onUserRegisterMetricsLogicResult];
-  if (customUserRegisterFnLogicResult) {
-    logicResults.push(customUserRegisterFnLogicResult);
+  const metricExecutions = [onUserRegisterMetricExecution];
+  if (customUserRegisterMetricExecution) {
+    metricExecutions.push(customUserRegisterMetricExecution);
   }
-
-  const metricExecutions = convertLogicResultsToMetricExecutions(logicResults);
   await indexUtilsMockable.saveMetricExecution(metricExecutions);
 };

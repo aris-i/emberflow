@@ -916,8 +916,7 @@ describe("onUserRegister", () => {
     }],
   };
 
-  const createMetricExecutionSpy =
-    jest.spyOn(indexutils._mockable, "saveMetricExecution");
+  let saveMetricExecution : jest.SpyInstance;
   const transactionSetMock = jest.fn();
   const mockTxn = {
     set: transactionSetMock,
@@ -926,7 +925,7 @@ describe("onUserRegister", () => {
 
   beforeEach(() => {
     admin.initializeApp({databaseURL: "https://test-project.firebaseio.com"});
-    jest.spyOn(indexutils._mockable, "saveMetricExecution").mockResolvedValue();
+    saveMetricExecution = jest.spyOn(indexutils._mockable, "saveMetricExecution").mockResolvedValue();
   });
   afterEach(() => {
     jest.clearAllMocks();
@@ -957,7 +956,7 @@ describe("onUserRegister", () => {
 
     expect(runTransactionSpy).toHaveBeenCalledTimes(1);
     expect(transactionSetMock).toHaveBeenCalledTimes(1);
-    expect(createMetricExecutionSpy).toHaveBeenNthCalledWith(1, [
+    expect(saveMetricExecution).toHaveBeenNthCalledWith(1, [
       {name: "onUserRegister", execTime: expect.any(Number)},
     ]);
   });
@@ -989,7 +988,7 @@ describe("onUserRegister", () => {
     expect(transactionSetMock).toHaveBeenCalledTimes(1);
     expect(customUserRegisterLogicFn).toHaveBeenCalled();
     expect(distributeFnTransactionalSpy).toHaveBeenNthCalledWith(1, mockTxn, [customUserRegisterLogicResult]);
-    expect(createMetricExecutionSpy).toHaveBeenNthCalledWith(1, [
+    expect(saveMetricExecution).toHaveBeenNthCalledWith(1, [
       {name: "onUserRegister", execTime: expect.any(Number)},
       {name: "customUserRegisterLogic", execTime: expect.any(Number)},
     ]);
