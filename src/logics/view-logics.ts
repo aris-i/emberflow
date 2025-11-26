@@ -119,6 +119,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       const viewLogicResultDocs: LogicResultDoc[] = [];
       for (const atViewsDoc of atViewsDocs) {
         const viewDstPath = atViewsDoc.data().path;
+        console.debug("Processing viewDstPath: ", viewDstPath);
         const {basePath: viewBasePath, destProp: viewDestProp, destPropId: viewDestPropId} = getDestPropAndDestPropId(viewDstPath);
 
         const viewDocSnap = await db.doc(viewBasePath).get();
@@ -236,13 +237,17 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     let query = db.doc(srcPath)
       .collection("@views")
       .where("destEntity", "==", defDestEntity);
+    console.debug("srcPath: ", srcPath);
+    console.debug("destEntity: ", defDestEntity);
     if (srcAction === "delete") {
       console.debug("action === delete");
     } else {
       query = query.where("srcProps", "array-contains-any", modifiedFields);
+      console.debug("modifiedFields: ", modifiedFields.join(", "));
     }
     if (defDestProp) {
       query = query.where("destProp", "==", defDestProp.name);
+      console.debug("destProp: ", defDestProp.name);
     }
     query = query.orderBy("@dateCreated").limit(100);
 
@@ -254,9 +259,10 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       }
     }
     const atViewsDocs = (await query.get()).docs;
+    console.debug(`Found ${atViewsDocs.length} matching @view documents`);
 
     if (atViewsDocs.length === 100) {
-      console.log("Processing limit reached. The remaining views will be processed in the next batch");
+      console.debug("Processing limit reached. The remaining views will be processed in the next batch");
       const newLastProcessedId = atViewsDocs[atViewsDocs.length - 1].id;
       exports.queueRunViewLogics(targetVersion, [logicResultDoc], newLastProcessedId);
     }
