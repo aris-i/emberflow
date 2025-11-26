@@ -167,34 +167,26 @@ describe("createViewLogicFn", () => {
         collection: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
             get: colGetMock,
-            orderBy: jest.fn().mockReturnValue({
-              limit: jest.fn().mockReturnValue({
-                get: colGetMock,
-              }),
+            limit: jest.fn().mockReturnValue({
+              get: colGetMock,
             }),
             where: jest.fn().mockReturnValue({
               get: colGetMock,
-              orderBy: jest.fn().mockReturnValue({
-                limit: jest.fn().mockReturnValue({
+              limit: jest.fn().mockReturnValue({
+                get: colGetMock,
+                startAfter: jest.fn().mockReturnValue({
                   get: colGetMock,
-                  startAfter: jest.fn().mockReturnValue({
-                    get: colGetMock,
-                  }),
                 }),
               }),
               where: jest.fn().mockReturnValue({
                 get: colGetMock,
-                orderBy: jest.fn().mockReturnValue({
-                  limit: jest.fn().mockReturnValue({
-                    get: colGetMock,
-                  }),
+                limit: jest.fn().mockReturnValue({
+                  get: colGetMock,
                 }),
                 where: jest.fn().mockReturnValue({
                   get: colGetMock,
-                  orderBy: jest.fn().mockReturnValue({
-                    limit: jest.fn().mockReturnValue({
-                      get: colGetMock,
-                    }),
+                  limit: jest.fn().mockReturnValue({
+                    get: colGetMock,
                   }),
                 }),
               }),
