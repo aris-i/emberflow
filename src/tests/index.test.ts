@@ -140,9 +140,9 @@ describe("onFormSubmit", () => {
     },
   };
   beforeEach(() => {
-    jest.spyOn(indexutils._mockable, "createMetricExecution").mockResolvedValue();
+    jest.spyOn(indexutils._mockable, "saveMetricExecution").mockResolvedValue();
     jest.spyOn(_mockable, "createNowTimestamp").mockReturnValue(Timestamp.now());
-    jest.spyOn(indexutils._mockable, "createMetricExecution").mockResolvedValue();
+    jest.spyOn(indexutils._mockable, "saveMetricExecution").mockResolvedValue();
     jest.spyOn(console, "log").mockImplementation();
     jest.spyOn(patchLogics, "queueRunPatchLogics").mockResolvedValue();
     jest.spyOn(console, "warn").mockImplementation();
@@ -917,7 +917,7 @@ describe("onUserRegister", () => {
   };
 
   const createMetricExecutionSpy =
-    jest.spyOn(indexutils._mockable, "createMetricExecution");
+    jest.spyOn(indexutils._mockable, "saveMetricExecution");
   const transactionSetMock = jest.fn();
   const mockTxn = {
     set: transactionSetMock,
@@ -926,7 +926,7 @@ describe("onUserRegister", () => {
 
   beforeEach(() => {
     admin.initializeApp({databaseURL: "https://test-project.firebaseio.com"});
-    jest.spyOn(indexutils._mockable, "createMetricExecution").mockResolvedValue();
+    jest.spyOn(indexutils._mockable, "saveMetricExecution").mockResolvedValue();
   });
   afterEach(() => {
     jest.clearAllMocks();

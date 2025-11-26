@@ -503,7 +503,7 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
       execTime: execTime,
     };
     const metricExecutions = convertLogicResultsToMetricExecutions([...viewLogicResults, distributeFnLogicResult]);
-    await _mockable.createMetricExecution(metricExecutions);
+    await _mockable.saveMetricExecution(metricExecutions);
 
     const viewLogicResultDocs = viewLogicResults.map((result) => result.documents).flat();
     const dstPathViewLogicDocsMap: Map<string, LogicResultDoc[]> = await expandConsolidateAndGroupByDstPath(viewLogicResultDocs);

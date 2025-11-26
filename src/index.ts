@@ -543,7 +543,7 @@ export async function onFormSubmit(
 
     const metricExecutions =
       convertLogicResultsToMetricExecutions(logicResults);
-    await indexUtilsMockable.createMetricExecution(metricExecutions);
+    await indexUtilsMockable.saveMetricExecution(metricExecutions);
     console.info("Finished");
     logMemoryUsage(`${formId}: Finshed onFormSubmit`);
   } catch (error) {
@@ -695,5 +695,5 @@ export const onUserRegister = async (user: UserRecord) => {
   }
 
   const metricExecutions = convertLogicResultsToMetricExecutions(logicResults);
-  await indexUtilsMockable.createMetricExecution(metricExecutions);
+  await indexUtilsMockable.saveMetricExecution(metricExecutions);
 };

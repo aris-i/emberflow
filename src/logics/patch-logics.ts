@@ -10,7 +10,8 @@ import {CloudEvent} from "firebase-functions/core";
 import {MessagePublishedData} from "firebase-functions/pubsub";
 import {pubsubUtils} from "../utils/pubsub";
 import {
-  _mockable, convertLogicResultsToMetricExecutions,
+  _mockable,
+  convertLogicResultsToMetricExecutions,
   distributeFnTransactional,
 } from "../index-utils";
 import {queueRunViewLogics} from "./view-logics";
@@ -196,7 +197,7 @@ export const runPatchLogics = async (appVersion: string, dstPath: string): Promi
 
     if ( logicResultsForMetricExecution.length > 0 ) {
       const metricExecutions = convertLogicResultsToMetricExecutions([...logicResultsForMetricExecution, runPatchMetricsLogicResult]);
-      await _mockable.createMetricExecution(metricExecutions);
+      await _mockable.saveMetricExecution(metricExecutions);
     }
   }
 };

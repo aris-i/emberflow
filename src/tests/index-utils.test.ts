@@ -1824,7 +1824,7 @@ describe("createMetricExecution", () => {
     logicResults.push(logicResult);
 
     const metricExecutions = convertLogicResultsToMetricExecutions(logicResults);
-    await indexUtils._mockable.createMetricExecution(metricExecutions);
+    await indexUtils._mockable.saveMetricExecution(metricExecutions);
     expect(colSpy).toHaveBeenCalledTimes(1);
     expect(colSpy).toHaveBeenCalledWith("@metrics");
     expect(warnSpy).toHaveBeenCalledTimes(1);
@@ -1848,7 +1848,7 @@ describe("createMetricExecution", () => {
     logicResults.push(logicResult2);
 
     const metricExecutions = convertLogicResultsToMetricExecutions(logicResults);
-    await indexUtils._mockable.createMetricExecution(metricExecutions);
+    await indexUtils._mockable.saveMetricExecution(metricExecutions);
     expect(colSpy).toHaveBeenCalledTimes(1);
     expect(colSpy).toHaveBeenCalledWith("@metrics");
     expect(warnSpy).toHaveBeenCalledWith("anotherLogicResult took 200ms to execute");

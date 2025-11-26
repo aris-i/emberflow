@@ -255,7 +255,7 @@ describe("runPatchLogics", () => {
       entity: "user",
       regex: /users/,
     });
-    createMetricExecutionSpy = jest.spyOn(indexUtils._mockable, "createMetricExecution").mockResolvedValue();
+    createMetricExecutionSpy = jest.spyOn(indexUtils._mockable, "saveMetricExecution").mockResolvedValue();
     queueRunViewLogicsSpy = jest.spyOn(viewLogics, "queueRunViewLogics").mockResolvedValue();
     runTransactionSpy = jest.spyOn(db, "runTransaction")
       .mockImplementationOnce(async (callback: any) => callback(txnResult1))

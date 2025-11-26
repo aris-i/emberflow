@@ -1309,7 +1309,7 @@ describe("onMessageViewLogicsQueue", () => {
   } as CloudEvent<MessagePublishedData>;
 
   beforeEach(() => {
-    createMetricExecutionSpy = jest.spyOn(indexUtils._mockable, "createMetricExecution").mockResolvedValue();
+    createMetricExecutionSpy = jest.spyOn(indexUtils._mockable, "saveMetricExecution").mockResolvedValue();
     runViewLogicsSpy = jest.spyOn(viewLogics, "runViewLogics").mockResolvedValue(viewLogicsResult);
     expandConsolidateAndGroupByDstPathSpy = jest.spyOn(indexUtils, "expandConsolidateAndGroupByDstPath").mockResolvedValue(expandConsolidateResult);
     distributeSpy = jest.spyOn(indexUtils, "distributeFnNonTransactional").mockResolvedValue([]);

@@ -5,7 +5,8 @@ import {
   LogicActionType,
   LogicConfig,
   LogicResult,
-  LogicResultDoc, MetricExecution,
+  LogicResultDoc,
+  MetricExecution,
   RunBusinessLogicStatus,
   SecurityFn,
   TxnGet,
@@ -49,7 +50,7 @@ export const _mockable = {
   getViewLogicConfigs: () => viewLogicConfigs,
   getPatchLogicConfigs: () => patchLogicConfigs,
   createNowTimestamp: () => admin.firestore.Timestamp.now(),
-  createMetricExecution,
+  saveMetricExecution: saveMetricExecution,
 };
 
 export async function distributeDoc(
@@ -561,7 +562,7 @@ export function convertLogicResultsToMetricExecutions(
   );
 }
 
-async function createMetricExecution(metricExecutions: MetricExecution[]) {
+async function saveMetricExecution(metricExecutions: MetricExecution[]) {
   const metricsRef = db.collection("@metrics");
   for (const metricExecution of metricExecutions) {
     const {name, execTime} = metricExecution;
