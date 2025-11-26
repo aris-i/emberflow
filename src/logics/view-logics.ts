@@ -246,9 +246,10 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       query = query.where("destProp", "==", defDestProp.name);
       console.debug("destProp: ", defDestProp.name);
     }
-    query = query.orderBy("@dateCreated").limit(100);
+    query = query.limit(100);
 
     if (lastProcessedId) {
+      console.debug("Starting after ID: ", lastProcessedId);
       const lastDocRef = db.doc(`${srcPath}/@views/${lastProcessedId}`);
       const lastDocSnap = await lastDocRef.get();
       if (lastDocSnap.exists) {
