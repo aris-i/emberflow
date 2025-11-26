@@ -6,6 +6,7 @@ import {
   LogicConfig,
   LogicResult,
   LogicResultDoc,
+  MetricExecution,
   RunBusinessLogicStatus,
   SecurityFn,
   TxnGet,
@@ -49,7 +50,7 @@ export const _mockable = {
   getViewLogicConfigs: () => viewLogicConfigs,
   getPatchLogicConfigs: () => patchLogicConfigs,
   createNowTimestamp: () => admin.firestore.Timestamp.now(),
-  createMetricExecution,
+  saveMetricExecution: saveMetricExecution,
 };
 
 export async function distributeDoc(
@@ -553,10 +554,18 @@ export async function createMetricLogicDoc(logicName: string) {
   }
 }
 
-async function createMetricExecution(logicResults: LogicResult[]) {
+export function convertLogicResultsToMetricExecutions(
+  logicResults: LogicResult[]
+): MetricExecution[] {
+  return logicResults.map(({name, execTime}) =>
+    ({name, execTime} as MetricExecution)
+  );
+}
+
+async function saveMetricExecution(metricExecutions: MetricExecution[]) {
   const metricsRef = db.collection("@metrics");
-  for (const logicResult of logicResults) {
-    const {name, execTime} = logicResult;
+  for (const metricExecution of metricExecutions) {
+    const {name, execTime} = metricExecution;
     if (!execTime) {
       console.warn(`No execTime found for logic ${name}`);
       continue;

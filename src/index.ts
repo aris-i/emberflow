@@ -8,11 +8,12 @@ import {
   LogicConfigModifiedFieldsType,
   LogicResult,
   LogicResultDoc,
-  LogicResultDocAction,
+  LogicResultDocAction, MetricExecution,
   PatchLogicConfig,
   ProjectConfig,
   RunBusinessLogicStatus,
   SecurityConfig,
+  UserRegisterFn,
   ValidatorConfig,
   ViewDefinition,
   ViewLogicConfig,
@@ -21,6 +22,7 @@ import {
   _mockable as indexUtilsMockable,
   cleanMetricComputations,
   cleanMetricExecutions,
+  convertLogicResultsToMetricExecutions,
   createMetricComputation,
   createMetricLogicDoc,
   delayFormSubmissionAndCheckIfCancelled,
@@ -91,6 +93,7 @@ export let VIEW_LOGICS_TOPIC: Topic;
 export let PATCH_LOGICS_TOPIC: Topic;
 export let FOR_DISTRIBUTION_TOPIC: Topic;
 export let INSTRUCTIONS_TOPIC: Topic;
+let userRegisterFn: UserRegisterFn | undefined;
 
 export const _mockable = {
   createNowTimestamp: () => admin.firestore.Timestamp.now(),
@@ -106,6 +109,7 @@ export function initializeEmberFlow(
   customValidatorConfigs: ValidatorConfig[],
   customLogicConfigs: LogicConfig[],
   customPatchLogicConfigs: PatchLogicConfig[],
+  customUserRegisterFn?: UserRegisterFn,
 ) : {
     docPaths: Record<string, string>;
     colPaths: Record<string, string>;
@@ -123,6 +127,7 @@ export function initializeEmberFlow(
   validatorConfigs = [...customValidatorConfigs];
   logicConfigs = [...customLogicConfigs];
   patchLogicConfigs = [...customPatchLogicConfigs];
+  userRegisterFn = customUserRegisterFn;
   initClient(admin.app(), "service", "0.0.0");
   SUBMIT_FORM_TOPIC = pubsub.topic(SUBMIT_FORM_TOPIC_NAME);
   VIEW_LOGICS_TOPIC = pubsub.topic(VIEW_LOGICS_TOPIC_NAME);
@@ -536,7 +541,9 @@ export async function onFormSubmit(
     };
     logicResults.push(onFormSubmitLogicResult);
 
-    await indexUtilsMockable.createMetricExecution(logicResults);
+    const metricExecutions =
+      convertLogicResultsToMetricExecutions(logicResults);
+    await indexUtilsMockable.saveMetricExecution(metricExecutions);
     console.info("Finished");
     logMemoryUsage(`${formId}: Finshed onFormSubmit`);
   } catch (error) {
@@ -614,7 +621,7 @@ async function distributeNonTransactionalLogicResults(
   return forRunViewLogicQueuing;
 }
 
-const onUserRegister = async (user: UserRecord) => {
+export const onUserRegister = async (user: UserRecord) => {
   const {
     uid,
     displayName,
@@ -647,12 +654,41 @@ const onUserRegister = async (user: UserRecord) => {
     return {firstName, lastName};
   }
 
-  await db.doc(`users/${user.uid}`).set({
-    "@id": uid,
-    ...splitDisplayName(displayName || providerDisplayName),
-    "avatarUrl": photoURL || providerPhotoURL,
-    "username": email || providerEmail,
-    "email": email || providerEmail,
-    "registeredAt": admin.firestore.Timestamp.now(),
+  const start = performance.now();
+  const customUserRegisterMetricExecution = await db.runTransaction(async (txn) => {
+    txn.set(db.doc(`users/${user.uid}`), {
+      "@id": uid,
+      ...splitDisplayName(displayName || providerDisplayName),
+      "avatarUrl": photoURL || providerPhotoURL,
+      "username": email || providerEmail,
+      "email": email || providerEmail,
+      "registeredAt": _mockable.createNowTimestamp(),
+    });
+
+    const customUserRegisterFn = userRegisterFn;
+    if (!customUserRegisterFn) return;
+
+    const logicStart = performance.now();
+    const txnGet = extractTransactionGetOnly(txn);
+    const customUserRegisterFnLogicResult = await customUserRegisterFn(txnGet, user);
+    const logicEnd = performance.now();
+    distributeFnTransactional(txn, [customUserRegisterFnLogicResult]);
+
+    return {
+      name: customUserRegisterFnLogicResult.name,
+      execTime: logicEnd - logicStart,
+    } as MetricExecution;
   });
+
+  const end = performance.now();
+  const execTime = end - start;
+  const onUserRegisterMetricExecution: MetricExecution = {
+    name: "onUserRegister",
+    execTime: execTime,
+  };
+  const metricExecutions = [onUserRegisterMetricExecution];
+  if (customUserRegisterMetricExecution) {
+    metricExecutions.push(customUserRegisterMetricExecution);
+  }
+  await indexUtilsMockable.saveMetricExecution(metricExecutions);
 };

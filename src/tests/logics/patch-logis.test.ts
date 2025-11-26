@@ -18,7 +18,6 @@ import * as indexUtils from "../../index-utils";
 import {CloudEvent} from "firebase-functions/core";
 import {MessagePublishedData} from "firebase-functions/pubsub";
 import {pubsubUtils} from "../../utils/pubsub";
-import Timestamp = firestore.Timestamp;
 
 const projectConfig: ProjectConfig = {
   projectId: "your-project-id",
@@ -256,7 +255,7 @@ describe("runPatchLogics", () => {
       entity: "user",
       regex: /users/,
     });
-    createMetricExecutionSpy = jest.spyOn(indexUtils._mockable, "createMetricExecution").mockResolvedValue();
+    createMetricExecutionSpy = jest.spyOn(indexUtils._mockable, "saveMetricExecution").mockResolvedValue();
     queueRunViewLogicsSpy = jest.spyOn(viewLogics, "queueRunViewLogics").mockResolvedValue();
     runTransactionSpy = jest.spyOn(db, "runTransaction")
       .mockImplementationOnce(async (callback: any) => callback(txnResult1))
@@ -420,38 +419,14 @@ describe("runPatchLogics", () => {
       [{
         "name": "userLogicFn2",
         "execTime": expect.any(Number),
-        "status": "finished",
-        "timeFinished": expect.any(Timestamp),
-        "documents": [{
-          ...userLogicFn2Result.documents[0],
-          "doc": {
-            ...userLogicFn2Result.documents[0].doc,
-            "@dataVersion": "2.0.0",
-          },
-        }, dataVersionLogicResultDoc],
-        "transactional": true,
       },
       {
         "name": "additionalUserLogicFn2",
         "execTime": expect.any(Number),
-        "status": "finished",
-        "timeFinished": expect.any(Timestamp),
-        "documents": [
-          {
-            ...additionalUserLogicFn2Result.documents[0],
-            "doc": {
-              ...additionalUserLogicFn2Result.documents[0].doc,
-              "@dataVersion": "2.0.0",
-            },
-          }, dataVersionLogicResultDoc,
-        ],
-        "transactional": true,
       },
       {
-        execTime: expect.any(Number),
-        status: "finished",
-        name: "runPatchLogics",
-        documents: [],
+        "execTime": expect.any(Number),
+        "name": "runPatchLogics",
       },
       ]
     );
@@ -460,26 +435,10 @@ describe("runPatchLogics", () => {
       [{
         "name": "userLogicFn2p5",
         "execTime": expect.any(Number),
-        "status": "finished",
-        "timeFinished": expect.any(Timestamp),
-        "documents": [{
-          ...userLogicFn2p5Result.documents[0],
-          "doc": {...userLogicFn2p5Result.documents[0].doc},
-        }, {
-          "action": "merge",
-          "doc": {"@dataVersion": "2.5.0"},
-          "dstPath": "users/userId/todos/todoId",
-        }, {
-          "action": "merge", dstPath,
-          "doc": {"@dataVersion": "2.5.0"},
-        }],
-        "transactional": true,
       },
       {
-        execTime: expect.any(Number),
-        status: "finished",
-        name: "runPatchLogics",
-        documents: [],
+        "execTime": expect.any(Number),
+        "name": "runPatchLogics",
       },
       ]);
   });

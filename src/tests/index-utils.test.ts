@@ -1,7 +1,12 @@
 import * as admin from "firebase-admin";
 import {firestore} from "firebase-admin";
 import * as indexUtils from "../index-utils";
-import {cleanMetricComputations, cleanMetricExecutions, createMetricComputation} from "../index-utils";
+import {
+  cleanMetricComputations,
+  cleanMetricExecutions,
+  convertLogicResultsToMetricExecutions,
+  createMetricComputation,
+} from "../index-utils";
 import {_mockable, db, initializeEmberFlow} from "../index";
 import {
   Action,
@@ -1818,7 +1823,8 @@ describe("createMetricExecution", () => {
     } as LogicResult;
     logicResults.push(logicResult);
 
-    await indexUtils._mockable.createMetricExecution(logicResults);
+    const metricExecutions = convertLogicResultsToMetricExecutions(logicResults);
+    await indexUtils._mockable.saveMetricExecution(metricExecutions);
     expect(colSpy).toHaveBeenCalledTimes(1);
     expect(colSpy).toHaveBeenCalledWith("@metrics");
     expect(warnSpy).toHaveBeenCalledTimes(1);
@@ -1841,7 +1847,8 @@ describe("createMetricExecution", () => {
     logicResults.push(logicResult1);
     logicResults.push(logicResult2);
 
-    await indexUtils._mockable.createMetricExecution(logicResults);
+    const metricExecutions = convertLogicResultsToMetricExecutions(logicResults);
+    await indexUtils._mockable.saveMetricExecution(metricExecutions);
     expect(colSpy).toHaveBeenCalledTimes(1);
     expect(colSpy).toHaveBeenCalledWith("@metrics");
     expect(warnSpy).toHaveBeenCalledWith("anotherLogicResult took 200ms to execute");

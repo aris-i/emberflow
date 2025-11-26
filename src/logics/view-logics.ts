@@ -1,9 +1,12 @@
-import {LogicResult, LogicResultDoc, ViewDefinition, ViewLogicConfig, ViewLogicFn} from "../types";
+import {LogicResult, LogicResultDoc, MetricExecution, ViewDefinition, ViewLogicConfig, ViewLogicFn} from "../types";
 import {db, docPaths, docPathsRegex, VIEW_LOGICS_TOPIC, VIEW_LOGICS_TOPIC_NAME} from "../index";
 import * as admin from "firebase-admin";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
 import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
-import {_mockable, distributeFnNonTransactional, expandConsolidateAndGroupByDstPath} from "../index-utils";
+import {
+  _mockable,
+  convertLogicResultsToMetricExecutions, distributeFnNonTransactional, expandConsolidateAndGroupByDstPath,
+} from "../index-utils";
 import {pubsubUtils} from "../utils/pubsub";
 import {reviveDateAndTimestamp} from "../utils/misc";
 import {
@@ -492,14 +495,12 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
     const start = performance.now();
     const viewLogicResults: LogicResult[] = await exports.runViewLogics(logicResultDoc, targetVersion, lastProcessedId);
     const end = performance.now();
-    const execTime = end - start;
-    const distributeFnLogicResult: LogicResult = {
+    const metricExecutions = convertLogicResultsToMetricExecutions([...viewLogicResults]);
+    const runViewLogicsMetricExecution: MetricExecution = {
       name: "runViewLogics",
-      status: "finished",
-      documents: [],
-      execTime: execTime,
+      execTime: end - start,
     };
-    await _mockable.createMetricExecution([...viewLogicResults, distributeFnLogicResult]);
+    await _mockable.saveMetricExecution([...metricExecutions, runViewLogicsMetricExecution]);
 
     const viewLogicResultDocs = viewLogicResults.map((result) => result.documents).flat();
     const dstPathViewLogicDocsMap: Map<string, LogicResultDoc[]> = await expandConsolidateAndGroupByDstPath(viewLogicResultDocs);
