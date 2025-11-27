@@ -146,9 +146,11 @@ export function initializeEmberFlow(
   docPathsRegex = dbr;
 
   viewLogicConfigs = vd.map((viewDef: ViewDefinition): ViewLogicConfig[] => {
+    const {destEntity, destProp} = viewDef;
+    const {name: destPropName} = destProp || {};
     const [srcToDstViewLogicFn, dstToSrcViewLogicFn] = createViewLogicFn(viewDef);
     const srcToDstLogicConfig = {
-      name: `${viewDef.destEntity} ViewLogic`,
+      name: `${destEntity}${destPropName ? `#${destPropName}` : ""} ViewLogic`,
       entity: viewDef.srcEntity,
       actionTypes: ["create", "merge", "delete"] as LogicResultDocAction[],
       modifiedFields: viewDef.srcProps,
@@ -156,7 +158,7 @@ export function initializeEmberFlow(
       version: viewDef.version,
     };
     const dstToSrcLogicConfig = {
-      name: `${viewDef.destEntity} Reverse ViewLogic`,
+      name: `${destEntity}${destPropName ? `#${destPropName}` : ""} Reverse ViewLogic`,
       entity: viewDef.destEntity,
       actionTypes: ["create", "delete"] as LogicResultDocAction[],
       modifiedFields: "all" as LogicConfigModifiedFieldsType,
@@ -655,7 +657,9 @@ export const onUserRegister = async (user: UserRecord) => {
   }
 
   const start = performance.now();
+  console.debug("Starting Transaction");
   const customUserRegisterMetricExecution = await db.runTransaction(async (txn) => {
+    console.debug("Creating user document");
     txn.set(db.doc(`users/${user.uid}`), {
       "@id": uid,
       ...splitDisplayName(displayName || providerDisplayName),
@@ -665,14 +669,18 @@ export const onUserRegister = async (user: UserRecord) => {
       "registeredAt": _mockable.createNowTimestamp(),
     });
 
+
     const customUserRegisterFn = userRegisterFn;
     if (!customUserRegisterFn) return;
 
+    console.debug("Running custom user register function");
     const logicStart = performance.now();
     const txnGet = extractTransactionGetOnly(txn);
     const customUserRegisterFnLogicResult = await customUserRegisterFn(txnGet, user);
     const logicEnd = performance.now();
+    console.debug("Distributing logic results");
     distributeFnTransactional(txn, [customUserRegisterFnLogicResult]);
+    console.debug("Finished custom user register function");
 
     return {
       name: customUserRegisterFnLogicResult.name,

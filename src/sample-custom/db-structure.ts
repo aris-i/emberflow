@@ -20,6 +20,7 @@ export enum Entity {
     PrepAreaMenuItem = "prepAreaMenuItem",
     RecipeIngredient = "recipeIngredient",
     MenuItemIngredient = "menuItemIngredient",
+    Todos = "todos",
 }
 
 // Map your custom ent  ities to dbStructure below.
@@ -112,6 +113,14 @@ export const dbStructure = {
           },
         },
       },
+      todosCollection: {
+        [Entity.Todos]: [
+          view(Entity.Topic, ["title"], {}, "1.0.0"),
+          view(Entity.Topic, ["title", "name"], {}, "2.0.0"),
+        ],
+      },
+      todosArray: [propView("array-map", Entity.Topic, ["title"], {}, "2.0.0")],
+      mainTopic: [propView("map", Entity.Topic, ["title"], {}, "3.0.0")],
     },
   },
 };
