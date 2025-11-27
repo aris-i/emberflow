@@ -27,6 +27,8 @@ import Timestamp = firestore.Timestamp;
 import {_mockable as pathsMockable} from "../../utils/paths";
 import CollectionReference = firestore.CollectionReference;
 import {convertLogicResultsToMetricExecutions} from "../../index-utils";
+import {findMatchingViewLogics} from "../../logics/view-logics";
+import * as paths from "../../utils/paths";
 
 jest.mock("../../utils/pubsub", () => {
   return {
@@ -1333,5 +1335,45 @@ describe("onMessageViewLogicsQueue", () => {
     expect(distributeSpy).toHaveBeenCalledWith(expandConsolidateResult);
     expect(trackProcessedIdsMock).toHaveBeenCalledWith(VIEW_LOGICS_TOPIC_NAME, event.id);
     expect(result).toEqual("Processed view logics");
+  });
+});
+
+describe("findMatchingViewLogics", () => {
+  const logicResultDoc: LogicResultDoc = {
+    action: "merge",
+    dstPath: "topics/topicId",
+    doc: {title: "New title"},
+  };
+  jest.spyOn(paths, "findMatchingDocPathRegex").mockReturnValue({
+    entity: "topic",
+    regex: /topics/,
+  });
+
+  it("should return matching view logics with proper naming", () => {
+    initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfigs, validatorConfigs, [], []);
+    const result = findMatchingViewLogics(logicResultDoc, "5.0.0");
+
+    // normal view
+    expect(result?.has("todos ViewLogic")).toBe(true);
+    // map view
+    expect(result?.has("user#mainTopic ViewLogic")).toBe(true);
+    // array-map view
+    expect(result?.has("user#todosArray ViewLogic")).toBe(true);
+  });
+
+  it("should return matching view logics with proper version", () => {
+    initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfigs, validatorConfigs, [], []);
+    const result = findMatchingViewLogics(logicResultDoc, "2.5.0");
+
+    expect(result?.has("todos ViewLogic")).toBe(true); // included
+    expect(result?.has("user#todosArray ViewLogic")).toBe(true); // included
+    expect(result?.has("user#mainTopic ViewLogic")).toBe(false); // ahead of version 2.5.0
+
+    // should run correct version
+    expect(result?.get("todos ViewLogic")).toEqual(
+      expect.objectContaining({
+        version: "2.0.0",
+      })
+    );
   });
 });
