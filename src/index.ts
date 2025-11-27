@@ -657,7 +657,9 @@ export const onUserRegister = async (user: UserRecord) => {
   }
 
   const start = performance.now();
+  console.debug("Starting Transaction");
   const customUserRegisterMetricExecution = await db.runTransaction(async (txn) => {
+    console.debug("Creating user document");
     txn.set(db.doc(`users/${user.uid}`), {
       "@id": uid,
       ...splitDisplayName(displayName || providerDisplayName),
@@ -667,14 +669,18 @@ export const onUserRegister = async (user: UserRecord) => {
       "registeredAt": _mockable.createNowTimestamp(),
     });
 
+
     const customUserRegisterFn = userRegisterFn;
     if (!customUserRegisterFn) return;
 
+    console.debug("Running custom user register function");
     const logicStart = performance.now();
     const txnGet = extractTransactionGetOnly(txn);
     const customUserRegisterFnLogicResult = await customUserRegisterFn(txnGet, user);
     const logicEnd = performance.now();
+    console.debug("Distributing logic results");
     distributeFnTransactional(txn, [customUserRegisterFnLogicResult]);
+    console.debug("Finished custom user register function");
 
     return {
       name: customUserRegisterFnLogicResult.name,
