@@ -1344,25 +1344,16 @@ describe("findMatchingViewLogics", () => {
     dstPath: "topics/topicId",
     doc: {title: "New title"},
   };
-  jest.spyOn(paths, "findMatchingDocPathRegex").mockReturnValue({
-    entity: "topic",
-    regex: /topics/,
-  });
-
-  it("should return matching view logics with proper naming", () => {
+  beforeEach(()=> {
+    jest.restoreAllMocks();
     initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfigs, validatorConfigs, [], []);
-    const result = findMatchingViewLogics(logicResultDoc, "5.0.0");
-
-    // normal view
-    expect(result?.has("todos ViewLogic")).toBe(true);
-    // map view
-    expect(result?.has("user#mainTopic ViewLogic")).toBe(true);
-    // array-map view
-    expect(result?.has("user#todosArray ViewLogic")).toBe(true);
+    jest.spyOn(paths, "findMatchingDocPathRegex").mockReturnValue({
+      entity: "topic",
+      regex: /topics/,
+    });
   });
 
   it("should return matching view logics with proper version", () => {
-    initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfigs, validatorConfigs, [], []);
     const result = findMatchingViewLogics(logicResultDoc, "2.5.0");
 
     expect(result?.has("todos ViewLogic")).toBe(true); // included
@@ -1375,5 +1366,17 @@ describe("findMatchingViewLogics", () => {
         version: "2.0.0",
       })
     );
+  });
+
+  it("should return matching view logics with proper naming", () => {
+    const result = findMatchingViewLogics(logicResultDoc, "5.0.0");
+    console.debug(result);
+
+    // normal view
+    expect(result?.has("todos ViewLogic")).toBe(true);
+    // map view
+    expect(result?.has("user#mainTopic ViewLogic")).toBe(true);
+    // array-map view
+    expect(result?.has("user#todosArray ViewLogic")).toBe(true);
   });
 });

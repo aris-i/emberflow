@@ -237,17 +237,13 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     let query = db.doc(srcPath)
       .collection("@views")
       .where("destEntity", "==", defDestEntity);
-    console.debug("srcPath: ", srcPath);
-    console.debug("destEntity: ", defDestEntity);
     if (srcAction === "delete") {
       console.debug("action === delete");
     } else {
       query = query.where("srcProps", "array-contains-any", modifiedFields);
-      console.debug("modifiedFields: ", modifiedFields.join(", "));
     }
     if (defDestProp) {
       query = query.where("destProp", "==", defDestProp.name);
-      console.debug("destProp: ", defDestProp.name);
     }
     query = query.limit(100);
 
