@@ -245,7 +245,8 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     if (defDestProp) {
       query = query.where("destProp", "==", defDestProp.name);
     }
-    query = query.limit(100);
+    const limitPerBatch = 50;
+    query = query.limit(limitPerBatch);
 
     if (lastProcessedId) {
       console.debug("Starting after ID: ", lastProcessedId);
@@ -258,7 +259,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     const atViewsDocs = (await query.get()).docs;
     console.debug(`Found ${atViewsDocs.length} matching @view documents`);
 
-    if (atViewsDocs.length === 100) {
+    if (atViewsDocs.length === limitPerBatch) {
       console.debug("Processing limit reached. The remaining views will be processed in the next batch");
       const newLastProcessedId = atViewsDocs[atViewsDocs.length - 1].id;
       exports.queueRunViewLogics(targetVersion, [logicResultDoc], newLastProcessedId);
