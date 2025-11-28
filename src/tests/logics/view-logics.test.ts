@@ -912,7 +912,7 @@ describe("createViewLogicFn", () => {
     expect(document).toHaveProperty("dstPath", "users/1234/@views/users+789+friends+1234");
   });
 
-  it("should only execute 100 @views per batch, then queue the succeeding ones", async () => {
+  it("should only execute 50 @views per batch, then queue the succeeding ones", async () => {
     docGetMock.mockResolvedValue({
       data: () => {
         return {
@@ -922,7 +922,7 @@ describe("createViewLogicFn", () => {
       exists: true,
     });
     colGetMock.mockResolvedValueOnce({
-      docs: [...(Array.from({length: 99}, () => ({
+      docs: [...(Array.from({length: 49}, () => ({
         id: "users+456+friends+1234",
         ref: {
           path: "users/1234/@views/users+456+friends+1234",
@@ -937,13 +937,13 @@ describe("createViewLogicFn", () => {
         },
       }))),
       {
-        "id": "100thViewId",
+        "id": "50thViewId",
         "ref": {
-          path: "users/1234/@views/100thViewId",
+          path: "users/1234/@views/50thViewId",
         },
         "data": ()=> {
           return {
-            "@id": "100thViewId",
+            "@id": "50thViewId",
             "destEntity": "user",
             "path": "users/userId/friends/1234",
             "srcProps": ["age", "avatar", "name"],
@@ -961,10 +961,10 @@ describe("createViewLogicFn", () => {
 
     expect(result).toBeDefined();
     expect(result.documents).toBeDefined();
-    expect(result.documents.length).toEqual(100);
+    expect(result.documents.length).toEqual(50);
 
     expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
-    expect(queueRunViewLogicsSpy).toHaveBeenNthCalledWith(1, targetVersion, [mergeLogicResultDoc], "100thViewId");
+    expect(queueRunViewLogicsSpy).toHaveBeenNthCalledWith(1, targetVersion, [mergeLogicResultDoc], "50thViewId");
   });
 
   it("should be able to process succeeding batches of @views", async () => {
@@ -978,7 +978,7 @@ describe("createViewLogicFn", () => {
     }).mockResolvedValueOnce({
       "data": () => {
         return {
-          "@id": "100thViewId",
+          "@id": "50thViewId",
           "destEntity": "user",
           "path": "users/userId/friends/1234",
           "srcProps": ["age", "avatar", "name"],
@@ -1014,7 +1014,7 @@ describe("createViewLogicFn", () => {
 
     const logicFn = viewLogics.createViewLogicFn(vd1);
 
-    const result = await logicFn[0](mergeLogicResultDoc, targetVersion, "100thViewId");
+    const result = await logicFn[0](mergeLogicResultDoc, targetVersion, "50thViewId");
 
     expect(result).toBeDefined();
     expect(result.documents).toBeDefined();
