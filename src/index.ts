@@ -642,7 +642,7 @@ export const onUserRegister = async (user: UserRecord) => {
     const parts = displayName.trim().split(/\s+/); // split by any whitespace
 
     if (parts.length === 0) {
-      return {firstName: "", lastName: ""};
+      return {firstName: "Anonymous", lastName: ""};
     }
 
     if (parts.length === 1) {
