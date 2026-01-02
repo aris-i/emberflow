@@ -1,11 +1,21 @@
 import * as admin from "firebase-admin";
 import {firestore} from "firebase-admin";
+import {MemoryOption} from "firebase-functions/v2/options";
 import Timestamp = firestore.Timestamp;
 import DocumentData = firestore.DocumentData;
 import {FormData} from "emberflow-admin-client/lib/types";
 import {UserRecord} from "firebase-admin/auth";
 
 export type FirebaseAdmin = typeof admin;
+
+export interface FunctionConfig {
+    memory?: MemoryOption;
+    timeoutSeconds?: number;
+    concurrency?: number;
+    maxInstances?: number;
+    minInstances?: number;
+    retry?: boolean;
+}
 
 export interface ProjectConfig {
     projectId: string;
@@ -14,6 +24,22 @@ export interface ProjectConfig {
     budgetAlertTopicName: string;
     maxCostLimitPerFunction: number;
     specialCostLimitPerFunction: { [key: string]: number };
+    functionsConfig?: {
+        onFormSubmit?: FunctionConfig;
+        onMessageSubmitFormQueue?: FunctionConfig;
+        onMessageViewLogicsQueue?: FunctionConfig;
+        onMessagePatchLogicsQueue?: FunctionConfig;
+        onMessageForDistributionQueue?: FunctionConfig;
+        onMessageInstructionsQueue?: FunctionConfig;
+        resetUsageStats?: FunctionConfig;
+        cleanPubSubProcessedIds?: FunctionConfig;
+        cleanMetricComputations?: FunctionConfig;
+        cleanMetricExecutions?: FunctionConfig;
+        cleanActionsAndForms?: FunctionConfig;
+        createMetricComputation?: FunctionConfig;
+        onDeleteFunctions?: FunctionConfig;
+        onUserRegister?: FunctionConfig;
+    }
 }
 export type ActionType = "create" | "update" | "delete";
 export interface Action{

@@ -186,6 +186,7 @@ export function initializeEmberFlow(
       memory: "256MiB",
       concurrency: 80,
       maxInstances: 20,
+      ...projectConfig.functionsConfig?.onFormSubmit as any,
     },
     useBillProtect(onFormSubmit)
   );
@@ -198,24 +199,28 @@ export function initializeEmberFlow(
     maxInstances: 5,
     timeoutSeconds: 540,
     retry: true,
+    ...projectConfig.functionsConfig?.onMessageSubmitFormQueue as any,
   }, onMessageSubmitFormQueue);
   functionsConfig["onMessageViewLogicsQueue"] = onMessagePublished({
     topic: VIEW_LOGICS_TOPIC_NAME,
     region: projectConfig.region,
     maxInstances: 5,
     timeoutSeconds: 540,
+    ...projectConfig.functionsConfig?.onMessageViewLogicsQueue as any,
   }, onMessageViewLogicsQueue);
   functionsConfig["onMessagePatchLogicsQueue"] = onMessagePublished({
     topic: PATCH_LOGICS_TOPIC_NAME,
     region: projectConfig.region,
     maxInstances: 5,
     timeoutSeconds: 540,
+    ...projectConfig.functionsConfig?.onMessagePatchLogicsQueue as any,
   }, onMessageRunPatchLogicsQueue);
   functionsConfig["onMessageForDistributionQueue"] = onMessagePublished({
     topic: FOR_DISTRIBUTION_TOPIC_NAME,
     region: projectConfig.region,
     maxInstances: 5,
     timeoutSeconds: 540,
+    ...projectConfig.functionsConfig?.onMessageForDistributionQueue as any,
   }, onMessageForDistributionQueue);
   functionsConfig["onMessageInstructionsQueue"] = onMessagePublished({
     topic: INSTRUCTIONS_TOPIC_NAME,
@@ -223,6 +228,7 @@ export function initializeEmberFlow(
     maxInstances: 1,
     concurrency: 1,
     timeoutSeconds: 540,
+    ...projectConfig.functionsConfig?.onMessageInstructionsQueue as any,
   }, debounce(
     onMessageInstructionsQueue,
     200,
@@ -238,36 +244,50 @@ export function initializeEmberFlow(
     schedule: "every 1 hours",
     region: projectConfig.region,
     timeoutSeconds: 540,
+    ...projectConfig.functionsConfig?.resetUsageStats as any,
   }, resetUsageStats);
   functionsConfig["cleanPubSubProcessedIds"] = onSchedule({
     schedule: "every 1 hours",
     region: projectConfig.region,
     timeoutSeconds: 540,
+    ...projectConfig.functionsConfig?.cleanPubSubProcessedIds as any,
   }, cleanPubSubProcessedIds);
   functionsConfig["cleanMetricComputations"] = onSchedule({
     schedule: "every 24 hours",
     region: projectConfig.region,
     timeoutSeconds: 540,
+    ...projectConfig.functionsConfig?.cleanMetricComputations as any,
   }, cleanMetricComputations);
   functionsConfig["cleanMetricExecutions"] = onSchedule({
     schedule: "every 24 hours",
     region: projectConfig.region,
     timeoutSeconds: 540,
+    ...projectConfig.functionsConfig?.cleanMetricExecutions as any,
   }, cleanMetricExecutions);
   functionsConfig["cleanActionsAndForms"] = onSchedule({
     schedule: "every 24 hours",
     region: projectConfig.region,
     timeoutSeconds: 540,
+    ...projectConfig.functionsConfig?.cleanActionsAndForms as any,
   }, cleanActionsAndForms);
   functionsConfig["createMetricComputation"] = onSchedule({
     schedule: "every 1 hours",
     region: projectConfig.region,
     timeoutSeconds: 540,
+    ...projectConfig.functionsConfig?.createMetricComputation as any,
   }, createMetricComputation);
-  functionsConfig["onDeleteFunctions"] = onDocumentCreated(
-    "@server/delete/functions/{deleteFuncId}", onDeleteFunction);
+  functionsConfig["onDeleteFunctions"] = onDocumentCreated({
+    document: "@server/delete/functions/{deleteFuncId}",
+    ...projectConfig.functionsConfig?.onDeleteFunctions as any,
+  } as any, onDeleteFunction as any);
+  const onUserRegisterConfig = projectConfig.functionsConfig?.onUserRegister;
   functionsConfig["onUserRegister"] =
-    functions.auth.user().onCreate(onUserRegister);
+    functions.runWith({
+      ...(onUserRegisterConfig?.memory ? {memory: onUserRegisterConfig.memory.replace("MiB", "") as functions.RuntimeOptions["memory"]} : {}),
+      ...(onUserRegisterConfig?.timeoutSeconds ? {timeoutSeconds: onUserRegisterConfig.timeoutSeconds} : {}),
+      ...(onUserRegisterConfig?.minInstances ? {minInstances: onUserRegisterConfig.minInstances} : {}),
+      ...(onUserRegisterConfig?.maxInstances ? {maxInstances: onUserRegisterConfig.maxInstances} : {}),
+    }).auth.user().onCreate(onUserRegister);
 
   return {docPaths, colPaths, docPathsRegex, functionsConfig};
 }
