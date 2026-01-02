@@ -166,10 +166,13 @@ describe("deleteCollection", () => {
   });
 
   it("should return when snapshot size is 0", async () => {
-    limitMock = jest.fn().mockReturnValue({
+    const selectMock = jest.fn().mockReturnValue({
       get: jest.fn().mockResolvedValue({
         size: 0,
       }),
+    });
+    limitMock = jest.fn().mockReturnValue({
+      select: selectMock,
     });
     await deleteCollection({
       limit: limitMock,
@@ -177,6 +180,7 @@ describe("deleteCollection", () => {
 
     expect(limitMock).toHaveBeenCalledTimes(1);
     expect(limitMock).toHaveBeenCalledWith(500);
+    expect(selectMock).toHaveBeenCalledTimes(1);
     expect(batchDeleteDocMock).not.toHaveBeenCalled();
     expect(batchCommitMock).not.toHaveBeenCalled();
     expect(callbackMock).not.toHaveBeenCalled();
@@ -194,8 +198,11 @@ describe("deleteCollection", () => {
       size: 100,
       docs: docs,
     });
-    limitMock = jest.fn().mockReturnValue({
+    const selectMock = jest.fn().mockReturnValue({
       get: getMock,
+    });
+    limitMock = jest.fn().mockReturnValue({
+      select: selectMock,
     });
     await deleteCollection({
       limit: limitMock,
@@ -203,6 +210,7 @@ describe("deleteCollection", () => {
 
     expect(limitMock).toHaveBeenCalledTimes(1);
     expect(limitMock).toHaveBeenCalledWith(500);
+    expect(selectMock).toHaveBeenCalledTimes(1);
     expect(batchDeleteDocMock).toHaveBeenCalledTimes(100);
     expect(batchCommitMock).toHaveBeenCalledTimes(1);
     expect(callbackMock).toHaveBeenCalledTimes(1);
