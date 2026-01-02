@@ -70,8 +70,7 @@ export function debounce<T extends any[], A extends object|any[]|Map<string, any
     const invokeFunction = (...args: T) => {
       console.info("Invoking function");
       if (reducer) {
-        console.debug("accumulatedResultQueue.length:", accumulatedResultQueue.length);
-        for (let i = 0; i < accumulatedResultQueue.length-1; i++) {
+        for (let i = 0; i < accumulatedResultQueue.length; i++) {
           const accumulatedResult = accumulatedResultQueue[i];
           let isEmpty = false;
           if (Array.isArray(accumulatedResult)) {
@@ -82,7 +81,8 @@ export function debounce<T extends any[], A extends object|any[]|Map<string, any
             isEmpty = Object.keys(accumulatedResult).length === 0;
           }
           if (isEmpty) {
-            console.debug("accumulatedResult is empty. Skipping");
+            accumulatedResultQueue.splice(i, 1);
+            i--;
             continue;
           }
 

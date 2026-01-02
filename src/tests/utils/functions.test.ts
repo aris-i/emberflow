@@ -78,7 +78,7 @@ describe("debounce", () => {
     debouncedFunc(createEvent());
     await jest.advanceTimersByTimeAsync(200);
 
-    expect(consoleDebugSpy).toHaveBeenCalledTimes(7);
+    expect(consoleDebugSpy).toHaveBeenCalledTimes(6);
     expect(consoleDebugSpy).toHaveBeenNthCalledWith(1, "Schedule processing queue using setTimeout");
     expect(consoleDebugSpy).toHaveBeenNthCalledWith(2, "debouncing");
     expect(consoleDebugSpy).toHaveBeenNthCalledWith(3, "Now processing queue using setTimeout");
@@ -109,7 +109,7 @@ describe("debounce", () => {
     debouncedFunc(createEvent());
     await jest.advanceTimersByTimeAsync(200);
 
-    expect(consoleDebugSpy).toHaveBeenCalledTimes(17);
+    expect(consoleDebugSpy).toHaveBeenCalledTimes(16);
     expect(consoleDebugSpy).toHaveBeenNthCalledWith(1, "Schedule processing queue using setTimeout");
     expect(consoleDebugSpy).toHaveBeenNthCalledWith(2, "debouncing");
     expect(consoleDebugSpy).toHaveBeenNthCalledWith(3, "Now processing queue using setTimeout");
@@ -167,7 +167,7 @@ describe("debounce", () => {
     await jest.advanceTimersByTimeAsync(100);
     debouncedFunc(createEvent());
 
-    expect(consoleDebugSpy).toHaveBeenCalledTimes(53);
+    expect(consoleDebugSpy).toHaveBeenCalledTimes(52);
     expect(consoleDebugSpy).toHaveBeenNthCalledWith(1, "Schedule processing queue using setTimeout");
     expect(consoleDebugSpy).toHaveBeenNthCalledWith(2, "debouncing");
     expect(consoleDebugSpy).toHaveBeenNthCalledWith(3, "Now processing queue using setTimeout");
