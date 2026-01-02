@@ -38,11 +38,11 @@ import {
   validateForm,
 } from "./index-utils";
 import {initDbStructure} from "./init-db-structure";
-import {createViewLogicFn, onMessageViewLogicsQueue, queueRunViewLogics} from "./logics/view-logics";
+import {createViewLogicFn, findMatchingViewLogics, onMessageViewLogicsQueue, queueRunViewLogics} from "./logics/view-logics";
 import {resetUsageStats, stopBillingIfBudgetExceeded, useBillProtect} from "./utils/bill-protect";
 import {Firestore} from "firebase-admin/firestore";
 import {DatabaseEvent, DataSnapshot, onValueCreated} from "firebase-functions/v2/database";
-import {parseEntity} from "./utils/paths";
+import {findMatchingDocPathRegex, parseEntity} from "./utils/paths";
 import {database} from "firebase-admin";
 import {initClient} from "emberflow-admin-client/lib";
 import {internalDbStructure, InternalEntity} from "./db-structure";
@@ -57,7 +57,12 @@ import {onDocumentCreated} from "firebase-functions/v2/firestore";
 import {UserRecord} from "firebase-admin/lib/auth";
 import {debounce} from "./utils/functions";
 import {extractTransactionGetOnly} from "./utils/transaction";
-import {onMessageRunPatchLogicsQueue, queueRunPatchLogics, versionCompare} from "./logics/patch-logics";
+import {
+  findMatchingPatchLogicsByEntity,
+  onMessageRunPatchLogicsQueue,
+  queueRunPatchLogics,
+  versionCompare,
+} from "./logics/patch-logics";
 import Database = database.Database;
 
 export let admin: FirebaseAdmin;
@@ -342,7 +347,8 @@ export async function onFormSubmit(
       logicResults: [],
     };
 
-    const logicDocsThatWereAlreadyDistributed: LogicResultDoc[] = [];
+    const docsForViewLogics: LogicResultDoc[] = [];
+    const pathsForPatchLogics: Set<string> = new Set();
     const actionRef = _mockable.initActionRef(formId);
     let targetVersion = appVersion;
     logMemoryUsage(`${formId}: Starting Transaction`);
@@ -486,7 +492,16 @@ export async function onFormSubmit(
       logMemoryUsage(`${formId}: After Saving Logic Logics`);
 
       const distributeTransactionalLogicResultsStart = performance.now();
-      logicDocsThatWereAlreadyDistributed.push(...await distributeFnTransactional(txn, runBusinessLogicStatus.logicResults));
+      const transactionalLogicResults = await distributeFnTransactional(txn, runBusinessLogicStatus.logicResults);
+      for (const doc of transactionalLogicResults) {
+        if (findMatchingViewLogics(doc, targetVersion)?.size) {
+          docsForViewLogics.push(doc);
+        }
+        const {entity} = findMatchingDocPathRegex(doc.dstPath);
+        if (entity && findMatchingPatchLogicsByEntity(entity, targetVersion).length > 0) {
+          pathsForPatchLogics.add(doc.dstPath);
+        }
+      }
       const distributeTransactionalLogicResultsEnd = performance.now();
       const distributeTransactionalLogicResults: LogicResult = {
         name: "distributeTransactionalLogicResults",
@@ -496,6 +511,16 @@ export async function onFormSubmit(
       };
       logMemoryUsage(`${formId}: After Distributing Transactional Logic Logics`);
       logicResults.push(distributeTransactionalLogicResults);
+
+      // Clear documents from transactional logic results to free up memory
+      if (process.env.NODE_ENV !== "test") {
+        for (const result of runBusinessLogicStatus.logicResults) {
+          if (result.transactional) {
+            result.documents = [];
+          }
+        }
+      }
+
       return "transaction-complete";
     });
     logMemoryUsage(`${formId}: After Running Transaction`);
@@ -505,9 +530,21 @@ export async function onFormSubmit(
       return;
     }
     const distributeNonTransactionalLogicResultsStart = performance.now();
-    logicDocsThatWereAlreadyDistributed.push(...await distributeNonTransactionalLogicResults(
+    const {docsForViewLogics: nonTransactionalDocsForViewLogics, pathsForPatchLogics: nonTransactionalPathsForPatchLogics} = await distributeNonTransactionalLogicResults(
       runBusinessLogicStatus.logicResults, docPath, appVersion, targetVersion,
-    ));
+    );
+    docsForViewLogics.push(...nonTransactionalDocsForViewLogics);
+    for (const path of nonTransactionalPathsForPatchLogics) {
+      pathsForPatchLogics.add(path);
+    }
+
+    // Clear documents from non-transactional logic results to free up memory
+    if (process.env.NODE_ENV !== "test") {
+      for (const result of runBusinessLogicStatus.logicResults) {
+        result.documents = [];
+      }
+    }
+
     logMemoryUsage(`${formId}: After Distributing Non Transactional Logic Logics`);
     const distributeNonTransactionalLogicResultsEnd = performance.now();
     const distributeNonTransactionalPerfLogicResults: LogicResult = {
@@ -520,12 +557,12 @@ export async function onFormSubmit(
 
     await formRef.update({"@status": "finished"});
 
-    await queueRunViewLogics(targetVersion, logicDocsThatWereAlreadyDistributed);
+    await queueRunViewLogics(targetVersion, docsForViewLogics);
     logMemoryUsage(`${formId}: After Saving Transactional Logic Logics`);
 
     await queueRunPatchLogics(
       appVersion,
-      ...new Set([docPath, ...logicDocsThatWereAlreadyDistributed.map((doc) => doc.dstPath)])
+      ...new Set([docPath, ...pathsForPatchLogics])
     );
     logMemoryUsage(`${formId}: After Queuing Run Patch Logics`);
 
@@ -568,8 +605,10 @@ async function distributeNonTransactionalLogicResults(
   docPath: string,
   appVersion: string,
   targetVersion: string,
-): Promise<LogicResultDoc[]> {
-  const forRunViewLogicQueuing: LogicResultDoc[] = [];
+): Promise<{docsForViewLogics: LogicResultDoc[], pathsForPatchLogics: Set<string>}> {
+  const docsForViewLogics: LogicResultDoc[] = [];
+  const pathsForPatchLogics: Set<string> = new Set();
+
   const nonTransactionalResults = logicResults.filter((result) => !result.transactional);
   console.info(`Group logic docs by priority: ${nonTransactionalResults.length}`);
   const {highPriorityDocs, normalPriorityDocs, lowPriorityDocs} = nonTransactionalResults
@@ -597,8 +636,26 @@ async function distributeNonTransactionalLogicResults(
     docsByDocPath: highPriorityDocsByDocPath,
     otherDocsByDocPath: highPriorityOtherDocsByDocPath,
   } = groupDocsByTargetDocPath(highPriorityDstPathLogicDocsMap, docPath);
-  forRunViewLogicQueuing.push(...await distributeFnNonTransactional(highPriorityDocsByDocPath));
-  forRunViewLogicQueuing.push(...await distributeFnNonTransactional(highPriorityOtherDocsByDocPath));
+
+  const distributedHighPriorityDocs = [
+    ...await distributeFnNonTransactional(highPriorityDocsByDocPath),
+    ...await distributeFnNonTransactional(highPriorityOtherDocsByDocPath),
+  ];
+  for (const doc of distributedHighPriorityDocs) {
+    if (findMatchingViewLogics(doc, targetVersion)?.size) {
+      docsForViewLogics.push(doc);
+    }
+    const {entity} = findMatchingDocPathRegex(doc.dstPath);
+    if (entity && findMatchingPatchLogicsByEntity(entity, targetVersion).length > 0) {
+      pathsForPatchLogics.add(doc.dstPath);
+    }
+  }
+
+  // Clear highPriorityDocs to free up memory
+  if (process.env.NODE_ENV !== "test") {
+    highPriorityDocs.length = 0;
+    highPriorityDstPathLogicDocsMap.clear();
+  }
 
   console.info(`Consolidating and Distributing Normal Priority Logic Results: ${normalPriorityDocs.length}`);
   const normalPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
@@ -607,8 +664,25 @@ async function distributeNonTransactionalLogicResults(
     docsByDocPath: normalPriorityDocsByDocPath,
     otherDocsByDocPath: normalPriorityOtherDocsByDocPath,
   } = groupDocsByTargetDocPath(normalPriorityDstPathLogicDocsMap, docPath);
-  forRunViewLogicQueuing.push(...await distributeFnNonTransactional(normalPriorityDocsByDocPath));
+
+  const distributedNormalPriorityDocs = await distributeFnNonTransactional(normalPriorityDocsByDocPath);
+  for (const doc of distributedNormalPriorityDocs) {
+    if (findMatchingViewLogics(doc, targetVersion)?.size) {
+      docsForViewLogics.push(doc);
+    }
+    const {entity} = findMatchingDocPathRegex(doc.dstPath);
+    if (entity && findMatchingPatchLogicsByEntity(entity, targetVersion).length > 0) {
+      pathsForPatchLogics.add(doc.dstPath);
+    }
+  }
+
   await distributeLater(normalPriorityOtherDocsByDocPath, appVersion, targetVersion);
+
+  // Clear normalPriorityDocs to free up memory
+  if (process.env.NODE_ENV !== "test") {
+    normalPriorityDocs.length = 0;
+    normalPriorityDstPathLogicDocsMap.clear();
+  }
 
   console.info(`Consolidating and Distributing Low Priority Logic Results: ${lowPriorityDocs.length}`);
   const lowPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
@@ -617,10 +691,17 @@ async function distributeNonTransactionalLogicResults(
     docsByDocPath: lowPriorityDocsByDocPath,
     otherDocsByDocPath: lowPriorityOtherDocsByDocPath,
   } = groupDocsByTargetDocPath(lowPriorityDstPathLogicDocsMap, docPath);
+
   await distributeLater(lowPriorityDocsByDocPath, appVersion, targetVersion);
   await distributeLater(lowPriorityOtherDocsByDocPath, appVersion, targetVersion);
 
-  return forRunViewLogicQueuing;
+  // Clear lowPriorityDocs to free up memory
+  if (process.env.NODE_ENV !== "test") {
+    lowPriorityDocs.length = 0;
+    lowPriorityDstPathLogicDocsMap.clear();
+  }
+
+  return {docsForViewLogics, pathsForPatchLogics};
 }
 
 export const onUserRegister = async (user: UserRecord) => {

@@ -101,6 +101,14 @@ export const findMatchingPatchLogics = async (appVersion: string, dstPath: strin
   return {patchLogicConfigs, dataVersion};
 };
 
+export const findMatchingPatchLogicsByEntity = (entity: string, appVersion: string) => {
+  return _mockable.getPatchLogicConfigs()
+    .filter((patchLogicConfig) => {
+      return entity === patchLogicConfig.entity &&
+        versionCompare(patchLogicConfig.version, appVersion) <= 0;
+    });
+};
+
 export const runPatchLogics = async (appVersion: string, dstPath: string): Promise<void> => {
   const {patchLogicConfigs, dataVersion} = await findMatchingPatchLogics(appVersion, dstPath);
   if (!patchLogicConfigs || patchLogicConfigs.length === 0) {

@@ -6,6 +6,7 @@ import * as viewLogics from "../logics/view-logics";
 import * as patchLogics from "../logics/patch-logics";
 import {database, firestore} from "firebase-admin";
 
+import {findMatchingViewLogics} from "../logics/view-logics";
 import {
   LogicResult,
   LogicResultDocAction,
@@ -825,6 +826,10 @@ describe("onFormSubmit", () => {
       });
     jest.spyOn(indexutils, "distributeFnNonTransactional");
     jest.spyOn(indexutils, "distributeLater");
+    const findMatchingPatchLogicsByEntitySpy = jest.spyOn(patchLogics, "findMatchingPatchLogicsByEntity")
+      .mockReturnValue([{} as any]);
+    const findMatchingDocPathRegexSpy = jest.spyOn(paths, "findMatchingDocPathRegex")
+      .mockReturnValue({entity: "dummyEntity", regex: /dummy/});
 
     await onFormSubmit(event);
 
@@ -867,7 +872,7 @@ describe("onFormSubmit", () => {
       ...transactionalDstPathLogicDocsMap.values(),
       ...highPriorityDstPathLogicDocsMap.values(),
       ...normalPriorityDstPathLogicDocsMap.values(),
-    ].flat();
+    ].flat().filter((doc) => findMatchingViewLogics(doc, "1.0.0")?.size);
 
     // Should run views update using the target version
     expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(
@@ -884,6 +889,8 @@ describe("onFormSubmit", () => {
       "users/user-2",
       "users/user-1/activities/activity-1",
     );
+    findMatchingPatchLogicsByEntitySpy.mockRestore();
+    findMatchingDocPathRegexSpy.mockRestore();
   });
 });
 
