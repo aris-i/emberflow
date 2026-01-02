@@ -610,17 +610,31 @@ export async function createMetricComputation(event: ScheduledEvent) {
     const query = metricDoc.ref.collection("executions")
       .where("execDate", ">=", new Date(Date.now() - 1000 * 60 * 60));
 
-    const snapshots = await query.get();
-    if (snapshots.empty) {
+    let maxExecTime = -Infinity;
+    let minExecTime = Infinity;
+    let totalExecTime = 0;
+    let execCount = 0;
+
+    await new Promise<void>((resolve, reject) => {
+      query.stream()
+        .on("data", (doc) => {
+          const execTime = doc.data().execTime;
+          if (typeof execTime === "number") {
+            maxExecTime = Math.max(maxExecTime, execTime);
+            minExecTime = Math.min(minExecTime, execTime);
+            totalExecTime += execTime;
+            execCount++;
+          }
+        })
+        .on("end", () => resolve())
+        .on("error", (err) => reject(err));
+    });
+
+    if (execCount === 0) {
       console.info(`No executions found for ${metricDoc.id}`);
       continue;
     }
 
-    const execTimes = snapshots.docs.map((doc) => doc.data().execTime);
-    const maxExecTime = Math.max(...execTimes);
-    const minExecTime = Math.min(...execTimes);
-    const totalExecTime = execTimes.reduce((a, b) => a + b, 0);
-    const execCount = execTimes.length;
     const avgExecTime = totalExecTime / execCount;
     const jitterTime = maxExecTime - minExecTime;
 

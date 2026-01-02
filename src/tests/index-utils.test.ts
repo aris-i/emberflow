@@ -1,5 +1,6 @@
 import * as admin from "firebase-admin";
 import {firestore} from "firebase-admin";
+import {Readable} from "stream";
 import * as indexUtils from "../index-utils";
 import {
   cleanMetricComputations,
@@ -1931,6 +1932,7 @@ describe("createMetricComputation", () => {
   let colGetMock: jest.Mock;
   let setMock: jest.Mock;
   let getMock: jest.Mock;
+  let streamMock: jest.Mock;
   const maxExecTime = 50.125;
   const minExecTime = 5.5;
   const jitterTime = maxExecTime - minExecTime;
@@ -1962,6 +1964,16 @@ describe("createMetricComputation", () => {
   beforeEach(() => {
     setMock = jest.fn().mockResolvedValue({});
     getMock = jest.fn().mockResolvedValue(execDates);
+    streamMock = jest.fn().mockImplementation(() => {
+      const stream = new Readable({
+        objectMode: true,
+        read() {
+          execDates.docs.forEach((doc) => this.push(doc));
+          this.push(null);
+        },
+      });
+      return stream;
+    });
     colGetMock = jest.fn().mockResolvedValue({
       docs: [
         {
@@ -1970,6 +1982,7 @@ describe("createMetricComputation", () => {
             collection: jest.fn().mockReturnValue({
               where: jest.fn().mockReturnValue({
                 get: getMock,
+                stream: streamMock,
               }),
               doc: jest.fn().mockReturnValue({
                 set: setMock,
@@ -1991,7 +2004,15 @@ describe("createMetricComputation", () => {
 
   it("should log when there are no executions found", async () => {
     jest.spyOn(console, "info").mockImplementation();
-    getMock.mockResolvedValueOnce({empty: true});
+    streamMock.mockImplementationOnce(() => {
+      const stream = new Readable({
+        objectMode: true,
+        read() {
+          this.push(null);
+        },
+      });
+      return stream;
+    });
 
     await createMetricComputation({} as ScheduledEvent);
 
