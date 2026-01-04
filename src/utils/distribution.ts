@@ -378,6 +378,6 @@ export const instructionsReducer = async (reducedInstructions: Map<string, Instr
 
     await pubsubUtils.trackProcessedIds(INSTRUCTIONS_TOPIC_NAME, event.id);
   } catch (e) {
-    console.error("PubSub message was not JSON. Continue processing queue", e);
+    console.error("Error in instructionsReducer:", e);
   }
 };

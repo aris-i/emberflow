@@ -37,7 +37,11 @@ export function debounce<T extends any[], A extends object|any[]|Map<string, any
           return;
         }
 
-        const accumulatedResult = accumulatedResultQueue[accumulatedResultQueue.length-1];
+        let accumulatedResult = accumulatedResultQueue[accumulatedResultQueue.length-1];
+        if (!accumulatedResult) {
+          accumulatedResult = reducer.initialValueFactory();
+          accumulatedResultQueue.push(accumulatedResult);
+        }
         reducer.reducerFn(accumulatedResult, ...args);
       } catch (error) {
         console.error("Error processing queue:", error);
