@@ -407,28 +407,26 @@ export const expandConsolidateAndGroupByDstPath = async (logicDocs: LogicResultD
     existingDocs.push(logicResultDoc);
   }
 
-  async function convertCopyToMerge() {
-    for (const doc of logicDocs) {
-      const {
-        srcPath,
-        action,
-      } = doc;
+  async function convertCopyToMerge(doc: LogicResultDoc) {
+    const {
+      srcPath,
+      action,
+    } = doc;
 
-      if (action !== "copy" || !srcPath) {
-        continue;
-      }
-
-      const data = (await db.doc(srcPath).get()).data();
-      delete doc.srcPath;
-      doc.doc = data;
-      doc.action = "merge";
+    if (action !== "copy" || !srcPath) {
+      return;
     }
+
+    const data = (await db.doc(srcPath).get()).data();
+    delete doc.srcPath;
+    doc.doc = data;
+    doc.action = "merge";
   }
-  await convertCopyToMerge();
 
   const consolidated: Map<string, LogicResultDoc[]> = new Map();
 
   for (const doc of logicDocs) {
+    await convertCopyToMerge(doc);
     const {
       dstPath,
       action,

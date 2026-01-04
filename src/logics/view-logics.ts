@@ -503,11 +503,14 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
     await _mockable.saveMetricExecution([...metricExecutions, runViewLogicsMetricExecution]);
 
     logMemoryUsage("Before Expanding and Grouping View Logic Results");
-    const viewLogicResultDocs = viewLogicResults.map((result) => result.documents).flat();
-    // Clear documents from viewLogicResults to free up memory
+    const viewLogicResultDocs: LogicResultDoc[] = [];
     for (const result of viewLogicResults) {
+      const documents = result.documents;
       result.documents = [];
+      viewLogicResultDocs.push(...documents);
+      (documents as any).length = 0;
     }
+
     const dstPathViewLogicDocsMap: Map<string, LogicResultDoc[]> = await expandConsolidateAndGroupByDstPath(viewLogicResultDocs);
     // Clear documents from viewLogicResultDocs to free up memory
     viewLogicResultDocs.length = 0;
