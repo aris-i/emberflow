@@ -841,7 +841,7 @@ describe("onFormSubmit", () => {
     expect(refMock.update).toHaveBeenNthCalledWith(3, {"@status": "finished"});
 
     // Test that the functions are called in the correct sequence
-    expect(transactionMock.set).toHaveBeenCalledTimes(18);
+    expect(transactionMock.set).toHaveBeenCalledTimes(9);
     expect(transactionMock.update).toHaveBeenCalledTimes(0);
 
     expect(expandConsolidateAndGroupByDstPathMock).toHaveBeenNthCalledWith(1, transactionalDocs);

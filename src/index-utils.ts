@@ -23,7 +23,7 @@ import {
   validatorConfigs,
   viewLogicConfigs,
 } from "./index";
-import {_mockable as _pathMockable, expandAndGroupDocPathsByEntity, getDestPropAndDestPropId} from "./utils/paths";
+import {_mockable as _pathMockable, getDestPropAndDestPropId} from "./utils/paths";
 import {deepEqual, deleteCollection} from "./utils/misc";
 import {CloudFunctionsServiceClient} from "@google-cloud/functions";
 import {BatchUtil} from "./utils/batch";
@@ -407,56 +407,6 @@ export const expandConsolidateAndGroupByDstPath = async (logicDocs: LogicResultD
     existingDocs.push(logicResultDoc);
   }
 
-  async function expandRecursiveActions() {
-    const expandedLogicResultDocs: LogicResultDoc[] = [];
-    for (let i = logicDocs.length - 1; i >= 0; i--) {
-      const logicResultDoc = logicDocs[i];
-      const {
-        action,
-        dstPath,
-        srcPath,
-        skipEntityDuringRecursion,
-        priority,
-      } = logicResultDoc;
-
-      if (!["recursive-delete", "recursive-copy"].includes(action)) continue;
-
-      const toExpandPath = action === "recursive-delete" ? dstPath : srcPath;
-      if (!toExpandPath) {
-        continue;
-      }
-      const subDocPaths = await expandAndGroupDocPathsByEntity(
-        toExpandPath,
-        undefined,
-        skipEntityDuringRecursion
-      );
-
-      for (const [_, paths] of Object.entries(subDocPaths)) {
-        for (const path of paths) {
-          if (action === "recursive-delete") {
-            expandedLogicResultDocs.push({
-              action: "delete",
-              dstPath: path,
-              priority,
-            });
-          } else if (action === "recursive-copy" && srcPath) {
-            const absoluteDstPath = path.replace(srcPath, dstPath);
-            const data = (await db.doc(path).get()).data();
-            expandedLogicResultDocs.push({
-              action: "merge",
-              doc: data,
-              dstPath: absoluteDstPath,
-              priority,
-            });
-          }
-        }
-      }
-
-      logicDocs.splice(i, 1, ...expandedLogicResultDocs);
-    }
-  }
-  await expandRecursiveActions();
-
   async function convertCopyToMerge() {
     for (const doc of logicDocs) {
       const {
@@ -496,6 +446,9 @@ export const expandConsolidateAndGroupByDstPath = async (logicDocs: LogicResultD
       existingDocs.push(doc);
     }
   }
+
+  // Clear logicDocs as they are now in consolidated
+  logicDocs.length = 0;
 
   return consolidated;
 };

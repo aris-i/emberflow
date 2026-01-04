@@ -8,7 +8,7 @@ import {
   convertLogicResultsToMetricExecutions, distributeFnNonTransactional, expandConsolidateAndGroupByDstPath,
 } from "../index-utils";
 import {pubsubUtils} from "../utils/pubsub";
-import {reviveDateAndTimestamp} from "../utils/misc";
+import {logMemoryUsage, reviveDateAndTimestamp} from "../utils/misc";
 import {
   _mockable as pathsMockable,
   findMatchingDocPathRegex,
@@ -490,9 +490,11 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
     console.log("Received logic result doc:", logicResultDoc);
 
     console.info("Running View Logics");
+    logMemoryUsage("Before Running View Logics");
     const start = performance.now();
     const viewLogicResults: LogicResult[] = await exports.runViewLogics(logicResultDoc, targetVersion, lastProcessedId);
     const end = performance.now();
+    logMemoryUsage("After Running View Logics");
     const metricExecutions = convertLogicResultsToMetricExecutions([...viewLogicResults]);
     const runViewLogicsMetricExecution: MetricExecution = {
       name: "runViewLogics",
@@ -500,11 +502,20 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
     };
     await _mockable.saveMetricExecution([...metricExecutions, runViewLogicsMetricExecution]);
 
+    logMemoryUsage("Before Expanding and Grouping View Logic Results");
     const viewLogicResultDocs = viewLogicResults.map((result) => result.documents).flat();
+    // Clear documents from viewLogicResults to free up memory
+    for (const result of viewLogicResults) {
+      result.documents = [];
+    }
     const dstPathViewLogicDocsMap: Map<string, LogicResultDoc[]> = await expandConsolidateAndGroupByDstPath(viewLogicResultDocs);
+    // Clear documents from viewLogicResultDocs to free up memory
+    viewLogicResultDocs.length = 0;
+    logMemoryUsage("After Expanding and Grouping View Logic Results");
 
     console.info("Distributing View Logic Results");
     await distributeFnNonTransactional(dstPathViewLogicDocsMap);
+    logMemoryUsage("After Distributing View Logic Results");
 
     await pubsubUtils.trackProcessedIds(VIEW_LOGICS_TOPIC_NAME, event.id);
     return "Processed view logics";
