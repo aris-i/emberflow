@@ -143,18 +143,44 @@ describe("createViewLogicFn", () => {
   let docUpdateMock: jest.SpyInstance;
   let docSetMock: jest.SpyInstance;
   let docSpy: jest.SpyInstance;
+  let batchUpdateMock: jest.Mock;
+  let batchCommitMock: jest.Mock;
+  let dbGetAllMock: jest.Mock;
+
   beforeEach(() => {
     colGetMock = jest.fn();
     docUpdateMock = jest.fn();
     docSetMock = jest.fn();
+    batchUpdateMock = jest.fn();
+    batchCommitMock = jest.fn();
+    dbGetAllMock = jest.fn().mockImplementation((...refs: any[]) => {
+      return Promise.resolve(refs.map((ref: any) => ({
+        exists: true,
+        data: () => ({}),
+        ref: ref,
+      })));
+    });
+
     docGetMock = jest.fn().mockResolvedValue({
       data: () => {
         return {
           "@viewsAlreadyBuilt+friend": false,
         };
       },
-      exists: jest.fn().mockReturnValue(true),
+      exists: true,
     });
+
+    jest.spyOn(admin.firestore(), "batch").mockImplementation(() => {
+      return {
+        update: batchUpdateMock,
+        set: jest.fn(),
+        delete: jest.fn(),
+        commit: batchCommitMock,
+      } as unknown as firestore.WriteBatch;
+    });
+
+    jest.spyOn(admin.firestore(), "getAll").mockImplementation(dbGetAllMock);
+
     jest.spyOn(admin.firestore(), "collection").mockImplementationOnce(() => {
       return {
         where: jest.fn().mockReturnValue({
@@ -162,8 +188,9 @@ describe("createViewLogicFn", () => {
         }),
       } as unknown as CollectionReference;
     });
-    docSpy = jest.spyOn(admin.firestore(), "doc").mockImplementation(() => {
+    docSpy = jest.spyOn(admin.firestore(), "doc").mockImplementation((path) => {
       return {
+        path,
         set: docSetMock,
         update: docUpdateMock,
         get: docGetMock,
@@ -406,8 +433,9 @@ describe("createViewLogicFn", () => {
     expect(colGetMock).toHaveBeenCalledTimes(1);
     expect(docSpy).toHaveBeenCalledWith("users/1234/@views/users+456+friends+1234");
     expect(docSpy).toHaveBeenCalledWith("users/1234/@views/users+789+friends+1234");
-    expect(docUpdateMock).toHaveBeenCalledTimes(2);
-    expect(docUpdateMock).toHaveBeenCalledWith({
+    expect(batchUpdateMock).toHaveBeenCalledTimes(2);
+    expect(batchCommitMock).toHaveBeenCalledTimes(1);
+    expect(batchUpdateMock).toHaveBeenCalledWith(expect.objectContaining({path: "users/1234/@views/users+456+friends+1234"}), {
       "srcProps": [
         "age", "avatar", "name",
       ],
@@ -712,14 +740,10 @@ describe("createViewLogicFn", () => {
   });
 
   it("should create delete logicDoc if viewDoc path doesn't exist anymore", async () => {
-    docGetMock.mockResolvedValue({
-      data: () => {
-        return {
-          "@viewsAlreadyBuilt+friend": false,
-        };
-      },
-      exists: false,
-    });
+    dbGetAllMock.mockResolvedValue([
+      {exists: false, data: () => ({})},
+      {exists: false, data: () => ({})},
+    ]);
     colGetMock.mockResolvedValueOnce({
       docs: [{
         id: "users+456+friends+1234",

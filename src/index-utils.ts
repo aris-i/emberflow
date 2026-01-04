@@ -51,6 +51,7 @@ export const _mockable = {
   getPatchLogicConfigs: () => patchLogicConfigs,
   createNowTimestamp: () => admin.firestore.Timestamp.now(),
   saveMetricExecution: saveMetricExecution,
+  getBatchUtil: () => BatchUtil.getInstance(),
 };
 
 export async function distributeDoc(

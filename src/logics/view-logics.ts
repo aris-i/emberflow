@@ -88,12 +88,14 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     console.info(`Executing ViewLogic on document at ${srcPath}...`);
 
     function syncDeleteToViewsDstPath() {
-      const documents: LogicResultDoc[] = atViewsDocs.map((viewDstPathDoc) => {
-        return {
+      const documents: LogicResultDoc[] = [];
+      while (atViewsDocs.length > 0) {
+        const viewDstPathDoc = atViewsDocs.shift()!;
+        documents.push({
           action: "delete",
           dstPath: viewDstPathDoc.data().path,
-        };
-      });
+        });
+      }
       return {
         name: `${logicName} ViewLogic`,
         status: "finished",
@@ -107,7 +109,8 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
         "@updatedByViewDefinitionAt": now,
       };
       const viewInstructions: Record<string, string> = {};
-      for (const srcProp of [...defSrcProps, "@dataVersion"]) {
+      const srcPropsToCopy = [...defSrcProps, "@dataVersion"];
+      for (const srcProp of srcPropsToCopy) {
         if (srcDoc?.[srcProp] !== undefined) {
           viewDoc[srcProp] = srcDoc[srcProp];
         }
@@ -117,12 +120,20 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       }
 
       const viewLogicResultDocs: LogicResultDoc[] = [];
-      for (const atViewsDoc of atViewsDocs) {
+      const viewBasePaths = atViewsDocs.map((atViewsDoc) => {
+        const viewDstPath = atViewsDoc.data().path;
+        const {basePath} = getDestPropAndDestPropId(viewDstPath);
+        return db.doc(basePath);
+      });
+
+      const viewDocSnaps = viewBasePaths.length > 0 ? await db.getAll(...viewBasePaths) : [];
+
+      for (let i = 0; i < atViewsDocs.length; i++) {
+        const atViewsDoc = atViewsDocs[i];
+        const viewDocSnap = viewDocSnaps[i];
         const viewDstPath = atViewsDoc.data().path;
         console.debug("Processing viewDstPath: ", viewDstPath);
-        const {basePath: viewBasePath, destProp: viewDestProp, destPropId: viewDestPropId} = getDestPropAndDestPropId(viewDstPath);
-
-        const viewDocSnap = await db.doc(viewBasePath).get();
+        const {destProp: viewDestProp, destPropId: viewDestPropId} = getDestPropAndDestPropId(viewDstPath);
 
         // If the doc doesn't exist, delete dstPath and skip creating logicDoc
         if (!viewDocSnap.exists) {
@@ -162,6 +173,10 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
         });
       }
 
+      // Clear atViewsDocs and viewDocSnaps to free up memory
+      atViewsDocs.length = 0;
+      viewDocSnaps.length = 0;
+
       return {
         name: `${logicName} ViewLogic`,
         status: "finished",
@@ -170,16 +185,23 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     }
 
     async function syncAtViewsSrcPropsIfDifferentFromViewDefinition() {
+      const batch = _mockable.getBatchUtil();
+      let hasUpdates = false;
+      const defSortedSrcProps = [...defSrcProps].sort();
       for (const atViewsDoc of atViewsDocs) {
         const {srcProps: atViewSrcProps} = atViewsDoc.data();
         const atViewPath = atViewsDoc.ref.path;
-        const defSortedSrcProps = defSrcProps.sort();
 
         if (atViewSrcProps.join(",") === defSortedSrcProps.join(",")) {
           continue;
         }
 
-        await db.doc(atViewPath).update({srcProps: defSortedSrcProps});
+        batch.update(db.doc(atViewPath), {srcProps: defSortedSrcProps});
+        hasUpdates = true;
+      }
+
+      if (hasUpdates) {
+        await batch.commit();
       }
     }
 

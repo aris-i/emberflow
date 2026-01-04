@@ -204,6 +204,7 @@ export function initializeEmberFlow(
   functionsConfig["onMessageViewLogicsQueue"] = onMessagePublished({
     topic: VIEW_LOGICS_TOPIC_NAME,
     region: projectConfig.region,
+    memory: "512MiB",
     maxInstances: 5,
     timeoutSeconds: 540,
     ...projectConfig.functionsConfig?.onMessageViewLogicsQueue as any,
