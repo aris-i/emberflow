@@ -526,20 +526,19 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
 
     logMemoryUsage("Before Expanding and Grouping View Logic Results");
     const viewLogicResultDocs: LogicResultDoc[] = [];
-    for (const result of viewLogicResults) {
-      const documents = result.documents;
-      result.documents = [];
-      viewLogicResultDocs.push(...documents);
-      (documents as any).length = 0;
+    while (viewLogicResults.length > 0) {
+      const result = viewLogicResults.shift();
+      if (result) {
+        viewLogicResultDocs.push(...result.documents);
+        (result.documents as any).length = 0;
+      }
     }
 
     const dstPathViewLogicDocsMap: Map<string, LogicResultDoc[]> = await expandConsolidateAndGroupByDstPath(viewLogicResultDocs);
-    // Clear documents from viewLogicResultDocs to free up memory
-    viewLogicResultDocs.length = 0;
     logMemoryUsage("After Expanding and Grouping View Logic Results");
 
     console.info("Distributing View Logic Results");
-    await distributeFnNonTransactional(dstPathViewLogicDocsMap);
+    await distributeFnNonTransactional(dstPathViewLogicDocsMap, true);
     logMemoryUsage("After Distributing View Logic Results");
 
     await pubsubUtils.trackProcessedIds(VIEW_LOGICS_TOPIC_NAME, event.id);

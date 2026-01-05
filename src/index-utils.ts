@@ -166,15 +166,17 @@ export async function distributeDoc(
   }
 }
 
-export async function distributeFnNonTransactional(docsByDstPath: Map<string, LogicResultDoc[]>) {
-  const forRunViewLogicQueuing: LogicResultDoc[] = [];
+export async function distributeFnNonTransactional(docsByDstPath: Map<string, LogicResultDoc[]>, skipReturn = false) {
+  const distributedDocs: LogicResultDoc[] = [];
   const batch = BatchUtil.getInstance();
   for (const dstPath of Array.from(docsByDstPath.keys()).sort()) {
     console.log(`Documents for path ${dstPath}:`);
     const resultDocs = docsByDstPath.get(dstPath);
     if (!resultDocs) continue;
     for (const resultDoc of resultDocs) {
-      forRunViewLogicQueuing.push(resultDoc);
+      if (!skipReturn) {
+        distributedDocs.push(resultDoc);
+      }
       await distributeDoc(resultDoc, batch);
     }
   }
@@ -184,7 +186,7 @@ export async function distributeFnNonTransactional(docsByDstPath: Map<string, Lo
     await batch.commit();
   }
 
-  return forRunViewLogicQueuing;
+  return distributedDocs;
 }
 
 export async function distributeLater(docsByDstPath: Map<string, LogicResultDoc[]>, appVersion: string, targetVersion: string) {
@@ -374,7 +376,7 @@ export const expandConsolidateAndGroupByDstPath = async (logicDocs: LogicResultD
         }
         if (logicResultDoc.instructions) {
           if (!existingDoc.instructions) {
-            existingDoc.instructions = {...logicResultDoc.instructions};
+            existingDoc.instructions = logicResultDoc.instructions;
           } else {
             console.info(`merging multiple instructions for dstPath "${dstPath}"`);
             mergeInstructions(
@@ -383,7 +385,11 @@ export const expandConsolidateAndGroupByDstPath = async (logicDocs: LogicResultD
             );
           }
         }
-        existingDoc.doc = {...existingDoc.doc, ...logicResultDoc.doc};
+        if (!existingDoc.doc) {
+          existingDoc.doc = logicResultDoc.doc;
+        } else {
+          existingDoc.doc = {...existingDoc.doc, ...logicResultDoc.doc};
+        }
 
         merged = true;
         break;
@@ -408,7 +414,7 @@ export const expandConsolidateAndGroupByDstPath = async (logicDocs: LogicResultD
     existingDocs.push(logicResultDoc);
   }
 
-  async function convertCopyToMerge(doc: LogicResultDoc) {
+  async function convertCopyToMerge(doc: LogicResultDoc, data?: any) {
     const {
       srcPath,
       action,
@@ -418,22 +424,31 @@ export const expandConsolidateAndGroupByDstPath = async (logicDocs: LogicResultD
       return;
     }
 
-    const data = (await db.doc(srcPath).get()).data();
+    const docData = data || (await db.doc(srcPath).get()).data();
     delete doc.srcPath;
-    doc.doc = data;
+    doc.doc = docData;
     doc.action = "merge";
   }
 
   const consolidated: Map<string, LogicResultDoc[]> = new Map();
+  const copyCache: Map<string, any> = new Map();
 
   for (const doc of logicDocs) {
-    await convertCopyToMerge(doc);
+    if (doc.action === "copy" && doc.srcPath) {
+      if (copyCache.has(doc.srcPath)) {
+        await convertCopyToMerge(doc, copyCache.get(doc.srcPath));
+      } else {
+        await convertCopyToMerge(doc);
+        copyCache.set(doc.srcPath || "", doc.doc);
+      }
+    }
     const {
       dstPath,
       action,
     } = doc;
-    const existingDocs = consolidated.get(dstPath) || [];
-    if (existingDocs.length === 0) {
+    let existingDocs = consolidated.get(dstPath);
+    if (!existingDocs) {
+      existingDocs = [];
       consolidated.set(dstPath, existingDocs);
     }
 

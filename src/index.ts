@@ -219,6 +219,7 @@ export function initializeEmberFlow(
   functionsConfig["onMessageForDistributionQueue"] = onMessagePublished({
     topic: FOR_DISTRIBUTION_TOPIC_NAME,
     region: projectConfig.region,
+    memory: "512MiB",
     maxInstances: 5,
     timeoutSeconds: 540,
     ...projectConfig.functionsConfig?.onMessageForDistributionQueue as any,

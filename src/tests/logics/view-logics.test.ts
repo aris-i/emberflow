@@ -54,6 +54,7 @@ const projectConfig: ProjectConfig = {
 admin.initializeApp({
   databaseURL: "https://test-project.firebaseio.com",
 });
+jest.spyOn(pathsMockable, "doesPathExists").mockResolvedValue(true);
 initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfigs, validatorConfigs, [], []);
 
 const vd1: ViewDefinition = {
@@ -1328,7 +1329,9 @@ describe("onMessageViewLogicsQueue", () => {
 
   beforeEach(() => {
     createMetricExecutionSpy = jest.spyOn(indexUtils._mockable, "saveMetricExecution").mockResolvedValue();
-    runViewLogicsSpy = jest.spyOn(viewLogics, "runViewLogics").mockResolvedValue(viewLogicsResult);
+    runViewLogicsSpy = jest.spyOn(viewLogics, "runViewLogics").mockImplementation(async () => {
+      return viewLogicsResult.map((result) => ({...result, documents: [...result.documents]}));
+    });
     expandConsolidateAndGroupByDstPathSpy = jest.spyOn(indexUtils, "expandConsolidateAndGroupByDstPath").mockResolvedValue(expandConsolidateResult);
     distributeSpy = jest.spyOn(indexUtils, "distributeFnNonTransactional").mockResolvedValue([]);
   });
@@ -1359,7 +1362,7 @@ describe("onMessageViewLogicsQueue", () => {
     // Since the array is cleared in the function, we can't check its content directly if it's the same reference
     // But we know it was called with the flattened documents
     expect(calledWith).toBeDefined();
-    expect(distributeSpy).toHaveBeenCalledWith(expandConsolidateResult);
+    expect(distributeSpy).toHaveBeenCalledWith(expandConsolidateResult, true);
     expect(trackProcessedIdsMock).toHaveBeenCalledWith(VIEW_LOGICS_TOPIC_NAME, event.id);
     expect(result).toEqual("Processed view logics");
   });
@@ -1373,6 +1376,7 @@ describe("findMatchingViewLogics", () => {
   };
   beforeEach(()=> {
     jest.restoreAllMocks();
+    jest.spyOn(pathsMockable, "doesPathExists").mockResolvedValue(true);
     initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfigs, validatorConfigs, [], []);
     jest.spyOn(paths, "findMatchingDocPathRegex").mockReturnValue({
       entity: "topic",

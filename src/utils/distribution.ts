@@ -16,12 +16,12 @@ import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
 import {distributeDoc} from "../index-utils";
 import {firestore} from "firebase-admin";
 import {pubsubUtils} from "./pubsub";
-import {reviveDateAndTimestamp} from "./misc";
+import {logMemoryUsage, reviveDateAndTimestamp} from "./misc";
 import FieldValue = firestore.FieldValue;
 import Transaction = firestore.Transaction;
-import {getDestPropAndDestPropId} from "./paths";
-import {queueRunViewLogics} from "../logics/view-logics";
-import {queueRunPatchLogics} from "../logics/patch-logics";
+import {getDestPropAndDestPropId, findMatchingDocPathRegex} from "./paths";
+import {findMatchingViewLogics, queueRunViewLogics} from "../logics/view-logics";
+import {findMatchingPatchLogicsByEntity, queueRunPatchLogics} from "../logics/patch-logics";
 
 export const queueForDistributionLater = async (appVersion: string, targetVersion: string, ...logicResultDocs: LogicResultDoc[]) => {
   try {
@@ -47,6 +47,7 @@ export async function onMessageForDistributionQueue(event: CloudEvent<MessagePub
     return;
   }
   try {
+    logMemoryUsage("onMessageForDistributionQueue: Start");
     const {appVersion, targetVersion, doc} = event.data.message.json;
     const logicResultDoc = reviveDateAndTimestamp(doc) as LogicResultDoc;
     console.log("Received user logic result doc:", logicResultDoc);
@@ -54,9 +55,18 @@ export async function onMessageForDistributionQueue(event: CloudEvent<MessagePub
     console.info("Running For Distribution");
     const {priority = "normal"} = logicResultDoc;
     if (priority === "high") {
+      logMemoryUsage("onMessageForDistributionQueue: Before distributeDoc");
       await distributeDoc(logicResultDoc);
-      await queueRunViewLogics(targetVersion, [logicResultDoc]);
-      await queueRunPatchLogics(appVersion, logicResultDoc.dstPath);
+      logMemoryUsage("onMessageForDistributionQueue: After distributeDoc, Before queueRunViewLogics");
+      if (findMatchingViewLogics(logicResultDoc, targetVersion)?.size) {
+        await queueRunViewLogics(targetVersion, [logicResultDoc]);
+      }
+      logMemoryUsage("onMessageForDistributionQueue: After queueRunViewLogics, Before queueRunPatchLogics");
+      const {entity} = findMatchingDocPathRegex(logicResultDoc.dstPath);
+      if (entity && findMatchingPatchLogicsByEntity(entity, appVersion).length > 0) {
+        await queueRunPatchLogics(appVersion, logicResultDoc.dstPath);
+      }
+      logMemoryUsage("onMessageForDistributionQueue: After queueRunPatchLogics");
     } else if (priority === "normal") {
       logicResultDoc.priority = "high";
       await queueForDistributionLater(appVersion, targetVersion, logicResultDoc);
@@ -66,10 +76,11 @@ export async function onMessageForDistributionQueue(event: CloudEvent<MessagePub
     }
 
     await pubsubUtils.trackProcessedIds(FOR_DISTRIBUTION_TOPIC_NAME, event.id);
+    logMemoryUsage("onMessageForDistributionQueue: End");
     return "Processed for distribution later";
   } catch (e) {
-    console.error("PubSub message was not JSON", e);
-    throw new Error("No json in message");
+    console.error("Error in onMessageForDistributionQueue", e);
+    throw new Error("Error in onMessageForDistributionQueue");
   }
 }
 

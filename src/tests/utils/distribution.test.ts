@@ -21,6 +21,7 @@ import {firestore} from "firebase-admin";
 import FieldValue = firestore.FieldValue;
 import * as viewLogics from "../../logics/view-logics";
 import * as patchLogics from "../../logics/patch-logics";
+import * as paths from "../../utils/paths";
 
 jest.mock("../../utils/pubsub", () => {
   return {
@@ -54,6 +55,7 @@ const projectConfig: ProjectConfig = {
 admin.initializeApp({
   databaseURL: "https://test-project.firebaseio.com",
 });
+jest.spyOn(paths._mockable, "doesPathExists").mockResolvedValue(true);
 initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfigs, validatorConfigs, [], []);
 
 describe("queueForDistributionLater", () => {
@@ -86,12 +88,14 @@ describe("onMessageForDistributionQueue", () => {
   let queueForDistributionLaterSpy: jest.SpyInstance;
   let queueRunViewLogicsSpy: jest.SpyInstance;
   let queueRunPatchLogicsSpy: jest.SpyInstance;
-
   beforeEach(() => {
     distributeDocSpy = jest.spyOn(indexUtils, "distributeDoc").mockResolvedValue();
     queueForDistributionLaterSpy = jest.spyOn(distribution, "queueForDistributionLater").mockResolvedValue();
     queueRunViewLogicsSpy = jest.spyOn(viewLogics, "queueRunViewLogics").mockResolvedValue();
     queueRunPatchLogicsSpy = jest.spyOn(patchLogics, "queueRunPatchLogics").mockResolvedValue();
+    jest.spyOn(viewLogics, "findMatchingViewLogics").mockReturnValue(new Map([["test", {} as any]]));
+    jest.spyOn(patchLogics, "findMatchingPatchLogicsByEntity").mockReturnValue([{} as any]);
+    jest.spyOn(paths, "findMatchingDocPathRegex").mockReturnValue({entity: "test-entity", regex: /test/});
   });
   const targetVersion = "1.0.0";
   const appVersion = "1.0.0";
