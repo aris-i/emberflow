@@ -67,11 +67,22 @@ export async function cleanActionsAndForms(event: ScheduledEvent) {
         }
       });
 
-      const {eventContext: {formId, uid}} = doc.data();
-      forms[`forms/${uid}/${formId}`] = null;
+      const data = doc.data();
+      if (data.eventContext) {
+        const {formId, uid} = data.eventContext;
+        forms[`forms/${uid}/${formId}`] = null;
+      }
     }
 
-    await rtdb.ref().update(forms);
+    const batchSize = 500;
+    const formKeys = Object.keys(forms);
+    for (let i = 0; i < formKeys.length; i += batchSize) {
+      const batch: {[key: string]: null} = {};
+      formKeys.slice(i, i + batchSize).forEach((key) => {
+        batch[key] = forms[key];
+      });
+      await rtdb.ref().update(batch);
+    }
   });
 
   console.info("Cleaned actions and forms");
