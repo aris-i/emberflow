@@ -183,7 +183,7 @@ export function initializeEmberFlow(
     {
       ref: "forms/{userId}/{formId}",
       region: projectConfig.region,
-      memory: "256MiB",
+      memory: "512MiB",
       concurrency: 80,
       maxInstances: 20,
       ...projectConfig.functionsConfig?.onFormSubmit as any,
@@ -196,6 +196,7 @@ export function initializeEmberFlow(
   functionsConfig["onMessageSubmitFormQueue"] = onMessagePublished({
     topic: SUBMIT_FORM_TOPIC_NAME,
     region: projectConfig.region,
+    memory: "512MiB",
     maxInstances: 5,
     timeoutSeconds: 540,
     retry: true,
@@ -212,6 +213,7 @@ export function initializeEmberFlow(
   functionsConfig["onMessagePatchLogicsQueue"] = onMessagePublished({
     topic: PATCH_LOGICS_TOPIC_NAME,
     region: projectConfig.region,
+    memory: "512MiB",
     maxInstances: 5,
     timeoutSeconds: 540,
     ...projectConfig.functionsConfig?.onMessagePatchLogicsQueue as any,
@@ -227,6 +229,7 @@ export function initializeEmberFlow(
   functionsConfig["onMessageInstructionsQueue"] = onMessagePublished({
     topic: INSTRUCTIONS_TOPIC_NAME,
     region: projectConfig.region,
+    memory: "512MiB",
     maxInstances: 1,
     concurrency: 1,
     timeoutSeconds: 540,
@@ -251,30 +254,35 @@ export function initializeEmberFlow(
   functionsConfig["cleanPubSubProcessedIds"] = onSchedule({
     schedule: "every 1 hours",
     region: projectConfig.region,
+    memory: "512MiB",
     timeoutSeconds: 540,
     ...projectConfig.functionsConfig?.cleanPubSubProcessedIds as any,
   }, cleanPubSubProcessedIds);
   functionsConfig["cleanMetricComputations"] = onSchedule({
     schedule: "every 24 hours",
     region: projectConfig.region,
+    memory: "512MiB",
     timeoutSeconds: 540,
     ...projectConfig.functionsConfig?.cleanMetricComputations as any,
   }, cleanMetricComputations);
   functionsConfig["cleanMetricExecutions"] = onSchedule({
     schedule: "every 24 hours",
     region: projectConfig.region,
+    memory: "512MiB",
     timeoutSeconds: 540,
     ...projectConfig.functionsConfig?.cleanMetricExecutions as any,
   }, cleanMetricExecutions);
   functionsConfig["cleanActionsAndForms"] = onSchedule({
     schedule: "every 24 hours",
     region: projectConfig.region,
+    memory: "512MiB",
     timeoutSeconds: 540,
     ...projectConfig.functionsConfig?.cleanActionsAndForms as any,
   }, cleanActionsAndForms);
   functionsConfig["createMetricComputation"] = onSchedule({
     schedule: "every 1 hours",
     region: projectConfig.region,
+    memory: "512MiB",
     timeoutSeconds: 540,
     ...projectConfig.functionsConfig?.createMetricComputation as any,
   }, createMetricComputation);
