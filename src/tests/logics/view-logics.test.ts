@@ -149,7 +149,7 @@ describe("createViewLogicFn", () => {
   let dbGetAllMock: jest.Mock;
 
   beforeEach(() => {
-    colGetMock = jest.fn();
+    colGetMock = jest.fn().mockResolvedValue({docs: []});
     docUpdateMock = jest.fn();
     docSetMock = jest.fn();
     batchUpdateMock = jest.fn();
@@ -227,6 +227,7 @@ describe("createViewLogicFn", () => {
       } as unknown as DocumentReference;
     });
   });
+
   const targetVersion = "1.0.0";
 
   it("should log error document does not have @id", async () => {
@@ -399,7 +400,7 @@ describe("createViewLogicFn", () => {
   });
 
   it("should update @views doc when srcProps is not equal", async () => {
-    colGetMock.mockResolvedValue({
+    colGetMock.mockResolvedValueOnce({
       docs: [{
         id: "users+456+friends+1234",
         ref: {

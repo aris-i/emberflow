@@ -51,10 +51,10 @@ describe("fetchIds", () => {
   });
 
   // You can add more test cases for different conditions and operators, such as "in", "not-in", and "array-contains-any"
-  it("should handle 'in' operator with more than 10 values", async () => {
+  it("should handle 'in' operator with more than 30 values", async () => {
     // Set up the mock data and firestore methods
     const collectionPath = "messages";
-    const idsArray = Array.from({length: 15}, (_, i) => `id${i + 1}`);
+    const idsArray = Array.from({length: 45}, (_, i) => `id${i + 1}`);
     const condition: QueryCondition = {
       fieldName: "id",
       operator: "in",
@@ -62,10 +62,10 @@ describe("fetchIds", () => {
     };
 
     const querySnapshot1 = {
-      docs: idsArray.slice(0, 10).map((id) => ({id})),
+      docs: idsArray.slice(0, 30).map((id) => ({id})),
     };
     const querySnapshot2 = {
-      docs: idsArray.slice(10).map((id) => ({id})),
+      docs: idsArray.slice(30).map((id) => ({id})),
     };
 
     (db.collection as jest.Mock).mockReturnValue({
@@ -79,7 +79,7 @@ describe("fetchIds", () => {
 
     // Check the result
     expect(fetchedIds).toEqual(idsArray);
-    expect(db.collection("").where).toHaveBeenCalledTimes(2); // Two "in" conditions with 10 and 5 ids
+    expect(db.collection("").where).toHaveBeenCalledTimes(2); // Two "in" conditions with 30 and 15 ids
   });
 });
 

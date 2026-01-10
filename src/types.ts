@@ -199,6 +199,11 @@ export interface ViewDefinition {
 
 export type IdGenerator = (collectionPath: string) => Promise<string[]>;
 
+export type ChunkableWhereFilterOp =
+    | "in"
+    | "not-in"
+    | "array-contains-any";
+
 export interface QueryCondition {
     fieldName: string;
     operator: firestore.WhereFilterOp;

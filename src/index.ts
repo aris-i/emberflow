@@ -248,6 +248,7 @@ export function initializeEmberFlow(
   functionsConfig["resetUsageStats"] = onSchedule({
     schedule: "every 1 hours",
     region: projectConfig.region,
+    memory: "512MiB",
     timeoutSeconds: 540,
     ...projectConfig.functionsConfig?.resetUsageStats as any,
   }, resetUsageStats);

@@ -9,6 +9,7 @@ import {
 } from "../index-utils";
 import {pubsubUtils} from "../utils/pubsub";
 import {logMemoryUsage, reviveDateAndTimestamp} from "../utils/misc";
+import {chunkQuery} from "../utils/query";
 import {
   _mockable as pathsMockable,
   findMatchingDocPathRegex,
@@ -251,40 +252,44 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       return syncCreateToDstPaths();
     }
 
-    const modifiedFields = [
-      ...Object.keys(srcDoc || {}),
-      ...Object.keys(srcInstructions || {}),
-    ];
+    const atViewsDocs: admin.firestore.QueryDocumentSnapshot[] = [];
+    const limitPerBatch = 50;
 
-    let query = db.doc(srcPath)
+    let baseQuery = db.doc(srcPath)
       .collection("@views")
       .where("destEntity", "==", defDestEntity);
-    if (srcAction === "delete") {
-      console.debug("action === delete");
-    } else {
-      query = query.where("srcProps", "array-contains-any", modifiedFields);
-    }
     if (defDestProp) {
-      query = query.where("destProp", "==", defDestProp.name);
+      baseQuery = baseQuery.where("destProp", "==", defDestProp.name);
     }
-    const limitPerBatch = 50;
-    query = query.limit(limitPerBatch);
 
-    if (lastProcessedId) {
-      console.debug("Starting after ID: ", lastProcessedId);
-      const lastDocRef = db.doc(`${srcPath}/@views/${lastProcessedId}`);
-      const lastDocSnap = await lastDocRef.get();
-      if (lastDocSnap.exists) {
-        query = query.startAfter(lastDocSnap);
+    const lastDocSnap = lastProcessedId ? await db.doc(`${srcPath}/@views/${lastProcessedId}`).get() : null;
+
+    async function getDocs(query: admin.firestore.Query) {
+      let q = query.limit(limitPerBatch);
+      if (lastDocSnap?.exists) {
+        console.debug("Starting after ID: ", lastProcessedId);
+        q = q.startAfter(lastDocSnap);
       }
+      return (await q.get()).docs;
     }
-    const atViewsDocs = (await query.get()).docs;
+
+    if (srcAction === "delete") {
+      atViewsDocs.push(...await getDocs(baseQuery));
+    } else {
+      const modifiedFields = [
+        ...Object.keys(srcDoc || {}),
+        ...Object.keys(srcInstructions || {}),
+      ];
+
+      atViewsDocs.push(...await chunkQuery(baseQuery, "srcProps", "array-contains-any", modifiedFields, limitPerBatch, lastDocSnap as any));
+    }
+
     console.debug(`Found ${atViewsDocs.length} matching @view documents`);
 
-    if (atViewsDocs.length === limitPerBatch) {
+    if (atViewsDocs.length >= limitPerBatch) {
       console.debug("Processing limit reached. The remaining views will be processed in the next batch");
       const newLastProcessedId = atViewsDocs[atViewsDocs.length - 1].id;
-      exports.queueRunViewLogics(targetVersion, [logicResultDoc], newLastProcessedId);
+      await exports.queueRunViewLogics(targetVersion, [logicResultDoc], newLastProcessedId);
     }
 
     await syncAtViewsSrcPropsIfDifferentFromViewDefinition();
