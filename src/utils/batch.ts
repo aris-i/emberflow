@@ -11,6 +11,8 @@ export class BatchUtil {
   writeCount: number;
   _batch: WriteBatch | undefined;
 
+  private committing: Promise<void> | null = null;
+
   private constructor() {
     this.BATCH_SIZE = 490;
     this.writeCount = 0;
@@ -21,6 +23,9 @@ export class BatchUtil {
   }
 
   async getBatch() {
+    if (this.committing) {
+      await this.committing;
+    }
     if (!this._batch) {
       this._batch = db.batch();
     }
@@ -28,9 +33,19 @@ export class BatchUtil {
   }
 
   async commit() {
-    await (await this.getBatch()).commit();
+    if (this.committing) {
+      return this.committing;
+    }
+    if (!this._batch || this.writeCount === 0) {
+      return;
+    }
+    const batchToCommit = this._batch;
     this._batch = undefined;
     this.writeCount = 0;
+    this.committing = batchToCommit.commit().then(() => {
+      this.committing = null;
+    });
+    return this.committing;
   }
 
   async set<T extends DocumentData>(
@@ -55,7 +70,8 @@ export class BatchUtil {
     docRef: DocumentReference<T>,
     document: UpdateData<T>,
   ): Promise<void> {
-    (await this.getBatch()).update(docRef, document);
+    const batch = await this.getBatch();
+    batch.update(docRef, document);
     this.writeCount++;
 
     if (this.writeCount >= this.BATCH_SIZE) {
@@ -66,7 +82,8 @@ export class BatchUtil {
   async deleteDoc<T extends DocumentData>(
     docRef: DocumentReference<T>,
   ): Promise<void> {
-    (await this.getBatch()).delete(docRef);
+    const batch = await this.getBatch();
+    batch.delete(docRef);
     this.writeCount++;
 
     if (this.writeCount >= this.BATCH_SIZE) {

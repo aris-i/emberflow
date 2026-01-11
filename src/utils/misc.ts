@@ -153,9 +153,9 @@ async function deleteQueryBatch(query: Query, resolve: () => void, callback?: (s
   }
 
   const batch = BatchUtil.getInstance();
-  snapshot.docs.forEach( (doc) => {
-    batch.deleteDoc(doc.ref);
-  });
+  for (const doc of snapshot.docs) {
+    await batch.deleteDoc(doc.ref);
+  }
 
   await batch.commit();
 
