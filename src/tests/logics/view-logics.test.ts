@@ -153,7 +153,7 @@ describe("createViewLogicFn", () => {
     docUpdateMock = jest.fn();
     docSetMock = jest.fn();
     batchUpdateMock = jest.fn();
-    batchCommitMock = jest.fn();
+    batchCommitMock = jest.fn().mockResolvedValue({});
     dbGetAllMock = jest.fn().mockImplementation((...refs: any[]) => {
       return Promise.resolve(refs.map((ref: any) => ({
         exists: true,

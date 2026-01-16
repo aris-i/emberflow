@@ -183,4 +183,73 @@ describe("debounce", () => {
     expect(func).toHaveBeenCalledTimes(1);
     expect(func).toHaveBeenCalledWith(reducedInstructions);
   });
+
+  it("should return a promise that resolves only after the function completes", async () => {
+    let functionCompleted = false;
+    const asyncFunc = jest.fn().mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      functionCompleted = true;
+    });
+
+    const debouncedFunc = debounce(asyncFunc, 200);
+
+    const promise = debouncedFunc();
+    expect(functionCompleted).toBe(false);
+
+    await jest.advanceTimersByTimeAsync(200);
+    // The invokeFunction is called, which calls asyncFunc.
+    // Since asyncFunc is async, we need to wait for it.
+    await jest.advanceTimersByTimeAsync(100);
+
+    await promise;
+    expect(functionCompleted).toBe(true);
+    expect(asyncFunc).toHaveBeenCalledTimes(1);
+  });
+
+  it("should resolve all pending promises when the function completes", async () => {
+    const asyncFunc = jest.fn().mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    const debouncedFunc = debounce(asyncFunc, 200);
+
+    const p1 = debouncedFunc();
+    const p2 = debouncedFunc();
+    const p3 = debouncedFunc();
+
+    let p1Resolved = false;
+    let p2Resolved = false;
+    let p3Resolved = false;
+
+    p1.then(() => p1Resolved = true);
+    p2.then(() => p2Resolved = true);
+    p3.then(() => p3Resolved = true);
+
+    await jest.advanceTimersByTimeAsync(200); // Trigger debounce
+    await jest.advanceTimersByTimeAsync(50);  // Complete async work
+
+    await Promise.all([p1, p2, p3]);
+    expect(p1Resolved).toBe(true);
+    expect(p2Resolved).toBe(true);
+    expect(p3Resolved).toBe(true);
+  });
+
+  it("should handle errors in the debounced function and still resolve promises", async () => {
+    const errorFunc = jest.fn().mockRejectedValue(new Error("Async Error"));
+    const consoleErrorSpy = jest.spyOn(console, "error").mockImplementation();
+
+    const debouncedFunc = debounce(errorFunc, 200);
+
+    const promise = debouncedFunc();
+
+    await jest.advanceTimersByTimeAsync(200);
+
+    // Even if it fails, the promise should resolve (or we might want it to reject,
+    // but current implementation resolves it in currentResolves.forEach((resolve) => resolve()))
+    // Let's verify current behavior.
+    await promise;
+
+    expect(errorFunc).toHaveBeenCalledTimes(1);
+    expect(consoleErrorSpy).toHaveBeenCalled();
+  });
 });

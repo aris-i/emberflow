@@ -253,33 +253,35 @@ export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublis
     }
   }
 
-  await db.runTransaction(async (txn) => {
-    if (event instanceof Map) {
-      // Process the reduced instructions here
-      console.debug("Reduced instructions received: ", event);
+  if (event instanceof Map) {
+    // Process the reduced instructions here
+    console.debug("Reduced instructions received: ", event);
+    await db.runTransaction(async (txn) => {
       for (const [dstPath, instructions] of event.entries()) {
         await applyInstructions(txn, instructions, dstPath);
       }
-    } else {
-      if (await pubsubUtils.isProcessed(INSTRUCTIONS_TOPIC_NAME, event.id)) {
-        console.log("Skipping duplicate message");
-        return;
-      }
-      try {
-        const instructionsMessage: InstructionsMessage = event.data.message.json;
-        console.debug("Received event with the following instruction:", instructionsMessage);
-
-        console.debug("Applying Instructions");
-        const {dstPath, instructions} = instructionsMessage;
-        await applyInstructions(txn, instructions, dstPath);
-
-        await pubsubUtils.trackProcessedIds(INSTRUCTIONS_TOPIC_NAME, event.id);
-      } catch (e) {
-        console.error("PubSub message was not JSON", e);
-        throw new Error("No json in message");
-      }
+    });
+  } else {
+    if (await pubsubUtils.isProcessed(INSTRUCTIONS_TOPIC_NAME, event.id)) {
+      console.log("Skipping duplicate message");
+      return;
     }
-  });
+    try {
+      const instructionsMessage: InstructionsMessage = event.data.message.json;
+      console.debug("Received event with the following instruction:", instructionsMessage);
+
+      console.debug("Applying Instructions");
+      const {dstPath, instructions} = instructionsMessage;
+      await db.runTransaction(async (txn) => {
+        await applyInstructions(txn, instructions, dstPath);
+      });
+
+      await pubsubUtils.trackProcessedIds(INSTRUCTIONS_TOPIC_NAME, event.id);
+    } catch (e) {
+      console.error("PubSub message was not JSON", e);
+      throw new Error("No json in message");
+    }
+  }
 }
 
 export const mergeInstructions = (existingInstructions: Instructions, instructions: Instructions) => {

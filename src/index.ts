@@ -8,7 +8,8 @@ import {
   LogicConfigModifiedFieldsType,
   LogicResult,
   LogicResultDoc,
-  LogicResultDocAction, MetricExecution,
+  LogicResultDocAction,
+  MetricExecution,
   PatchLogicConfig,
   ProjectConfig,
   RunBusinessLogicStatus,
@@ -50,7 +51,11 @@ import {cleanActionsAndForms, onMessageSubmitFormQueue} from "./utils/forms";
 import {PubSub, Topic} from "@google-cloud/pubsub";
 import {onMessagePublished} from "firebase-functions/v2/pubsub";
 import {logMemoryUsage, reviveDateAndTimestamp, trimStrings} from "./utils/misc";
-import {instructionsReducer, onMessageForDistributionQueue, onMessageInstructionsQueue} from "./utils/distribution";
+import {
+  instructionsReducer,
+  onMessageForDistributionQueue,
+  onMessageInstructionsQueue,
+} from "./utils/distribution";
 import {cleanPubSubProcessedIds} from "./utils/pubsub";
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import {onDocumentCreated} from "firebase-functions/v2/firestore";
@@ -230,8 +235,8 @@ export function initializeEmberFlow(
     topic: INSTRUCTIONS_TOPIC_NAME,
     region: projectConfig.region,
     memory: "512MiB",
-    maxInstances: 1,
-    concurrency: 1,
+    maxInstances: 20,
+    concurrency: 80,
     timeoutSeconds: 540,
     ...projectConfig.functionsConfig?.onMessageInstructionsQueue as any,
   }, debounce(

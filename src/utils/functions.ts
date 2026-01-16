@@ -1,12 +1,12 @@
 export function debounce<T extends any[], A extends object|any[]|Map<string, any>>(
-  func: ((...args: T) => void) | ((accumulator: A) => void),
+  func: ((...args: T) => void | Promise<void>) | ((accumulator: A) => void | Promise<void>),
   wait: number,
   maxWait?: number,
   reducer?: {
-    reducerFn: (accumulator: A, ...currentArgs: T) => void,
+    reducerFn: (accumulator: A, ...currentArgs: T) => void | Promise<void>,
     initialValueFactory: () => A,
   }
-): (...args: T) => void {
+): (...args: T) => Promise<void> {
   const accumulatedResultQueue: A[] = [];
   if (reducer) {
     accumulatedResultQueue.push(reducer.initialValueFactory());
@@ -19,12 +19,14 @@ export function debounce<T extends any[], A extends object|any[]|Map<string, any
   const queue: T[] = [];
   let processing = false;
 
+  let resolveList: ((value: void | PromiseLike<void>) => void)[] = [];
+
   function processQueue() {
     if (processing) return;
     processing = true;
 
     console.debug("Schedule processing queue using setTimeout");
-    setTimeout(() => {
+    setTimeout(async () => {
       console.debug("Now processing queue using setTimeout");
       try {
         const args = queue.shift();
@@ -42,7 +44,7 @@ export function debounce<T extends any[], A extends object|any[]|Map<string, any
           accumulatedResult = reducer.initialValueFactory();
           accumulatedResultQueue.push(accumulatedResult);
         }
-        reducer.reducerFn(accumulatedResult, ...args);
+        await reducer.reducerFn(accumulatedResult, ...args);
       } catch (error) {
         console.error("Error processing queue:", error);
       } finally {
@@ -54,7 +56,11 @@ export function debounce<T extends any[], A extends object|any[]|Map<string, any
     });
   }
 
-  return function(...args: T) {
+  return async function(...args: T) {
+    const promise = new Promise<void>((resolve) => {
+      resolveList.push(resolve);
+    });
+
     const now = new Date().getTime();
     lastTimeCalled = now;
     if (!firstTimeCalled) {
@@ -71,31 +77,39 @@ export function debounce<T extends any[], A extends object|any[]|Map<string, any
       processQueue();
     }
 
-    const invokeFunction = (...args: T) => {
+    const invokeFunction = async (...args: T) => {
       console.info("Invoking function");
-      if (reducer) {
-        for (let i = 0; i < accumulatedResultQueue.length; i++) {
-          const accumulatedResult = accumulatedResultQueue[i];
-          let isEmpty = false;
-          if (Array.isArray(accumulatedResult)) {
-            isEmpty = accumulatedResult.length === 0;
-          } else if (accumulatedResult instanceof Map) {
-            isEmpty = accumulatedResult.size === 0;
-          } else {
-            isEmpty = Object.keys(accumulatedResult).length === 0;
-          }
-          if (isEmpty) {
+      const currentResolves = [...resolveList];
+      resolveList = [];
+      try {
+        if (reducer) {
+          for (let i = 0; i < accumulatedResultQueue.length; i++) {
+            const accumulatedResult = accumulatedResultQueue[i];
+            let isEmpty = false;
+            if (Array.isArray(accumulatedResult)) {
+              isEmpty = accumulatedResult.length === 0;
+            } else if (accumulatedResult instanceof Map) {
+              isEmpty = accumulatedResult.size === 0;
+            } else {
+              isEmpty = Object.keys(accumulatedResult).length === 0;
+            }
+            if (isEmpty) {
+              accumulatedResultQueue.splice(i, 1);
+              i--;
+              continue;
+            }
+
+            await (func as ((accumulator: A) => void | Promise<void>))(accumulatedResult);
             accumulatedResultQueue.splice(i, 1);
             i--;
-            continue;
           }
-
-          (func as ((accumulator: A) => void))(accumulatedResult);
-          accumulatedResultQueue.splice(i, 1);
-          i--;
+        } else {
+          await (func as ((...args: T) => void | Promise<void>))(...args);
         }
-      } else {
-        (func as ((...args: T) => void))(...args);
+      } catch (error) {
+        console.error("Error invoking function:", error);
+      } finally {
+        currentResolves.forEach((resolve) => resolve());
       }
     };
 
@@ -132,5 +146,7 @@ export function debounce<T extends any[], A extends object|any[]|Map<string, any
     } else {
       initiateDebounce();
     }
+
+    return promise;
   };
 }

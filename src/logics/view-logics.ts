@@ -197,7 +197,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
           continue;
         }
 
-        batch.update(db.doc(atViewPath), {srcProps: defSortedSrcProps});
+        await batch.update(db.doc(atViewPath), {srcProps: defSortedSrcProps});
         hasUpdates = true;
       }
 
