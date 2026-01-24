@@ -138,7 +138,7 @@ export class LimitedSet<T> {
 
 
 export async function deleteCollection(query: Query, callback?: (snapshot: firestore.QuerySnapshot) => void): Promise<void> {
-  query = query.limit(500).select();
+  query = query.limit(100).select();
   return new Promise((resolve, reject) => {
     deleteQueryBatch(query, resolve, callback).catch(reject);
   });

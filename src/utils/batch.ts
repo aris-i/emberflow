@@ -14,7 +14,7 @@ export class BatchUtil {
   private committing: Promise<void> | null = null;
 
   private constructor() {
-    this.BATCH_SIZE = 490;
+    this.BATCH_SIZE = 100;
     this.writeCount = 0;
   }
 

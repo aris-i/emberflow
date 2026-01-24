@@ -57,13 +57,13 @@ export async function cleanActionsAndForms(event: ScheduledEvent) {
   await deleteCollection(query, async (snapshot) => {
     const forms: {[key: string]: null} = {};
     for (const doc of snapshot.docs) {
-      const query = db.collection(`${doc.ref.path}/logicResults`);
+      const logicResultsQuery = db.collection(`${doc.ref.path}/logicResults`);
 
-      await deleteCollection(query, async (snapshot) => {
-        for (const doc of snapshot.docs) {
-          const query = db.collection(`${doc.ref.path}/documents`);
+      await deleteCollection(logicResultsQuery, async (logicResultSnapshot) => {
+        for (const logicResultDoc of logicResultSnapshot.docs) {
+          const documentsQuery = db.collection(`${logicResultDoc.ref.path}/documents`);
 
-          await deleteCollection(query);
+          await deleteCollection(documentsQuery);
         }
       });
 
@@ -74,11 +74,11 @@ export async function cleanActionsAndForms(event: ScheduledEvent) {
       }
     }
 
-    const batchSize = 500;
+    const rtdbBatchSize = 100;
     const formKeys = Object.keys(forms);
-    for (let i = 0; i < formKeys.length; i += batchSize) {
+    for (let i = 0; i < formKeys.length; i += rtdbBatchSize) {
       const batch: {[key: string]: null} = {};
-      formKeys.slice(i, i + batchSize).forEach((key) => {
+      formKeys.slice(i, i + rtdbBatchSize).forEach((key) => {
         batch[key] = forms[key];
       });
       await rtdb.ref().update(batch);

@@ -179,7 +179,7 @@ describe("deleteCollection", () => {
     } as unknown as Query, callbackMock);
 
     expect(limitMock).toHaveBeenCalledTimes(1);
-    expect(limitMock).toHaveBeenCalledWith(500);
+    expect(limitMock).toHaveBeenCalledWith(100);
     expect(selectMock).toHaveBeenCalledTimes(1);
     expect(batchDeleteDocMock).not.toHaveBeenCalled();
     expect(batchCommitMock).not.toHaveBeenCalled();
@@ -209,7 +209,7 @@ describe("deleteCollection", () => {
     } as unknown as Query, callbackMock);
 
     expect(limitMock).toHaveBeenCalledTimes(1);
-    expect(limitMock).toHaveBeenCalledWith(500);
+    expect(limitMock).toHaveBeenCalledWith(100);
     expect(selectMock).toHaveBeenCalledTimes(1);
     expect(batchDeleteDocMock).toHaveBeenCalledTimes(100);
     expect(batchCommitMock).toHaveBeenCalledTimes(1);
