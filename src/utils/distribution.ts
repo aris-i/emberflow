@@ -371,10 +371,6 @@ export const mergeInstructions = (existingInstructions: Instructions, instructio
 };
 
 export const instructionsReducer = async (reducedInstructions: Map<string, Instructions>, event: CloudEvent<MessagePublishedData>) => {
-  if (await pubsubUtils.isProcessed(INSTRUCTIONS_TOPIC_NAME, event.id)) {
-    console.log("Skipping duplicate message");
-    return;
-  }
   try {
     const instructionsMessage: InstructionsMessage = event.data.message.json;
     console.log("Instructions reducer: Received user logic result doc:", instructionsMessage);
@@ -388,8 +384,6 @@ export const instructionsReducer = async (reducedInstructions: Map<string, Instr
       mergeInstructions(existingInstructions, instructions);
     }
     console.debug("Instructions reducer: Reduced instructions", reducedInstructions);
-
-    await pubsubUtils.trackProcessedIds(INSTRUCTIONS_TOPIC_NAME, event.id);
   } catch (e) {
     console.error("Error in instructionsReducer:", e);
   }

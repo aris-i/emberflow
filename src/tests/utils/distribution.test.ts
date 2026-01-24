@@ -968,29 +968,6 @@ describe("instructionsReducer", () => {
     mergeInstructionsSpy = jest.spyOn(distribution, "mergeInstructions");
   });
 
-  it("should skip duplicate message", async () => {
-    isProcessedMock.mockResolvedValueOnce(true);
-    jest.spyOn(console, "log").mockImplementation();
-    const doc1: LogicResultDoc = {
-      action: "merge",
-      priority: "high",
-      instructions: {"sample": "++"},
-      dstPath: "/users/test-user-id/documents/doc1",
-    };
-    const event = {
-      id: "test-event",
-      data: {
-        message: {
-          json: doc1,
-        },
-      },
-    } as CloudEvent<MessagePublishedData>;
-    const reducedInstructions: Map<string, Instructions> = new Map();
-    await distribution.instructionsReducer(reducedInstructions, event);
-
-    expect(isProcessedMock).toHaveBeenCalledWith(INSTRUCTIONS_TOPIC_NAME, event.id);
-    expect(console.log).toHaveBeenCalledWith("Skipping duplicate message");
-  });
 
   it("should reduce instructions", async () => {
     const doc1: LogicResultDoc = {
@@ -1009,8 +986,6 @@ describe("instructionsReducer", () => {
     } as CloudEvent<MessagePublishedData>;
     const reducedInstructions: Map<string, Instructions> = new Map();
     await distribution.instructionsReducer(reducedInstructions, event);
-
-    expect(trackProcessedIdsMock).toHaveBeenCalledWith(INSTRUCTIONS_TOPIC_NAME, event.id);
     expect(reducedInstructions.get(doc1.dstPath)).toStrictEqual(doc1.instructions);
   });
 
