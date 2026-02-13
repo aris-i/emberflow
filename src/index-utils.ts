@@ -311,11 +311,12 @@ export const runBusinessLogics = async (
       const execTime = end - start;
       logicResults.push({...result, execTime, timeFinished: admin.firestore.Timestamp.now()});
     } catch (e) {
+      console.error(`Error in logicFn "${logic.name}":`, e);
       const end = performance.now();
       const execTime = end - start;
       logicResults.push({
         name: logic.name,
-        status: "error",
+        status: "error" as const,
         documents: [],
         execTime,
         message: (e as Error).message,

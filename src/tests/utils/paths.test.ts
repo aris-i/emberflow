@@ -28,6 +28,7 @@ const projectConfig: ProjectConfig = {
 admin.initializeApp({
   databaseURL: `https://${projectConfig.rtdbName}.${projectConfig.region}.firebasedatabase.app/`,
 });
+process.env.EMBERFLOW_FORCE_DB = "true";
 initializeEmberFlow(projectConfig, admin, dbStructure, Entity, [], [], [], []);
 
 // Mock fetchIds function

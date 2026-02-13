@@ -128,7 +128,9 @@ export function initializeEmberFlow(
   } {
   projectConfig = customProjectConfig;
   admin = adminInstance;
-  db = admin.firestore();
+  if (process.env.NODE_ENV !== "test" || process.env.EMBERFLOW_FORCE_DB) {
+    db = admin.firestore();
+  }
   rtdb = admin.database();
   pubsub = new PubSub();
   dbStructure = {...customDbStructure, ...internalDbStructure};
@@ -182,7 +184,9 @@ export function initializeEmberFlow(
   const logicNames = logicConfigs.map((config) => config.name);
   const viewLogicNames = viewLogicConfigs.map((config) => config.name);
   const allLogicNames = [...logicNames, ...viewLogicNames];
-  allLogicNames.forEach(createMetricLogicDoc);
+  if (process.env.NODE_ENV !== "test" || process.env.EMBERFLOW_FORCE_DB) {
+    allLogicNames.forEach(createMetricLogicDoc);
+  }
 
   functionsConfig["onFormSubmit"] = onValueCreated(
     {

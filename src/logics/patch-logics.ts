@@ -148,10 +148,24 @@ export const runPatchLogics = async (appVersion: string, dstPath: string): Promi
       for (const patchLogicConfig of patchLogicConfigs) {
         console.info("Running Patch Logic:", patchLogicConfig.name,);
         const patchLogicStartTime = performance.now();
-        const patchLogicResult = await patchLogicConfig.patchLogicFn(dstPath, txnDocument);
-        const patchLogicEndTime = performance.now();
-        const execTime = patchLogicEndTime - patchLogicStartTime;
-        logicResults.push({...patchLogicResult, execTime});
+        try {
+          const patchLogicResult = await patchLogicConfig.patchLogicFn(dstPath, txnDocument);
+          const patchLogicEndTime = performance.now();
+          const execTime = patchLogicEndTime - patchLogicStartTime;
+          logicResults.push({...patchLogicResult, execTime});
+        } catch (e) {
+          console.error(`Error in patchLogicFn "${patchLogicConfig.name}":`, e);
+          const patchLogicEndTime = performance.now();
+          const execTime = patchLogicEndTime - patchLogicStartTime;
+          logicResults.push({
+            name: patchLogicConfig.name,
+            status: "error" as const,
+            documents: [],
+            execTime,
+            message: (e as Error).message,
+            timeFinished: admin.firestore.Timestamp.now(),
+          });
+        }
       }
 
       for (const logicResult of logicResults) {

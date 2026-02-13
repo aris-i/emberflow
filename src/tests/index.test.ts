@@ -96,6 +96,7 @@ jest.spyOn(admin, "database")
   });
 
 admin.initializeApp();
+process.env.EMBERFLOW_FORCE_DB = "true";
 
 initializeEmberFlow(projectConfig, admin, dbStructure, Entity, [], [], [], []);
 

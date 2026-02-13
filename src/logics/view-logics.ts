@@ -493,14 +493,28 @@ export async function runViewLogics(logicResultDoc: LogicResultDoc, targetVersio
   const logicResults = [];
   for (const logic of matchingLogics.values()) {
     const start = performance.now();
-    const viewLogicResult = await logic.viewLogicFn(logicResultDoc, targetVersion, lastProcessedId);
-    const end = performance.now();
-    const execTime = end - start;
-    logicResults.push({
-      ...viewLogicResult,
-      execTime,
-      timeFinished: admin.firestore.Timestamp.now(),
-    });
+    try {
+      const viewLogicResult = await logic.viewLogicFn(logicResultDoc, targetVersion, lastProcessedId);
+      const end = performance.now();
+      const execTime = end - start;
+      logicResults.push({
+        ...viewLogicResult,
+        execTime,
+        timeFinished: admin.firestore.Timestamp.now(),
+      });
+    } catch (e) {
+      console.error(`Error in viewLogicFn "${logic.name}":`, e);
+      const end = performance.now();
+      const execTime = end - start;
+      logicResults.push({
+        name: logic.name,
+        status: "error" as const,
+        documents: [],
+        execTime,
+        message: (e as Error).message,
+        timeFinished: admin.firestore.Timestamp.now(),
+      });
+    }
   }
   return logicResults;
 }

@@ -24,6 +24,7 @@ const projectConfig: ProjectConfig = {
 admin.initializeApp({
   databaseURL: "https://test-project.firebaseio.com",
 });
+process.env.EMBERFLOW_FORCE_DB = "true";
 initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfigs, validatorConfigs, [], []);
 
 describe("pubsubUtils", () => {
