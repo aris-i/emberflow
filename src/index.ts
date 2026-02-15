@@ -128,9 +128,7 @@ export function initializeEmberFlow(
   } {
   projectConfig = customProjectConfig;
   admin = adminInstance;
-  if (process.env.NODE_ENV !== "test" || process.env.EMBERFLOW_FORCE_DB) {
-    db = admin.firestore();
-  }
+  db = admin.firestore();
   rtdb = admin.database();
   pubsub = new PubSub();
   dbStructure = {...customDbStructure, ...internalDbStructure};
