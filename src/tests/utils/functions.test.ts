@@ -142,7 +142,7 @@ describe("debounce", () => {
       },
     },);
     const reducedInstructions: Map<string, Instructions> = new Map();
-    const instructions = {"sample": "+10"};
+    const instructions = {"sample": "+11"};
     reducedInstructions.set("/users/test-user-id/documents/doc1", instructions);
 
     debouncedFunc(createEvent());
@@ -166,8 +166,9 @@ describe("debounce", () => {
     debouncedFunc(createEvent());
     await jest.advanceTimersByTimeAsync(100);
     debouncedFunc(createEvent());
+    await jest.advanceTimersByTimeAsync(100);
 
-    expect(consoleDebugSpy).toHaveBeenCalledTimes(52);
+    expect(consoleDebugSpy).toHaveBeenCalledTimes(56);
     expect(consoleDebugSpy).toHaveBeenNthCalledWith(1, "Schedule processing queue using setTimeout");
     expect(consoleDebugSpy).toHaveBeenNthCalledWith(2, "debouncing");
     expect(consoleDebugSpy).toHaveBeenNthCalledWith(3, "Now processing queue using setTimeout");
@@ -179,7 +180,7 @@ describe("debounce", () => {
     expect(consoleDebugSpy).toHaveBeenNthCalledWith(51, "Schedule processing queue using setTimeout");
     expect(consoleDebugSpy).toHaveBeenNthCalledWith(52, "debounce maxWait is reached");
     expect(clearTimeoutSpy).toHaveBeenCalledTimes(10);
-    expect(setTimeoutSpy).toHaveBeenCalledTimes(21);
+    expect(setTimeoutSpy).toHaveBeenCalledTimes(23);
     expect(func).toHaveBeenCalledTimes(1);
     expect(func).toHaveBeenCalledWith(reducedInstructions);
   });
@@ -226,7 +227,7 @@ describe("debounce", () => {
     p3.then(() => p3Resolved = true);
 
     await jest.advanceTimersByTimeAsync(200); // Trigger debounce
-    await jest.advanceTimersByTimeAsync(50);  // Complete async work
+    await jest.advanceTimersByTimeAsync(50); // Complete async work
 
     await Promise.all([p1, p2, p3]);
     expect(p1Resolved).toBe(true);
@@ -251,5 +252,137 @@ describe("debounce", () => {
 
     expect(errorFunc).toHaveBeenCalledTimes(1);
     expect(consoleErrorSpy).toHaveBeenCalled();
+  });
+
+  it("should not process the same accumulator twice when execution is slower than wait time (concurrency)", async () => {
+    const processedAccumulators: any[] = [];
+
+    const processFn = jest.fn(async (acc: any[]) => {
+      // Simulate slow processing
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      processedAccumulators.push(acc);
+    });
+
+    const reducer = {
+      reducerFn: (acc: any[], val: number) => {
+        acc.push(val);
+      },
+      initialValueFactory: () => [],
+    };
+
+    const debouncedFn = debounce<[number], any[]>(processFn, 50, undefined, reducer);
+
+    // Trigger 1
+    const p1 = debouncedFn(1);
+
+    // Advance 60ms.
+    // T=0 -> T=60.
+    // At T=50, debounce timeout 1 fires.
+    // Calls invokeFunction.
+    // invokeFunction calls processFn.
+    // processFn calls setTimeout(500). Schedules for T=550.
+    // invokeFunction awaits.
+    await jest.advanceTimersByTimeAsync(60);
+
+    // Trigger 2
+    const p2 = debouncedFn(2);
+    // Schedules timeout for T=110.
+
+    // Advance 100ms.
+    // T=60 -> T=160.
+    // At T=110, debounce timeout 2 fires.
+    // Calls invokeFunction (Instance 2).
+    // Instance 1 is pending (waiting for T=550).
+    // Instance 2 should see isInvoking=true and return.
+    await jest.advanceTimersByTimeAsync(100);
+
+    // Now complete the first processing (T=550).
+    // We need to advance to T=550.
+    // Current T=160. Need +400.
+    await jest.advanceTimersByTimeAsync(400);
+
+    // Now Instance 1 finishes Batch 1.
+    // Loop continues.
+    // Processes Batch 2 (Acc2).
+    // processFn calls setTimeout(500). Schedules for T=1050.
+
+    // Advance to finish Batch 2.
+    await jest.advanceTimersByTimeAsync(600);
+
+    await Promise.all([p1, p2]);
+
+    expect(processFn).toHaveBeenCalledTimes(2);
+    const uniqueAccumulators = new Set(processedAccumulators);
+    expect(uniqueAccumulators.size).toBe(2);
+    const allValues = processedAccumulators.flat();
+    expect(allValues.filter((v: any) => v === 1).length).toBe(1);
+    expect(allValues.filter((v: any) => v === 2).length).toBe(1);
+  });
+
+  it("repro: should lose data if new events are added to the currently executing accumulator", async () => {
+    const processedBatches: any[] = [];
+    const processFn = jest.fn(async (acc: number[]) => {
+      const batchToProcess = [...acc];
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      processedBatches.push(batchToProcess);
+    });
+    const reducer = {
+      reducerFn: (acc: number[], val: number) => {
+        acc.push(val);
+      },
+      initialValueFactory: () => [],
+    };
+    const debouncedFn = debounce<[number], number[]>(processFn, 50, undefined, reducer);
+    debouncedFn(1);
+    await jest.advanceTimersByTimeAsync(60);
+    debouncedFn(2);
+    await jest.advanceTimersByTimeAsync(1000);
+    expect(processedBatches.length).toBe(2);
+    expect(processedBatches[0]).toEqual([1]);
+    expect(processedBatches[1]).toEqual([2]);
+  });
+
+  it("repro: should NOT process a second batch immediately if it arrives while the first is processing (Lazy Drain)", async () => {
+    const initialTime = Date.now();
+    const startTimes: number[] = [];
+
+    const processFn = jest.fn(async (acc: number[]) => {
+      startTimes.push(Date.now() - initialTime);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    const reducer = {
+      reducerFn: (acc: number[], val: number) => {
+        acc.push(val);
+      },
+      initialValueFactory: () => [],
+    };
+
+    const debouncedFn = debounce<[number], number[]>(processFn, 100, undefined, reducer);
+
+    // 1. Event A at T=0
+    debouncedFn(1);
+
+    // 2. Advance to T=100. Timer A fires. Call 1 starts.
+    await jest.advanceTimersByTimeAsync(100);
+
+    // 3. Event B at T=100.
+    debouncedFn(2);
+
+    // 4. Advance to T=160.
+    // Call 1 finishes at T=150.
+    // If Aggressive: Call 2 starts at T=150.
+    // If Lazy: Call 2 starts at T=200 (Timer B).
+    await jest.advanceTimersByTimeAsync(60);
+
+    // 5. Advance to T=250.
+    await jest.advanceTimersByTimeAsync(90);
+
+    expect(startTimes.length).toBe(2);
+    // Call 1 started around 100
+    expect(Math.abs(startTimes[0] - 100)).toBeLessThan(10);
+
+    // Call 2 should start around 200 (Lazy) NOT 150 (Aggressive)
+    expect(startTimes[1]).toBeGreaterThanOrEqual(190);
   });
 });
