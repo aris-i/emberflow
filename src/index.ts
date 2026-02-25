@@ -38,6 +38,12 @@ import {
   runBusinessLogics,
   validateForm,
 } from "./index-utils";
+import {
+  findMatchingPatchLogicsByEntity,
+  onMessageRunPatchLogicsQueue,
+  queueRunPatchLogics,
+  versionCompare,
+} from "./logics/patch-logics";
 import {initDbStructure} from "./init-db-structure";
 import {createViewLogicFn, findMatchingViewLogics, onMessageViewLogicsQueue, queueRunViewLogics} from "./logics/view-logics";
 import {resetUsageStats, stopBillingIfBudgetExceeded, useBillProtect} from "./utils/bill-protect";
@@ -62,12 +68,6 @@ import {onDocumentCreated} from "firebase-functions/v2/firestore";
 import {UserRecord} from "firebase-admin/lib/auth";
 import {debounce} from "./utils/functions";
 import {extractTransactionGetOnly} from "./utils/transaction";
-import {
-  findMatchingPatchLogicsByEntity,
-  onMessageRunPatchLogicsQueue,
-  queueRunPatchLogics,
-  versionCompare,
-} from "./logics/patch-logics";
 import Database = database.Database;
 
 export let admin: FirebaseAdmin;

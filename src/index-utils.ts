@@ -37,6 +37,7 @@ import {
 import {FirestoreEvent} from "firebase-functions/lib/v2/providers/firestore";
 import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
 import {versionCompare} from "./logics/patch-logics";
+import {findMatchingDocPathRegex} from "./utils/paths";
 import {FormData} from "emberflow-admin-client/lib/types";
 import QueryDocumentSnapshot = firestore.QueryDocumentSnapshot;
 import DocumentReference = FirebaseFirestore.DocumentReference;
@@ -143,6 +144,20 @@ export async function distributeDoc(
           updateData[destProp] = doc;
         }
       } else {
+        if (action === "create" && !doc?.["@dataVersion"]) {
+          const {entity} = findMatchingDocPathRegex(dstPath);
+          if (entity) {
+            const matchingPatches = _mockable.getPatchLogicConfigs()
+              .filter((patchLogicConfig) => {
+                return entity === patchLogicConfig.entity;
+              });
+            if (matchingPatches && matchingPatches.length > 0) {
+              doc["@dataVersion"] = matchingPatches.reduce((max, patch) => {
+                return versionCompare(patch.version, max) > 0 ? patch.version : max;
+              }, "0.0.0");
+            }
+          }
+        }
         updateData = {
           ...doc,
           "@id": dstDocRef.id,
