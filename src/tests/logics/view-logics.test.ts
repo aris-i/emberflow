@@ -1411,4 +1411,18 @@ describe("findMatchingViewLogics", () => {
     // array-map view
     expect(result?.has("user#todosArray ViewLogic")).toBe(true);
   });
+
+  it("should return matching reverse view logics without destProp when destProp is undefined", () => {
+    const createDoc: LogicResultDoc = {
+      action: "create",
+      dstPath: "users/userId",
+      doc: {title: "New title"},
+    };
+    const result = findMatchingViewLogics(createDoc, "5.0.0");
+
+    // It should not include reverse view logics meant for specific destProps
+    // because dstPath does not have a #destProp
+    expect(result?.has("user#todosArray Reverse ViewLogic")).toBe(false);
+    expect(result?.has("user#mainTopic Reverse ViewLogic")).toBe(false);
+  });
 });

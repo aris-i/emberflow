@@ -592,7 +592,7 @@ export const findMatchingViewLogics = (logicResultDoc: LogicResultDoc, targetVer
   const matchingLogics = _mockable.getViewLogicConfigs().filter((viewLogicConfig) => {
     if (action === "delete") {
       return viewLogicConfig.entity === entity &&
-                (destProp ? viewLogicConfig.destProp === destProp : true) &&
+                (destProp ? viewLogicConfig.destProp === destProp : !viewLogicConfig.destProp) &&
                 versionCompare(viewLogicConfig.version, targetVersion) <= 0;
     }
 
@@ -601,7 +601,7 @@ export const findMatchingViewLogics = (logicResultDoc: LogicResultDoc, targetVer
               viewLogicConfig.modifiedFields === "all" ||
                 viewLogicConfig.modifiedFields.some((field) => modifiedFields.includes(field))
             ) &&
-            viewLogicConfig.entity === entity && (destProp ? viewLogicConfig.destProp === destProp : true) &&
+            viewLogicConfig.entity === entity && (destProp ? viewLogicConfig.destProp === destProp : !viewLogicConfig.destProp) &&
             versionCompare(viewLogicConfig.version, targetVersion) <= 0;
   })
     .reduce((acc, viewLogicConfig) => {
