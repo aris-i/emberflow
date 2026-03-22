@@ -65,7 +65,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
         action: "merge",
         dstPath: viewBasePath,
         instructions: {
-          [`@${viewDestProp}`]: `arr+(${viewDestPropId})`,
+          [`@${viewDestProp}`]: `arr(+${viewDestPropId})`,
         },
         skipRunViewLogics: true,
       });
@@ -320,7 +320,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
         action: "merge",
         dstPath: viewBasePath,
         instructions: {
-          [`@${viewDestProp}`]: `arr-(${viewDestPropId})`,
+          [`@${viewDestProp}`]: `arr(-${viewDestPropId})`,
         },
       });
     }

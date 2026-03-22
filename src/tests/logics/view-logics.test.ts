@@ -294,7 +294,7 @@ describe("createViewLogicFn", () => {
     expect(result.documents[1]).toHaveProperty("action", "merge");
     expect(result.documents[1]).toHaveProperty("dstPath", "users/1234/posts/987");
     expect(result.documents[1].instructions).toEqual({
-      "@followers": "arr+(1234)",
+      "@followers": "arr(+1234)",
     });
 
     logicFn = viewLogics.createViewLogicFn(vd3);
@@ -331,7 +331,7 @@ describe("createViewLogicFn", () => {
     expect(result.documents[1]).toHaveProperty("action", "merge");
     expect(result.documents[1]).toHaveProperty("dstPath", "users/1234/posts/987");
     expect(result.documents[1].instructions).toEqual({
-      "@followers": "arr-(1234)",
+      "@followers": "arr(-1234)",
     });
 
     logicFn = viewLogics.createViewLogicFn(vd3);
@@ -1209,7 +1209,7 @@ describe("createViewLogicFn", () => {
         expect(result.documents[4].dstPath).toBe(
           "topics/topic21/preparationAreas/prepArea1/menus/menu1");
         expect(result.documents[4].instructions).toEqual({
-          "@ingredients": "arr+(ingredient1)",
+          "@ingredients": "arr(+ingredient1)",
         });
         expect(result.documents[4].skipRunViewLogics).toBe(true);
       });
