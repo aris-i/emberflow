@@ -16,7 +16,7 @@ import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
 import {distributeDoc} from "../index-utils";
 import {firestore} from "firebase-admin";
 import {pubsubUtils} from "./pubsub";
-import {logMemoryUsage, reviveDateAndTimestamp} from "./misc";
+import {reviveDateAndTimestamp} from "./misc";
 import FieldValue = firestore.FieldValue;
 import Transaction = firestore.Transaction;
 import {getDestPropAndDestPropId, findMatchingDocPathRegex} from "./paths";
@@ -43,30 +43,23 @@ export const queueForDistributionLater = async (appVersion: string, targetVersio
 
 export async function onMessageForDistributionQueue(event: CloudEvent<MessagePublishedData>) {
   if (await pubsubUtils.isProcessed(FOR_DISTRIBUTION_TOPIC_NAME, event.id)) {
-    console.log("Skipping duplicate message");
     return;
   }
   try {
-    logMemoryUsage("onMessageForDistributionQueue: Start");
     const {appVersion, targetVersion, doc} = event.data.message.json;
     const logicResultDoc = reviveDateAndTimestamp(doc) as LogicResultDoc;
-    console.log("Received user logic result doc:", logicResultDoc);
 
-    console.info("Running For Distribution");
     const {priority = "normal"} = logicResultDoc;
     if (priority === "high") {
-      logMemoryUsage("onMessageForDistributionQueue: Before distributeDoc");
       await distributeDoc(logicResultDoc);
-      logMemoryUsage("onMessageForDistributionQueue: After distributeDoc, Before queueRunViewLogics");
       if (findMatchingViewLogics(logicResultDoc, targetVersion)?.size) {
         await queueRunViewLogics(targetVersion, [logicResultDoc]);
       }
-      logMemoryUsage("onMessageForDistributionQueue: After queueRunViewLogics, Before queueRunPatchLogics");
-      const {entity} = findMatchingDocPathRegex(logicResultDoc.dstPath);
+      const {basePath} = getDestPropAndDestPropId(logicResultDoc.dstPath);
+      const {entity} = findMatchingDocPathRegex(basePath);
       if (entity && findMatchingPatchLogicsByEntity(entity, appVersion).length > 0) {
         await queueRunPatchLogics(appVersion, logicResultDoc.dstPath);
       }
-      logMemoryUsage("onMessageForDistributionQueue: After queueRunPatchLogics");
     } else if (priority === "normal") {
       logicResultDoc.priority = "high";
       await queueForDistributionLater(appVersion, targetVersion, logicResultDoc);
@@ -76,7 +69,6 @@ export async function onMessageForDistributionQueue(event: CloudEvent<MessagePub
     }
 
     await pubsubUtils.trackProcessedIds(FOR_DISTRIBUTION_TOPIC_NAME, event.id);
-    logMemoryUsage("onMessageForDistributionQueue: End");
     return "Processed for distribution later";
   } catch (e) {
     console.error("Error in onMessageForDistributionQueue", e);
@@ -86,8 +78,7 @@ export async function onMessageForDistributionQueue(event: CloudEvent<MessagePub
 
 export const queueInstructions = async (dstPath: string, instructions: { [p: string]: string }) => {
   try {
-    const messageId = await INSTRUCTIONS_TOPIC.publishMessage({json: {dstPath, instructions}});
-    console.log(`queueInstructions: Message ${messageId} published.`);
+    await INSTRUCTIONS_TOPIC.publishMessage({json: {dstPath, instructions}});
   } catch (error: unknown) {
     if (error instanceof Error) {
       console.error(`Received error while publishing: ${error.message}`);
@@ -175,7 +166,6 @@ export async function convertInstructionsToDbValues(txn: Transaction, instructio
     } else if (instruction === "del") {
       updateData[property] = admin.firestore.FieldValue.delete();
     } else if (instruction.startsWith("globalCounter")) {
-      console.debug("Start global counter");
       const regex = /globalCounter\(([^,]+)(?:,\s*(\d+))?\)/;
       const match = instruction.match(regex);
 
@@ -189,7 +179,6 @@ export async function convertInstructionsToDbValues(txn: Transaction, instructio
       const now = admin.firestore.Timestamp.now();
 
       try {
-        console.debug("Start of global counter transaction");
         let newCount: number;
         const counterRef = db.doc(`@counters/${counterName}`);
         const counterDoc = await txn.get(counterRef);
@@ -214,7 +203,6 @@ export async function convertInstructionsToDbValues(txn: Transaction, instructio
           });
         }
         updateData[property] = newCount;
-        console.debug("End of global counter transaction");
       } catch (error) {
         console.error(error);
       }
@@ -255,7 +243,6 @@ export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublis
 
   if (event instanceof Map) {
     // Process the reduced instructions here
-    console.debug("Reduced instructions received: ", event);
     await db.runTransaction(async (txn) => {
       for (const [dstPath, instructions] of event.entries()) {
         await applyInstructions(txn, instructions, dstPath);
@@ -268,9 +255,7 @@ export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublis
     }
     try {
       const instructionsMessage: InstructionsMessage = event.data.message.json;
-      console.debug("Received event with the following instruction:", instructionsMessage);
 
-      console.debug("Applying Instructions");
       const {dstPath, instructions} = instructionsMessage;
       await db.runTransaction(async (txn) => {
         await applyInstructions(txn, instructions, dstPath);

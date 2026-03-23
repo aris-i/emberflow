@@ -39,7 +39,8 @@ export async function expandAndGroupDocPathsByEntity(
   entityCondition?: Record<string, QueryCondition>,
   excludeEntities?: string[]) {
   const groupedPaths: { [key: string]: string[] } = {};
-  const {entity} = findMatchingDocPathRegex(startingDocPath);
+  const {basePath} = getDestPropAndDestPropId(startingDocPath);
+  const {entity} = findMatchingDocPathRegex(basePath);
   if (!entity) {
     return groupedPaths;
   }
@@ -154,9 +155,10 @@ export async function hydrateDocPath(destDocPath: string, entityCondition: Entit
 }
 
 export function parseEntity(docPath: string) {
-  const parts = docPath.split("/");
+  const {basePath} = getDestPropAndDestPropId(docPath);
+  const parts = basePath.split("/");
   const entityId = parts[parts.length - 1];
-  const {entity} = findMatchingDocPathRegex(docPath);
+  const {entity} = findMatchingDocPathRegex(basePath);
   return {entityId, entity};
 }
 

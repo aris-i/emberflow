@@ -123,7 +123,6 @@ describe("onMessageForDistributionQueue", () => {
     await distribution.onMessageForDistributionQueue(event);
 
     expect(isProcessedMock).toHaveBeenCalledWith(FOR_DISTRIBUTION_TOPIC_NAME, event.id);
-    expect(console.log).toHaveBeenCalledWith("Skipping duplicate message");
   });
 
   it("should distribute high priority doc", async () => {

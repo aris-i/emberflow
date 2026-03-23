@@ -41,7 +41,6 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
   function createLogicDocsWhenViewIsCreated(srcPath: string, viewDstPath: string) {
     const logicResultDocs: LogicResultDoc[] = [];
 
-
     const srcAtViewsPath = formAtViewsPath(viewDstPath, srcPath);
     const {
       destProp: viewDestProp,
@@ -50,7 +49,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       basePath: viewBasePath,
     } = getDestPropAndDestPropId(viewDstPath);
     logicResultDocs.push({
-      action: "create",
+      action: "merge",
       dstPath: srcAtViewsPath,
       doc: {
         path: viewDstPath,
@@ -86,7 +85,6 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       dstPath: srcPath,
       action: srcAction,
     } = logicResultDoc;
-    console.info(`Executing ViewLogic on document at ${srcPath}...`);
 
     function syncDeleteToViewsDstPath() {
       const documents: LogicResultDoc[] = [];
@@ -133,7 +131,6 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
         const atViewsDoc = atViewsDocs[i];
         const viewDocSnap = viewDocSnaps[i];
         const viewDstPath = atViewsDoc.data().path;
-        console.debug("Processing viewDstPath: ", viewDstPath);
         const {destProp: viewDestProp, destPropId: viewDestPropId} = getDestPropAndDestPropId(viewDstPath);
 
         // If the doc doesn't exist, delete dstPath and skip creating logicDoc
@@ -234,12 +231,17 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
 
       for (const syncCreateViewDoc of syncCreateViewDocs) {
         const syncCreateViewData = syncCreateViewDoc.data();
-        const {dstPath: viewBaseDstPath} = syncCreateViewData;
+        const {destEntity: viewDestEntity, destProp: syncDestPropName, dstPath: viewBaseDstPath} = syncCreateViewData;
+
+        // Skip if this sync configuration doesn't belong to the current view logic definition
+        if (viewDestEntity !== defDestEntity) continue;
+        if ((defDestProp?.name || null) !== (syncDestPropName || null)) continue;
+
         const {destProp: viewDestProp} = getDestPropAndDestPropId(viewBaseDstPath);
         const viewDstPath = viewDestProp ? `${viewBaseDstPath}[${docId}]` : `${viewBaseDstPath}/${docId}`;
 
         viewLogicResultDocs.push({
-          action: "create",
+          action: "merge",
           dstPath: viewDstPath,
           doc: srcDoc,
         }, ...createLogicDocsWhenViewIsCreated(srcPath, viewDstPath));
@@ -267,7 +269,6 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     async function getDocs(query: admin.firestore.Query) {
       let q = query.limit(limitPerBatch);
       if (lastDocSnap?.exists) {
-        console.debug("Starting after ID: ", lastProcessedId);
         q = q.startAfter(lastDocSnap);
       }
       return (await q.get()).docs;
@@ -284,10 +285,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       atViewsDocs.push(...await chunkQuery(baseQuery, "srcProps", "array-contains-any", modifiedFields, limitPerBatch, lastDocSnap as any));
     }
 
-    console.debug(`Found ${atViewsDocs.length} matching @view documents`);
-
     if (atViewsDocs.length >= limitPerBatch) {
-      console.debug("Processing limit reached. The remaining views will be processed in the next batch");
       const newLastProcessedId = atViewsDocs[atViewsDocs.length - 1].id;
       await exports.queueRunViewLogics(targetVersion, [logicResultDoc], newLastProcessedId);
     }
@@ -396,7 +394,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
 
       if (!isAlreadyCreated) {
         logicResult.documents.push({
-          action: "create",
+          action: "merge",
           dstPath: syncCreateDocPath,
           doc: {
             destEntity: defDestEntity,
@@ -466,11 +464,9 @@ export async function queueRunViewLogics(
             logicResultDoc.doc = data;
           }
         }
-        const messageId = await VIEW_LOGICS_TOPIC.publishMessage({json: {
+        await VIEW_LOGICS_TOPIC.publishMessage({json: {
           doc: logicResultDoc, targetVersion, lastProcessedId,
         }});
-        console.log(`queueRunViewLogics: Message ${messageId} published.`);
-        console.debug(`queueRunViewLogics: ${logicResultDoc}`);
       }
     }
   } catch (error: unknown) {
@@ -486,7 +482,6 @@ export async function queueRunViewLogics(
 export async function runViewLogics(logicResultDoc: LogicResultDoc, targetVersion: string, lastProcessedId?: string): Promise<LogicResult[]> {
   const matchingLogics = findMatchingViewLogics(logicResultDoc, targetVersion);
   if (!matchingLogics || matchingLogics.size === 0) {
-    console.log("No matching view logics found");
     return [];
   }
 
@@ -521,16 +516,13 @@ export async function runViewLogics(logicResultDoc: LogicResultDoc, targetVersio
 
 export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishedData>) {
   if (await pubsubUtils.isProcessed(VIEW_LOGICS_TOPIC_NAME, event.id)) {
-    console.log("Skipping duplicate message");
     return;
   }
 
   try {
     const {targetVersion, doc, lastProcessedId} = event.data.message.json;
     const logicResultDoc = reviveDateAndTimestamp(doc) as LogicResultDoc;
-    console.log("Received logic result doc:", logicResultDoc);
 
-    console.info("Running View Logics");
     logMemoryUsage("Before Running View Logics");
     const start = performance.now();
     const viewLogicResults: LogicResult[] = await exports.runViewLogics(logicResultDoc, targetVersion, lastProcessedId);
@@ -556,7 +548,6 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
     const dstPathViewLogicDocsMap: Map<string, LogicResultDoc[]> = await expandConsolidateAndGroupByDstPath(viewLogicResultDocs);
     logMemoryUsage("After Expanding and Grouping View Logic Results");
 
-    console.info("Distributing View Logic Results");
     await distributeFnNonTransactional(dstPathViewLogicDocsMap, true);
     logMemoryUsage("After Distributing View Logic Results");
 
@@ -582,14 +573,15 @@ export const findMatchingViewLogics = (logicResultDoc: LogicResultDoc, targetVer
   if (instructions) {
     modifiedFields.push(...Object.keys(instructions));
   }
-  const {entity} = findMatchingDocPathRegex(dstPath);
+  const {basePath, destProp} = getDestPropAndDestPropId(dstPath);
+  const {entity} = findMatchingDocPathRegex(basePath);
   if (!entity) {
     console.error("Entity should not be blank");
     return undefined;
   }
-  const {destProp} = getDestPropAndDestPropId(dstPath);
 
-  const matchingLogics = _mockable.getViewLogicConfigs().filter((viewLogicConfig) => {
+  const allConfigs = _mockable.getViewLogicConfigs();
+  const matchingLogics = allConfigs.filter((viewLogicConfig) => {
     if (action === "delete") {
       return viewLogicConfig.entity === entity &&
                 (destProp ? viewLogicConfig.destProp === destProp : !viewLogicConfig.destProp) &&
@@ -616,5 +608,6 @@ export const findMatchingViewLogics = (logicResultDoc: LogicResultDoc, targetVer
       }
       return acc;
     }, new Map<string, ViewLogicConfig>());
+
   return matchingLogics;
 };

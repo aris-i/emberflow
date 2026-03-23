@@ -270,7 +270,7 @@ describe("createViewLogicFn", () => {
 
     let result = await logicFn[1](createLogicResultDoc, targetVersion);
     expect(result.documents.length).toEqual(1);
-    expect(result.documents[0]).toHaveProperty("action", "create");
+    expect(result.documents[0]).toHaveProperty("action", "merge");
     expect(result.documents[0]).toHaveProperty("dstPath", "users/1234/@views/users+1234");
     expect(result.documents[0].doc).toEqual({
       "path": "users/1234",
@@ -282,7 +282,7 @@ describe("createViewLogicFn", () => {
 
     result = await logicFn[1]({...createLogicResultDoc, dstPath: "users/1234/posts/987#followers[1234]"}, targetVersion);
     expect(result.documents.length).toEqual(2);
-    expect(result.documents[0]).toHaveProperty("action", "create");
+    expect(result.documents[0]).toHaveProperty("action", "merge");
     expect(result.documents[0])
       .toHaveProperty("dstPath", "users/1234/@views/users+1234+posts+987+followers[1234]");
     expect(result.documents[0].doc).toEqual({
@@ -301,7 +301,7 @@ describe("createViewLogicFn", () => {
 
     result = await logicFn[1]({...createLogicResultDoc, dstPath: "servers/123#createdBy"}, targetVersion);
     expect(result.documents.length).toEqual(1);
-    expect(result.documents[0]).toHaveProperty("action", "create");
+    expect(result.documents[0]).toHaveProperty("action", "merge");
     expect(result.documents[0])
       .toHaveProperty("dstPath", "users/1234/@views/servers+123+createdBy");
     expect(result.documents[0].doc).toEqual({
@@ -1159,6 +1159,7 @@ describe("createViewLogicFn", () => {
             data: () => {
               return {
                 "destEntity": "preparationAreaIngredient",
+                "destProp": "ingredients",
                 "dstPath": dstPath2,
                 "srcPath": srcCollection,
               };
@@ -1173,13 +1174,10 @@ describe("createViewLogicFn", () => {
 
       it("should auto create source document if there is a matching path in @syncCreateViews", async () => {
         const result = await logicFn[0](logicResultDoc, targetVersion);
-        expect(result.documents.length).toBe(5);
+        expect(result.documents.length).toBe(2);
 
         expect(result.documents[0].dstPath).toBe(`${dstPath1}/ingredient1`);
         expect(result.documents[0].doc).toBe(logicResultDoc.doc);
-
-        expect(result.documents[2].dstPath).toBe(`${dstPath2}[ingredient1]`);
-        expect(result.documents[2].doc).toBe(logicResultDoc.doc);
       });
 
       it("should manually create @view document for each newly created views", async () => {
@@ -1193,25 +1191,28 @@ describe("createViewLogicFn", () => {
           "path": `${dstPath1}/ingredient1`,
           "srcProps": ["amount", "ingredient"],
         });
-        expect(result.documents[3].dstPath).toBe(
-          `${atViewsCollectionPath}/topics+topic21+preparationAreas+prepArea1+menus+menu1+ingredients[ingredient1]`);
-        expect(result.documents[3].doc).toEqual({
-          "destEntity": "menuItemIngredient",
-          "destProp": "ingredients",
-          "path": `${dstPath2}[ingredient1]`,
-          "srcProps": ["amount", "ingredient"],
-        });
       });
 
       it("should add the docId in the @{field} if there is a destProp", async () => {
-        const result = await logicFn[0](logicResultDoc, targetVersion);
+        const logicFnPropView = viewLogics.createViewLogicFn({
+          srcEntity: "recipeIngredient",
+          srcProps: ["amount", "ingredient"],
+          destEntity: "preparationAreaIngredient",
+          destProp: {name: "ingredients", type: "array-map"},
+          options: {syncCreate: true},
+          version: "1.0.0",
+        });
 
-        expect(result.documents[4].dstPath).toBe(
+        const result = await logicFnPropView[0](logicResultDoc, targetVersion);
+
+        expect(result.documents.length).toBe(3);
+
+        expect(result.documents[2].dstPath).toBe(
           "topics/topic21/preparationAreas/prepArea1/menus/menu1");
-        expect(result.documents[4].instructions).toEqual({
+        expect(result.documents[2].instructions).toEqual({
           "@ingredients": "arr(+ingredient1)",
         });
-        expect(result.documents[4].skipRunViewLogics).toBe(true);
+        expect(result.documents[2].skipRunViewLogics).toBe(true);
       });
     });
   });
@@ -1339,11 +1340,9 @@ describe("onMessageViewLogicsQueue", () => {
 
   it("should skip duplicate message", async () => {
     isProcessedMock.mockResolvedValueOnce(true);
-    jest.spyOn(console, "log").mockImplementation();
     await viewLogics.onMessageViewLogicsQueue(event);
 
     expect(isProcessedMock).toHaveBeenCalledWith(VIEW_LOGICS_TOPIC_NAME, event.id);
-    expect(console.log).toHaveBeenCalledWith("Skipping duplicate message");
   });
 
   it("should distribute queued view logics", async () => {
@@ -1402,7 +1401,6 @@ describe("findMatchingViewLogics", () => {
 
   it("should return matching view logics with proper naming", () => {
     const result = findMatchingViewLogics(logicResultDoc, "5.0.0");
-    console.debug(result);
 
     // normal view
     expect(result?.has("todos ViewLogic")).toBe(true);
@@ -1424,5 +1422,24 @@ describe("findMatchingViewLogics", () => {
     // because dstPath does not have a #destProp
     expect(result?.has("user#todosArray Reverse ViewLogic")).toBe(false);
     expect(result?.has("user#mainTopic Reverse ViewLogic")).toBe(false);
+  });
+
+  it("should return matching reverse view logics for array-map merge actions", () => {
+    // Override the mock to return "user" entity for the base path
+    jest.spyOn(paths, "findMatchingDocPathRegex").mockReturnValue({
+      entity: "user",
+      regex: /users/,
+    });
+
+    const mergeDoc: LogicResultDoc = {
+      action: "merge",
+      dstPath: "users/userId#todosArray[todoId]",
+      doc: {title: "Updated title"},
+    };
+    const result = findMatchingViewLogics(mergeDoc, "5.0.0");
+
+    // It should include the reverse view logic because merge is now a valid action
+    // and dstPath correctly routes to the entity "user" with destProp "todosArray"
+    expect(result?.has("user#todosArray Reverse ViewLogic")).toBe(true);
   });
 });

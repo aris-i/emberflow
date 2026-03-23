@@ -2,7 +2,7 @@ import {admin, db, onFormSubmit, projectConfig} from "../index";
 import {CloudBillingClient} from "@google-cloud/billing";
 import {firestore} from "firebase-admin";
 import {Message} from "firebase-functions/lib/v1/providers/pubsub";
-import {findMatchingDocPathRegex} from "./paths";
+import {findMatchingDocPathRegex, getDestPropAndDestPropId} from "./paths";
 import {BatchUtil} from "../utils/batch";
 import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
 
@@ -123,8 +123,9 @@ export const _mockable = {
 export function useBillProtect(onFormSubmit: onFormSubmitType) : onFormSubmitType {
   return async (event) => {
     const {"@docPath": docPath} = JSON.parse(event.data.val().formData);
-    const colName = docPath.split("/").slice(-2)[0];
-    const {entity} = findMatchingDocPathRegex(docPath);
+    const {basePath} = getDestPropAndDestPropId(docPath);
+    const colName = basePath.split("/").slice(-2)[0];
+    const {entity} = findMatchingDocPathRegex(basePath);
     const targetName = entity || colName;
     const funcName = `onFormSubmittedFor${targetName[0].toUpperCase()}${targetName.slice(1)}`;
     if (_mockable.isHardDisabled()) {

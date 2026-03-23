@@ -9,10 +9,7 @@ import {deleteCollection} from "./misc";
 
 export async function queueSubmitForm(formData: FormData) {
   try {
-    const messageId = await SUBMIT_FORM_TOPIC.publishMessage({json: formData});
-    console.log(`queueSubmitForm: Message ${messageId} published.`);
-    console.debug(`queueSubmitForm: ${formData}`);
-    return messageId;
+    return await SUBMIT_FORM_TOPIC.publishMessage({json: formData});
   } catch (error: unknown) {
     if (error instanceof Error) {
       console.error(`Received error while publishing: ${error.message}`);
@@ -25,11 +22,9 @@ export async function queueSubmitForm(formData: FormData) {
 
 export async function onMessageSubmitFormQueue(event: CloudEvent<MessagePublishedData>) {
   if (await pubsubUtils.isProcessed(SUBMIT_FORM_TOPIC_NAME, event.id)) {
-    console.log("Skipping duplicate event");
     return;
   }
   let formData = event.data.message.json as FormData;
-  console.log("Received form submission:", formData);
 
   const submitFormAs = formData["@submitFormAs"];
   const appVersion = formData["@appVersion"];
@@ -41,9 +36,6 @@ export async function onMessageSubmitFormQueue(event: CloudEvent<MessagePublishe
     appVersion,
     metadata,
   });
-  const status = formData["@status"];
-  const messages = formData["@messages"];
-  console.debug("Form submission status:", status, messages);
 
   await pubsubUtils.trackProcessedIds(SUBMIT_FORM_TOPIC_NAME, event.id);
   return "Processed form data";

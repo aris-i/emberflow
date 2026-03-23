@@ -1,5 +1,5 @@
 import {LogicResult, PatchLogicConfig} from "../types";
-import {findMatchingDocPathRegex} from "../utils/paths";
+import {findMatchingDocPathRegex, getDestPropAndDestPropId} from "../utils/paths";
 import {
   admin,
   db,
@@ -76,7 +76,8 @@ export function versionCompare(version1: string, version2: string): number {
 }
 
 export const findMatchingPatchLogics = async (appVersion: string, dstPath: string) => {
-  const {entity} = findMatchingDocPathRegex(dstPath);
+  const {basePath} = getDestPropAndDestPropId(dstPath);
+  const {entity} = findMatchingDocPathRegex(basePath);
   if (!entity) {
     console.error("Entity should not be blank");
     return {patchLogicConfigs: undefined, dataVersion: undefined};

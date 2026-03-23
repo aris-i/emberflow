@@ -49,7 +49,7 @@ import {createViewLogicFn, findMatchingViewLogics, onMessageViewLogicsQueue, que
 import {resetUsageStats, stopBillingIfBudgetExceeded, useBillProtect} from "./utils/bill-protect";
 import {Firestore} from "firebase-admin/firestore";
 import {DatabaseEvent, DataSnapshot, onValueCreated} from "firebase-functions/v2/database";
-import {findMatchingDocPathRegex, parseEntity} from "./utils/paths";
+import {findMatchingDocPathRegex, parseEntity, getDestPropAndDestPropId} from "./utils/paths";
 import {database} from "firebase-admin";
 import {initClient} from "emberflow-admin-client/lib";
 import {internalDbStructure, InternalEntity} from "./db-structure";
@@ -170,7 +170,7 @@ export function initializeEmberFlow(
     const dstToSrcLogicConfig = {
       name: `${destEntity}${destPropName ? `#${destPropName}` : ""} Reverse ViewLogic`,
       entity: viewDef.destEntity,
-      actionTypes: ["create", "delete"] as LogicResultDocAction[],
+      actionTypes: ["create", "merge", "delete"] as LogicResultDocAction[],
       modifiedFields: "all" as LogicConfigModifiedFieldsType,
       ...(viewDef.destProp ? {destProp: viewDef.destProp.name} : {}),
       viewLogicFn: dstToSrcViewLogicFn,
@@ -535,7 +535,8 @@ export async function onFormSubmit(
         if (findMatchingViewLogics(doc, targetVersion)?.size) {
           docsForViewLogics.push(doc);
         }
-        const {entity} = findMatchingDocPathRegex(doc.dstPath);
+        const {basePath} = getDestPropAndDestPropId(doc.dstPath);
+        const {entity} = findMatchingDocPathRegex(basePath);
         if (entity && findMatchingPatchLogicsByEntity(entity, targetVersion).length > 0) {
           pathsForPatchLogics.add(doc.dstPath);
         }
@@ -683,7 +684,8 @@ async function distributeNonTransactionalLogicResults(
     if (findMatchingViewLogics(doc, targetVersion)?.size) {
       docsForViewLogics.push(doc);
     }
-    const {entity} = findMatchingDocPathRegex(doc.dstPath);
+    const {basePath} = getDestPropAndDestPropId(doc.dstPath);
+    const {entity} = findMatchingDocPathRegex(basePath);
     if (entity && findMatchingPatchLogicsByEntity(entity, targetVersion).length > 0) {
       pathsForPatchLogics.add(doc.dstPath);
     }
@@ -708,7 +710,8 @@ async function distributeNonTransactionalLogicResults(
     if (findMatchingViewLogics(doc, targetVersion)?.size) {
       docsForViewLogics.push(doc);
     }
-    const {entity} = findMatchingDocPathRegex(doc.dstPath);
+    const {basePath} = getDestPropAndDestPropId(doc.dstPath);
+    const {entity} = findMatchingDocPathRegex(basePath);
     if (entity && findMatchingPatchLogicsByEntity(entity, targetVersion).length > 0) {
       pathsForPatchLogics.add(doc.dstPath);
     }

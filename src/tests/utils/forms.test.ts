@@ -74,7 +74,6 @@ describe("onMessageSubmitFormQueue", () => {
 
   it("should skip duplicate event", async () => {
     isProcessedMock.mockResolvedValueOnce(true);
-    jest.spyOn(console, "log").mockImplementation();
 
     const formData: FormData = {
       "@docPath": "users/test-uid",
@@ -91,7 +90,6 @@ describe("onMessageSubmitFormQueue", () => {
     await forms.onMessageSubmitFormQueue(event);
 
     expect(isProcessedMock).toHaveBeenCalledWith(SUBMIT_FORM_TOPIC_NAME, event.id);
-    expect(console.log).toHaveBeenCalledWith("Skipping duplicate event");
   });
 
   it("should submit doc", async () => {
