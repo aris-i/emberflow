@@ -980,6 +980,108 @@ describe("runBusinessLogics", () => {
     dbSpy.mockRestore();
   });
 
+  it("should filter out logics based on version and obsolete version", async () => {
+    const targetVersion = "1";
+    const logics: LogicConfig[] = [
+      {
+        name: "Test Logic 1",
+        actionTypes: ["create"],
+        modifiedFields: ["field1"],
+        entities: ["user"],
+        logicFn: logicFn1,
+        version: "1",
+      },
+      {
+        name: "Test Logic 2",
+        actionTypes: ["create"],
+        modifiedFields: ["field1"],
+        entities: ["user"],
+        logicFn: logicFn2,
+        version: "2", // Higher than targetVersion
+      },
+      {
+        name: "Test Logic 3",
+        actionTypes: ["create"],
+        modifiedFields: ["field1"],
+        entities: ["user"],
+        logicFn: logicFn3,
+        version: "1",
+        obsoleteAfterVersion: "0", // Obsolete before targetVersion
+      },
+      {
+        name: "Test Logic 4",
+        actionTypes: ["create"],
+        modifiedFields: ["field1"],
+        entities: ["user"],
+        logicFn: logicFn4,
+        version: "1",
+        obsoleteStartingFromVersion: "1", // Obsolete starting from targetVersion
+      },
+      {
+        name: "Test Logic 5",
+        actionTypes: ["create"],
+        modifiedFields: ["field1"],
+        entities: ["user"],
+        logicFn: logicFn5,
+        version: "1",
+        obsoleteStartingFromVersion: "2", // Obsolete after targetVersion
+      },
+    ];
+
+    initializeEmberFlow(
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs,
+      validatorConfigs,
+      logics,
+      patchLogicConfigs,
+    );
+
+    const txnGet: TxnGet = {get: jest.fn()} as any;
+    const {logicResults} = await indexUtils.runBusinessLogics(txnGet, action, targetVersion);
+
+    expect(logicResults.length).toBe(2);
+    expect(logicResults.some((r) => r.name === "Test Logic 1")).toBe(true);
+    expect(logicResults.some((r) => r.name === "Test Logic 5")).toBe(true);
+    expect(logicResults.some((r) => r.name === "Test Logic 2")).toBe(false);
+    expect(logicResults.some((r) => r.name === "Test Logic 3")).toBe(false);
+    expect(logicResults.some((r) => r.name === "Test Logic 4")).toBe(false);
+  });
+
+  it("should prioritize obsoleteStartingFromVersion over obsoleteAfterVersion", async () => {
+    const targetVersion = "1";
+    const logics: LogicConfig[] = [
+      {
+        name: "Test Logic 1",
+        actionTypes: ["create"],
+        modifiedFields: ["field1"],
+        entities: ["user"],
+        logicFn: logicFn1,
+        version: "1",
+        obsoleteAfterVersion: "2", // Would not be obsolete
+        obsoleteStartingFromVersion: "1", // Is obsolete
+      },
+    ];
+
+    initializeEmberFlow(
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs,
+      validatorConfigs,
+      logics,
+      patchLogicConfigs,
+    );
+
+    const txnGet: TxnGet = {get: jest.fn()} as any;
+    const result = await indexUtils.runBusinessLogics(txnGet, action, targetVersion);
+
+    expect(result.logicResults.length).toBe(0);
+  });
+
   it("should call all matching logics then pass their results to distributeFn", async () => {
     const logics: LogicConfig[] = [
       {
@@ -1025,10 +1127,12 @@ describe("runBusinessLogics", () => {
     expect(runStatus).toEqual({
       status: "done",
       logicResults: [{
+        name: "Logic 1",
         status: "finished",
         execTime: expect.any(Number),
         timeFinished: expect.any(Timestamp),
       }, {
+        name: "Logic 2",
         status: "finished",
         execTime: expect.any(Number),
         timeFinished: expect.any(Timestamp),
@@ -1109,6 +1213,7 @@ describe("runBusinessLogics", () => {
     expect(runStatus).toEqual({
       status: "done",
       logicResults: [{
+        name: "Logic 4",
         status: "finished",
         execTime: expect.any(Number),
         timeFinished: expect.any(Timestamp),
@@ -1235,14 +1340,17 @@ describe("runBusinessLogics", () => {
     expect(runStatus).toEqual({
       status: "done",
       logicResults: [{
+        name: "Logic1",
         status: "finished",
         execTime: expect.any(Number),
         timeFinished: expect.any(Timestamp),
       }, {
+        name: "Logic2",
         status: "finished",
         execTime: expect.any(Number),
         timeFinished: expect.any(Timestamp),
       }, {
+        name: "Logic4",
         status: "finished",
         execTime: expect.any(Number),
         timeFinished: expect.any(Timestamp),

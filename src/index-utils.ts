@@ -23,7 +23,7 @@ import {
   validatorConfigs,
   viewLogicConfigs,
 } from "./index";
-import {_mockable as _pathMockable, getDestPropAndDestPropId} from "./utils/paths";
+import {_mockable as _pathMockable, getDestPropAndDestPropId, findMatchingDocPathRegex} from "./utils/paths";
 import {deepEqual, deleteCollection} from "./utils/misc";
 import {CloudFunctionsServiceClient} from "@google-cloud/functions";
 import {BatchUtil} from "./utils/batch";
@@ -37,7 +37,6 @@ import {
 import {FirestoreEvent} from "firebase-functions/lib/v2/providers/firestore";
 import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
 import {versionCompare} from "./logics/patch-logics";
-import {findMatchingDocPathRegex} from "./utils/paths";
 import {FormData} from "emberflow-admin-client/lib/types";
 import QueryDocumentSnapshot = firestore.QueryDocumentSnapshot;
 import DocumentReference = FirebaseFirestore.DocumentReference;
@@ -218,10 +217,17 @@ export async function validateForm(
   let hasValidationError = false;
   console.info(`Validating form for entity ${entity}`);
   const validatorFn = validatorConfigs
-    .filter((config) =>
-      config.entity === entity &&
-        versionCompare(config.version, targetVersion) <= 0
-    ).sort((a, b) => versionCompare(b.version, a.version))[0]
+    .filter((config) => {
+      const isObsolete = config.obsoleteStartingFromVersion ?
+        versionCompare(targetVersion, config.obsoleteStartingFromVersion) >= 0 :
+        config.obsoleteAfterVersion ?
+          versionCompare(targetVersion, config.obsoleteAfterVersion) > 0 :
+          false;
+
+      return config.entity === entity &&
+        !isObsolete &&
+        versionCompare(config.version, targetVersion) <= 0;
+    }).sort((a, b) => versionCompare(b.version, a.version))[0]
     ?.validatorFn;
   if (!validatorFn) {
     console.log(`No validator found for entity ${entity}`);
@@ -269,12 +275,18 @@ export async function delayFormSubmissionAndCheckIfCancelled(delay: number, form
 function getMatchingLogics(actionType: ActionType, modifiedFields: DocumentData,
   document: DocumentData, entity: string, metadata: Record<string, any>, targetVersion: string) {
   const matchingLogics = logicConfigs.filter((logic) => {
+    const isObsolete = logic.obsoleteStartingFromVersion ?
+      versionCompare(targetVersion, logic.obsoleteStartingFromVersion) >= 0 :
+      logic.obsoleteAfterVersion ?
+        versionCompare(targetVersion, logic.obsoleteAfterVersion) > 0 :
+        false;
+
     return (
       (logic.actionTypes === "all" || logic.actionTypes.includes(actionType as LogicActionType)) &&
         (logic.modifiedFields === "all" || logic.modifiedFields.some((field) => field in modifiedFields)) &&
         (logic.entities === "all" || logic.entities.includes(entity)) &&
       (logic.addtlFilterFn ? logic.addtlFilterFn(actionType, modifiedFields, document, entity, metadata) : true) &&
-      (logic.obsoleteAfterVersion ? versionCompare(targetVersion, logic.obsoleteAfterVersion) <= 0 : true) &&
+      !isObsolete &&
           versionCompare(logic.version, targetVersion) <= 0
     );
   });
@@ -307,7 +319,6 @@ export const runBusinessLogics = async (
   const matchingLogics = getMatchingLogics(
     actionType, modifiedFields, document, entity, metadata, targetVersion
   );
-  console.debug("Matching logics:", matchingLogics.map((logic) => logic.name));
   if (matchingLogics.length === 0) {
     console.log("No matching logics found");
     return {status: "no-matching-logics", logicResults: []};
@@ -319,12 +330,16 @@ export const runBusinessLogics = async (
   for (let i = 0; i < matchingLogics.length; i++) {
     const start = performance.now();
     const logic = matchingLogics[i];
-    console.debug("Running logic:", logic.name);
     try {
       const result = await logic.logicFn(txnGet, action, sharedMap );
       const end = performance.now();
       const execTime = end - start;
-      logicResults.push({...result, execTime, timeFinished: admin.firestore.Timestamp.now()});
+      logicResults.push({
+        ...result,
+        name: logic.name,
+        execTime,
+        timeFinished: admin.firestore.Timestamp.now(),
+      });
     } catch (e) {
       console.error(`Error in logicFn "${logic.name}":`, e);
       const end = performance.now();
@@ -360,9 +375,17 @@ export function groupDocsByTargetDocPath(docsByDstPath: Map<string, LogicResultD
 
 export function getSecurityFn(entity: string, targetVersion: string): SecurityFn {
   return securityConfigs
-    .filter((security) =>
-      security.entity === entity &&
-        versionCompare(security.version, targetVersion) <= 0)
+    .filter((security) => {
+      const isObsolete = security.obsoleteStartingFromVersion ?
+        versionCompare(targetVersion, security.obsoleteStartingFromVersion) >= 0 :
+        security.obsoleteAfterVersion ?
+          versionCompare(targetVersion, security.obsoleteAfterVersion) > 0 :
+          false;
+
+      return security.entity === entity &&
+        !isObsolete &&
+        versionCompare(security.version, targetVersion) <= 0;
+    })
     .sort((a, b) => versionCompare(b.version, a.version))[0]
     ?.securityFn;
 }
@@ -571,7 +594,7 @@ async function saveMetricExecution(metricExecutions: MetricExecution[]) {
   }
 }
 
-export async function cleanMetricExecutions(event: ScheduledEvent) {
+export async function cleanMetricExecutions(_event: ScheduledEvent) {
   console.info("Running cleanMetricExecutions");
   const metricsSnapshot = await db.collection("@metrics").get();
   let i = 0;
@@ -586,7 +609,7 @@ export async function cleanMetricExecutions(event: ScheduledEvent) {
   console.info(`Cleaned ${i} logic metric executions`);
 }
 
-export async function createMetricComputation(event: ScheduledEvent) {
+export async function createMetricComputation(_event: ScheduledEvent) {
   console.info("Creating metric computation");
   const metricsSnapshot = await db.collection("@metrics").get();
   for (const metricDoc of metricsSnapshot.docs) {
@@ -634,7 +657,7 @@ export async function createMetricComputation(event: ScheduledEvent) {
   }
 }
 
-export async function cleanMetricComputations(event: ScheduledEvent) {
+export async function cleanMetricComputations(_event: ScheduledEvent) {
   console.info("Running cleanMetricComputations");
   const metricsSnapshot = await db.collection("@metrics").get();
   let i = 0;

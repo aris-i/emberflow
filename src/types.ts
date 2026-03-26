@@ -129,7 +129,9 @@ export interface LogicConfig{
     addtlFilterFn?: LogicConfigFilterFn;
     logicFn: LogicFn;
     version: string; // i.e. "xx.yy.zz"
+    /** @deprecated Use obsoleteStartingFromVersion instead. */
     obsoleteAfterVersion?: string;
+    obsoleteStartingFromVersion?: string;
 }
 
 export type ViewLogicFn = (logicResultDoc: LogicResultDoc, targetVersion: string, lastProcessedId?: string)
@@ -142,6 +144,9 @@ export interface ViewLogicConfig{
     destProp?: string;
     viewLogicFn: ViewLogicFn;
     version: string;
+    /** @deprecated Use obsoleteStartingFromVersion instead. */
+    obsoleteAfterVersion?: string;
+    obsoleteStartingFromVersion?: string;
 }
 
 export type PatchConfigFilterFn = (
@@ -154,6 +159,9 @@ export interface PatchLogicConfig{
     patchLogicFn: PatchLogicFn;
     addtlFilterFn?: PatchConfigFilterFn;
     version: string; // i.e. "xx.yy.zz"
+    /** @deprecated Use obsoleteStartingFromVersion instead. */
+    obsoleteAfterVersion?: string;
+    obsoleteStartingFromVersion?: string;
 }
 
 export type SecurityStatus = "allowed" | "rejected"
@@ -168,6 +176,9 @@ export interface SecurityConfig {
     entity: string;
     securityFn: SecurityFn;
     version: string; // i.e. "xx.yy.zz"
+    /** @deprecated Use obsoleteStartingFromVersion instead. */
+    obsoleteAfterVersion?: string;
+    obsoleteStartingFromVersion?: string;
 }
 
 export interface ValidationResult {
@@ -178,6 +189,9 @@ export interface ValidatorConfig {
     entity: string;
     validatorFn: ValidatorFn;
     version: string; // i.e. "xx.yy.zz"
+    /** @deprecated Use obsoleteStartingFromVersion instead. */
+    obsoleteAfterVersion?: string;
+    obsoleteStartingFromVersion?: string;
 }
 export type ValidateFormResult = [hasValidationErrors: boolean, validationResult: ValidationResult];
 
@@ -195,6 +209,9 @@ export interface ViewDefinition {
     srcEntity: string;
     options?: ViewDefinitionOptions;
     version: string;
+    /** @deprecated Use obsoleteStartingFromVersion instead. */
+    obsoleteAfterVersion?: string;
+    obsoleteStartingFromVersion?: string;
 }
 
 export type IdGenerator = (collectionPath: string) => Promise<string[]>;

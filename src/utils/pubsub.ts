@@ -18,7 +18,7 @@ export const pubsubUtils = {
   isProcessed,
 };
 
-export async function cleanPubSubProcessedIds(event: ScheduledEvent) {
+export async function cleanPubSubProcessedIds(_event: ScheduledEvent) {
   console.info("Running cleanPubSubProcessedIds");
   let i = 0;
   for (const pubSubTopic of pubSubTopics) {

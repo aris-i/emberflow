@@ -41,7 +41,7 @@ export async function onMessageSubmitFormQueue(event: CloudEvent<MessagePublishe
   return "Processed form data";
 }
 
-export async function cleanActionsAndForms(event: ScheduledEvent) {
+export async function cleanActionsAndForms(_event: ScheduledEvent) {
   console.info("Running cleanActionsAndForms");
   const query = db.collection("@actions")
     .where("timeCreated", "<", new Date(Date.now() - 1000 * 60 * 60 * 24 * 7));

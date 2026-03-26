@@ -232,7 +232,7 @@ async function disableBillingForProject(projectName: string): Promise<string> {
   return `Billing disabled: ${JSON.stringify(res)}`;
 }
 
-export async function resetUsageStats(event: ScheduledEvent) {
+export async function resetUsageStats(_event: ScheduledEvent) {
   const usageCollectionPath = "@server/usage/functions";
   const collectionRef = db.collection(usageCollectionPath);
   const querySnapshot = await collectionRef.select(firestore.FieldPath.documentId()).get();

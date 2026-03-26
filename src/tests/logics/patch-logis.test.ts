@@ -138,6 +138,64 @@ describe("versionCompare", () => {
   });
 });
 
+describe("findMatchingPatchLogics", () => {
+  const dstPath = "users/userId";
+  beforeEach(() => {
+    jest.restoreAllMocks();
+    jest.spyOn(paths, "getDestPropAndDestPropId").mockReturnValue({basePath: "users/userId", destProp: undefined, destPropId: undefined, isArrayMap: false});
+    jest.spyOn(paths, "findMatchingDocPathRegex").mockReturnValue({entity: "user", regex: /users/});
+    const dbDoc = ({
+      get: jest.fn().mockResolvedValue({
+        data: jest.fn().mockReturnValue({
+          "@dataVersion": "1.0.0",
+        }),
+      }),
+    } as unknown) as admin.firestore.DocumentReference;
+    jest.spyOn(db, "doc").mockReturnValue(dbDoc);
+  });
+
+  it("should filter out patch logics based on obsolete version", async () => {
+    const patchLogicsConfigs: PatchLogicConfig[] = [
+      {
+        name: "Logic 1",
+        entity: "user",
+        patchLogicFn: jest.fn(),
+        version: "1.1.0",
+      },
+      {
+        name: "Logic 2",
+        entity: "user",
+        patchLogicFn: jest.fn(),
+        version: "1.1.0",
+        obsoleteAfterVersion: "1.4.0",
+      },
+      {
+        name: "Logic 3",
+        entity: "user",
+        patchLogicFn: jest.fn(),
+        version: "1.1.0",
+        obsoleteStartingFromVersion: "1.5.0",
+      },
+      {
+        name: "Logic 4",
+        entity: "user",
+        patchLogicFn: jest.fn(),
+        version: "1.1.0",
+        obsoleteStartingFromVersion: "1.6.0",
+      },
+    ];
+
+    jest.spyOn(indexUtils._mockable, "getPatchLogicConfigs").mockReturnValue(patchLogicsConfigs);
+
+    const {patchLogicConfigs: result} = await patchLogics.findMatchingPatchLogics("1.5.0", dstPath);
+
+    expect(result?.some((l) => l.name === "Logic 1")).toBe(true);
+    expect(result?.some((l) => l.name === "Logic 2")).toBe(false);
+    expect(result?.some((l) => l.name === "Logic 3")).toBe(false);
+    expect(result?.some((l) => l.name === "Logic 4")).toBe(true);
+  });
+});
+
 describe("runPatchLogics", () => {
   const dstPath = "users/userId";
   let queueRunViewLogicsSpy : jest.SpyInstance;
