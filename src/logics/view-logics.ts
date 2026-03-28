@@ -494,6 +494,7 @@ export async function runViewLogics(logicResultDoc: LogicResultDoc, targetVersio
       const execTime = end - start;
       logicResults.push({
         ...viewLogicResult,
+        name: logic.name,
         execTime,
         timeFinished: admin.firestore.Timestamp.now(),
       });
@@ -582,17 +583,12 @@ export const findMatchingViewLogics = (logicResultDoc: LogicResultDoc, targetVer
 
   const allConfigs = _mockable.getViewLogicConfigs();
   const matchingLogics = allConfigs.filter((viewLogicConfig) => {
-    const isObsolete = viewLogicConfig.obsoleteStartingFromVersion ?
-      versionCompare(targetVersion, viewLogicConfig.obsoleteStartingFromVersion) >= 0 :
-      viewLogicConfig.obsoleteAfterVersion ?
-        versionCompare(targetVersion, viewLogicConfig.obsoleteAfterVersion) > 0 :
-        false;
+    const isWithinTargetVersion = versionCompare(viewLogicConfig.version, targetVersion) <= 0;
 
     if (action === "delete") {
       return viewLogicConfig.entity === entity &&
                 (destProp ? viewLogicConfig.destProp === destProp : !viewLogicConfig.destProp) &&
-                !isObsolete &&
-                versionCompare(viewLogicConfig.version, targetVersion) <= 0;
+                isWithinTargetVersion;
     }
 
     return viewLogicConfig.actionTypes.includes(action) &&
@@ -601,8 +597,7 @@ export const findMatchingViewLogics = (logicResultDoc: LogicResultDoc, targetVer
                 viewLogicConfig.modifiedFields.some((field) => modifiedFields.includes(field))
             ) &&
             viewLogicConfig.entity === entity && (destProp ? viewLogicConfig.destProp === destProp : !viewLogicConfig.destProp) &&
-            !isObsolete &&
-            versionCompare(viewLogicConfig.version, targetVersion) <= 0;
+            isWithinTargetVersion;
   })
     .reduce((acc, viewLogicConfig) => {
       const {name} = viewLogicConfig;

@@ -154,7 +154,7 @@ describe("findMatchingPatchLogics", () => {
     jest.spyOn(db, "doc").mockReturnValue(dbDoc);
   });
 
-  it("should filter out patch logics based on obsolete version", async () => {
+  it("should filter out patch logics based on version", async () => {
     const patchLogicsConfigs: PatchLogicConfig[] = [
       {
         name: "Logic 1",
@@ -166,22 +166,7 @@ describe("findMatchingPatchLogics", () => {
         name: "Logic 2",
         entity: "user",
         patchLogicFn: jest.fn(),
-        version: "1.1.0",
-        obsoleteAfterVersion: "1.4.0",
-      },
-      {
-        name: "Logic 3",
-        entity: "user",
-        patchLogicFn: jest.fn(),
-        version: "1.1.0",
-        obsoleteStartingFromVersion: "1.5.0",
-      },
-      {
-        name: "Logic 4",
-        entity: "user",
-        patchLogicFn: jest.fn(),
-        version: "1.1.0",
-        obsoleteStartingFromVersion: "1.6.0",
+        version: "2.0.0",
       },
     ];
 
@@ -191,8 +176,24 @@ describe("findMatchingPatchLogics", () => {
 
     expect(result?.some((l) => l.name === "Logic 1")).toBe(true);
     expect(result?.some((l) => l.name === "Logic 2")).toBe(false);
-    expect(result?.some((l) => l.name === "Logic 3")).toBe(false);
-    expect(result?.some((l) => l.name === "Logic 4")).toBe(true);
+  });
+
+
+  it("should not select patch if data version is equal to patch version", async () => {
+    const patchLogicsConfigs: PatchLogicConfig[] = [
+      {
+        name: "Logic 1",
+        entity: "user",
+        patchLogicFn: jest.fn(),
+        version: "1.0.0",
+      },
+    ];
+
+    jest.spyOn(indexUtils._mockable, "getPatchLogicConfigs").mockReturnValue(patchLogicsConfigs);
+
+    const {patchLogicConfigs: result} = await patchLogics.findMatchingPatchLogics("1.5.0", dstPath);
+
+    expect(result?.some((l) => l.name === "Logic 1")).toBe(false);
   });
 });
 

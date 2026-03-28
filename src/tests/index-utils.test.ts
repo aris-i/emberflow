@@ -748,6 +748,44 @@ describe("validateForm", () => {
     expect(hasValidationError).toBe(true);
     expect(validationResult).toEqual({name: ["Name is required"]});
   });
+
+  it("should be bounded by targetVersion (data version) even if appVersion is higher", async () => {
+    const userValidationV1 = jest.fn().mockResolvedValue({});
+    const userValidationV2 = jest.fn().mockResolvedValue({});
+
+    const validatorConfigs: ValidatorConfig[] = [
+      {
+        entity: Entity.User,
+        validatorFn: userValidationV1,
+        version: "1.0.0",
+      },
+      {
+        entity: Entity.User,
+        validatorFn: userValidationV2,
+        version: "2.0.0",
+      },
+    ];
+
+    initializeEmberFlow(
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs,
+      validatorConfigs,
+      [],
+      patchLogicConfigs
+    );
+
+    const document = {
+      name: "John Doe",
+    };
+
+    // targetVersion is 1.0.0, even if app is 2.0.0
+    await indexUtils.validateForm(entity, document, "1.0.0");
+    expect(userValidationV1).toHaveBeenCalled();
+    expect(userValidationV2).not.toHaveBeenCalled();
+  });
 });
 
 describe("getSecurityFn", () => {
@@ -804,6 +842,40 @@ describe("getSecurityFn", () => {
 
     const result = await indexUtils.getSecurityFn(entity, targetVersion);
     expect(result).toEqual(userSecurityFnV2);
+  });
+
+  it("should be bounded by targetVersion even if appVersion is higher", async () => {
+    const userSecurityV1 = jest.fn().mockResolvedValue({status: "allowed"});
+    const userSecurityV2 = jest.fn().mockResolvedValue({status: "allowed"});
+
+    const securityConfigs: SecurityConfig[] = [
+      {
+        entity: Entity.User,
+        securityFn: userSecurityV1,
+        version: "1.0.0",
+      },
+      {
+        entity: Entity.User,
+        securityFn: userSecurityV2,
+        version: "2.0.0",
+      },
+    ];
+
+    initializeEmberFlow(
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs,
+      validatorConfigs,
+      [],
+      patchLogicConfigs
+    );
+
+    const entity = "user";
+    // targetVersion is 1.0.0, even if app is 2.0.0
+    const result = await indexUtils.getSecurityFn(entity, "1.0.0");
+    expect(result).toEqual(userSecurityV1);
   });
 });
 
@@ -980,8 +1052,8 @@ describe("runBusinessLogics", () => {
     dbSpy.mockRestore();
   });
 
-  it("should filter out logics based on version and obsolete version", async () => {
-    const targetVersion = "1";
+  it("should filter out logics based on appVersion and obsolete version", async () => {
+    const appVersion = "1";
     const logics: LogicConfig[] = [
       {
         name: "Test Logic 1",
@@ -997,7 +1069,7 @@ describe("runBusinessLogics", () => {
         modifiedFields: ["field1"],
         entities: ["user"],
         logicFn: logicFn2,
-        version: "2", // Higher than targetVersion
+        version: "2", // Higher than appVersion
       },
       {
         name: "Test Logic 3",
@@ -1006,7 +1078,7 @@ describe("runBusinessLogics", () => {
         entities: ["user"],
         logicFn: logicFn3,
         version: "1",
-        obsoleteAfterVersion: "0", // Obsolete before targetVersion
+        obsoleteAfterVersion: "0", // Obsolete before appVersion
       },
       {
         name: "Test Logic 4",
@@ -1015,7 +1087,7 @@ describe("runBusinessLogics", () => {
         entities: ["user"],
         logicFn: logicFn4,
         version: "1",
-        obsoleteStartingFromVersion: "1", // Obsolete starting from targetVersion
+        obsoleteStartingFromVersion: "1", // Obsolete starting from appVersion
       },
       {
         name: "Test Logic 5",
@@ -1024,7 +1096,7 @@ describe("runBusinessLogics", () => {
         entities: ["user"],
         logicFn: logicFn5,
         version: "1",
-        obsoleteStartingFromVersion: "2", // Obsolete after targetVersion
+        obsoleteStartingFromVersion: "2", // Obsolete after appVersion
       },
     ];
 
@@ -1040,7 +1112,7 @@ describe("runBusinessLogics", () => {
     );
 
     const txnGet: TxnGet = {get: jest.fn()} as any;
-    const {logicResults} = await indexUtils.runBusinessLogics(txnGet, action, targetVersion);
+    const {logicResults} = await indexUtils.runBusinessLogics(txnGet, action, appVersion);
 
     expect(logicResults.length).toBe(2);
     expect(logicResults.some((r) => r.name === "Test Logic 1")).toBe(true);
@@ -1051,7 +1123,7 @@ describe("runBusinessLogics", () => {
   });
 
   it("should prioritize obsoleteStartingFromVersion over obsoleteAfterVersion", async () => {
-    const targetVersion = "1";
+    const appVersion = "1";
     const logics: LogicConfig[] = [
       {
         name: "Test Logic 1",
@@ -1077,7 +1149,7 @@ describe("runBusinessLogics", () => {
     );
 
     const txnGet: TxnGet = {get: jest.fn()} as any;
-    const result = await indexUtils.runBusinessLogics(txnGet, action, targetVersion);
+    const result = await indexUtils.runBusinessLogics(txnGet, action, appVersion);
 
     expect(result.logicResults.length).toBe(0);
   });

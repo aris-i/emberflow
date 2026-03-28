@@ -94,16 +94,12 @@ export const findMatchingPatchLogics = async (appVersion: string, dstPath: strin
 
   const patchLogicConfigs = _mockable.getPatchLogicConfigs()
     .filter((patchLogicConfig) => {
-      const isObsolete = patchLogicConfig.obsoleteStartingFromVersion ?
-        versionCompare(appVersion, patchLogicConfig.obsoleteStartingFromVersion) >= 0 :
-        patchLogicConfig.obsoleteAfterVersion ?
-          versionCompare(appVersion, patchLogicConfig.obsoleteAfterVersion) > 0 :
-          false;
+      const isWithinAppVersion = versionCompare(patchLogicConfig.version, appVersion) <= 0;
+      const needsPatching = versionCompare(dataVersion, patchLogicConfig.version) < 0;
 
       return entity === patchLogicConfig.entity &&
-        versionCompare(dataVersion, patchLogicConfig.version) < 0 &&
-        versionCompare(patchLogicConfig.version, appVersion) <= 0 &&
-        !isObsolete &&
+        needsPatching &&
+        isWithinAppVersion &&
         (patchLogicConfig.addtlFilterFn ? patchLogicConfig.addtlFilterFn(document) : true);
     });
   return {patchLogicConfigs, dataVersion};
@@ -212,7 +208,8 @@ export const runPatchLogics = async (appVersion: string, dstPath: string): Promi
 
       console.info(`Finished Patch Logic for version ${patchVersion}`);
       return logicResults.map((result) => ({
-        ...result, timeFinished: admin.firestore.Timestamp.now(),
+        ...result,
+        timeFinished: admin.firestore.Timestamp.now(),
       }));
     });
 

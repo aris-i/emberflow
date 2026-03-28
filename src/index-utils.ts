@@ -212,21 +212,16 @@ export async function distributeLater(docsByDstPath: Map<string, LogicResultDoc[
 export async function validateForm(
   entity: string,
   form: FirebaseFirestore.DocumentData,
-  targetVersion: string
+  targetVersion: string,
 ): Promise<ValidateFormResult> {
   let hasValidationError = false;
   console.info(`Validating form for entity ${entity}`);
   const validatorFn = validatorConfigs
     .filter((config) => {
-      const isObsolete = config.obsoleteStartingFromVersion ?
-        versionCompare(targetVersion, config.obsoleteStartingFromVersion) >= 0 :
-        config.obsoleteAfterVersion ?
-          versionCompare(targetVersion, config.obsoleteAfterVersion) > 0 :
-          false;
+      const isWithinAppVersion = versionCompare(config.version, targetVersion) <= 0;
 
       return config.entity === entity &&
-        !isObsolete &&
-        versionCompare(config.version, targetVersion) <= 0;
+        isWithinAppVersion;
     }).sort((a, b) => versionCompare(b.version, a.version))[0]
     ?.validatorFn;
   if (!validatorFn) {
@@ -273,13 +268,18 @@ export async function delayFormSubmissionAndCheckIfCancelled(delay: number, form
 }
 
 function getMatchingLogics(actionType: ActionType, modifiedFields: DocumentData,
-  document: DocumentData, entity: string, metadata: Record<string, any>, targetVersion: string) {
+  document: DocumentData, entity: string, metadata: Record<string, any>, appVersion: string) {
+  const docDataVersion = document["@dataVersion"] || appVersion;
   const matchingLogics = logicConfigs.filter((logic) => {
     const isObsolete = logic.obsoleteStartingFromVersion ?
-      versionCompare(targetVersion, logic.obsoleteStartingFromVersion) >= 0 :
+      versionCompare(appVersion, logic.obsoleteStartingFromVersion) >= 0 :
       logic.obsoleteAfterVersion ?
-        versionCompare(targetVersion, logic.obsoleteAfterVersion) > 0 :
+        versionCompare(appVersion, logic.obsoleteAfterVersion) > 0 :
         false;
+
+    const effectiveMinDataVersion = logic.minDataVersion || logic.version;
+    const isWithinAppVersion = versionCompare(logic.version, appVersion) <= 0;
+    const isDataCompatible = versionCompare(docDataVersion, effectiveMinDataVersion) >= 0;
 
     return (
       (logic.actionTypes === "all" || logic.actionTypes.includes(actionType as LogicActionType)) &&
@@ -287,7 +287,8 @@ function getMatchingLogics(actionType: ActionType, modifiedFields: DocumentData,
         (logic.entities === "all" || logic.entities.includes(entity)) &&
       (logic.addtlFilterFn ? logic.addtlFilterFn(actionType, modifiedFields, document, entity, metadata) : true) &&
       !isObsolete &&
-          versionCompare(logic.version, targetVersion) <= 0
+      isWithinAppVersion &&
+      isDataCompatible
     );
   });
 
@@ -312,12 +313,12 @@ function getMatchingLogics(actionType: ActionType, modifiedFields: DocumentData,
 export const runBusinessLogics = async (
   txnGet: TxnGet,
   action: Action,
-  targetVersion: string,
+  appVersion: string,
 ): Promise<RunBusinessLogicStatus> => {
   const {actionType, modifiedFields, document, eventContext: {entity}, metadata} = action;
 
   const matchingLogics = getMatchingLogics(
-    actionType, modifiedFields, document, entity, metadata, targetVersion
+    actionType, modifiedFields, document, entity, metadata, appVersion
   );
   if (matchingLogics.length === 0) {
     console.log("No matching logics found");
@@ -376,15 +377,10 @@ export function groupDocsByTargetDocPath(docsByDstPath: Map<string, LogicResultD
 export function getSecurityFn(entity: string, targetVersion: string): SecurityFn {
   return securityConfigs
     .filter((security) => {
-      const isObsolete = security.obsoleteStartingFromVersion ?
-        versionCompare(targetVersion, security.obsoleteStartingFromVersion) >= 0 :
-        security.obsoleteAfterVersion ?
-          versionCompare(targetVersion, security.obsoleteAfterVersion) > 0 :
-          false;
+      const isWithinTargetVersion = versionCompare(security.version, targetVersion) <= 0;
 
       return security.entity === entity &&
-        !isObsolete &&
-        versionCompare(security.version, targetVersion) <= 0;
+        isWithinTargetVersion;
     })
     .sort((a, b) => versionCompare(b.version, a.version))[0]
     ?.securityFn;

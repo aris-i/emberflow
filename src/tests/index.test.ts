@@ -322,7 +322,7 @@ describe("onFormSubmit", () => {
       "field2": "oldValue",
       "@actionType": "update",
       "@docPath": docPath,
-      "@appVersion": "1.0.0",
+      "@appVersion": "4.0.0",
     };
     const form = {
       "formData": JSON.stringify(formData),
@@ -336,7 +336,7 @@ describe("onFormSubmit", () => {
     };
 
     txnGetFnMock
-      .mockResolvedValueOnce({data: ()=> (document)})
+      .mockResolvedValueOnce({data: ()=> ({})})
       .mockReturnValueOnce({data: ()=> (user)});
 
     const validateFormMock = jest.spyOn(indexutils, "validateForm");
@@ -348,9 +348,9 @@ describe("onFormSubmit", () => {
     jest.spyOn(transactionutils, "extractTransactionGetOnly").mockReturnValue( extractedTxnGet);
     await onFormSubmit(event);
 
-    expect(getSecurityFnMock).toHaveBeenCalledWith(entity, "1.0.0");
-    expect(validateFormMock).toHaveBeenCalledWith(entity, formData, "1.0.0");
-    expect(securityFnMock).toHaveBeenCalledWith(extractedTxnGet, entity, docPath, document, "update", {field1: "newValue"}, user);
+    expect(getSecurityFnMock).toHaveBeenCalledWith(entity, "4.0.0");
+    expect(validateFormMock).toHaveBeenCalledWith(entity, formData, "4.0.0");
+    expect(securityFnMock).toHaveBeenCalledWith(extractedTxnGet, entity, docPath, {}, "update", {field1: "newValue", field2: "oldValue"}, user);
     expect(refMock.update).toHaveBeenCalledWith({
       "@status": "security-error",
       "@messages": "Unauthorized access",
@@ -834,7 +834,7 @@ describe("onFormSubmit", () => {
     await onFormSubmit(event);
 
     // Test that the runBusinessLogics function was called with the correct parameters
-    expect(runBusinessLogicsSpy).toHaveBeenCalled();
+    expect(runBusinessLogicsSpy).toHaveBeenCalledWith(expect.anything(), expect.anything(), "4.0.0");
     expect(refMock.update).toHaveBeenCalledTimes(3);
     expect(refMock.update).toHaveBeenNthCalledWith(1, {"@status": "processing"});
     expect(refMock.update).toHaveBeenNthCalledWith(2, {"@status": "submitted"});

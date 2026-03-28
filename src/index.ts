@@ -75,15 +75,15 @@ export let db: Firestore;
 export let rtdb: Database;
 export let pubsub: PubSub;
 export let dbStructure: Record<string, object>;
-export let Entity: Record<string, string>;
-export let securityConfigs: SecurityConfig[];
-export let validatorConfigs: ValidatorConfig[];
-export let logicConfigs: LogicConfig[];
-export let patchLogicConfigs: PatchLogicConfig[];
-export let docPaths: Record<string, string>;
-export let colPaths: Record<string, string>;
-export let docPathsRegex: Record<string, RegExp>;
-export let viewLogicConfigs: ViewLogicConfig[];
+export let Entity: Record<string, string> = {};
+export let securityConfigs: SecurityConfig[] = [];
+export let validatorConfigs: ValidatorConfig[] = [];
+export let logicConfigs: LogicConfig[] = [];
+export let patchLogicConfigs: PatchLogicConfig[] = [];
+export let docPaths: Record<string, string> = {};
+export let colPaths: Record<string, string> = {};
+export let docPathsRegex: Record<string, RegExp> = {};
+export let viewLogicConfigs: ViewLogicConfig[] = [];
 export let projectConfig: ProjectConfig;
 export const functionsConfig: Record<string, any> = {};
 export const SUBMIT_FORM_TOPIC_NAME = "submit-form-queue";
@@ -484,7 +484,7 @@ export async function onFormSubmit(
       await formRef.update({"@status": "submitted"});
       console.info("Running Business Logics");
       const businessLogicStart = performance.now();
-      runBusinessLogicStatus = await runBusinessLogics(txnGet, action, targetVersion);
+      runBusinessLogicStatus = await runBusinessLogics(txnGet, action, appVersion);
       const businessLogicEnd = performance.now();
       const runBusinessLogicsMetrics: LogicResult = {
         name: "runBusinessLogics",
