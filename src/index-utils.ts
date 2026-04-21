@@ -108,6 +108,7 @@ export async function distributeDoc(
 
   const dstDocRef = db.doc(basePath);
   console.debug(`Distributing doc with Action: ${action}`);
+  console.debug("Logic Result Doc: ", logicResultDoc);
   if (action === "delete") {
     if (destProp) {
       if (destPropId) {
