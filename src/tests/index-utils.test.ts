@@ -92,6 +92,7 @@ describe("distributeDoc", () => {
   let dbDoc: admin.firestore.DocumentReference<admin.firestore.DocumentData>;
   const batch = BatchUtil.getInstance();
   jest.spyOn(BatchUtil, "getInstance").mockImplementation(() => batch);
+  const appVersion = "1.0.0";
 
   beforeEach(() => {
     dbDoc = ({
@@ -126,7 +127,7 @@ describe("distributeDoc", () => {
       "@dateCreated": expect.any(Timestamp),
     };
 
-    await indexUtils.distributeDoc(logicResultDoc);
+    await indexUtils.distributeDoc(logicResultDoc, appVersion);
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
     expect(dbDoc.set).toHaveBeenCalledTimes(1);
@@ -145,7 +146,7 @@ describe("distributeDoc", () => {
       "@id": "test-doc-id",
     };
 
-    await indexUtils.distributeDoc(logicResultDoc);
+    await indexUtils.distributeDoc(logicResultDoc, appVersion);
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
 
@@ -171,7 +172,7 @@ describe("distributeDoc", () => {
       "@id": "test-doc-id",
     };
 
-    await indexUtils.distributeDoc(logicResultDoc);
+    await indexUtils.distributeDoc(logicResultDoc, appVersion);
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
     expect(queueInstructionsSpy).toHaveBeenCalledTimes(1);
@@ -203,7 +204,7 @@ describe("distributeDoc", () => {
       },
     };
 
-    await indexUtils.distributeDoc(logicResultDoc, undefined, transactionMock);
+    await indexUtils.distributeDoc(logicResultDoc, appVersion, undefined, transactionMock);
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
     expect(queueInstructionsSpy).not.toHaveBeenCalled();
@@ -231,7 +232,7 @@ describe("distributeDoc", () => {
       dstPath: "/users/test-user-id/documents/test-doc-id",
     };
 
-    await indexUtils.distributeDoc(logicResultDoc);
+    await indexUtils.distributeDoc(logicResultDoc, appVersion);
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
     expect(dbDoc.update).not.toHaveBeenCalled();
@@ -244,7 +245,7 @@ describe("distributeDoc", () => {
       dstPath: "/users/test-user-id/documents/test-doc-id",
     };
 
-    await indexUtils.distributeDoc(logicResultDoc);
+    await indexUtils.distributeDoc(logicResultDoc, appVersion);
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
     expect(dbDoc.delete).toHaveBeenCalledTimes(1);
@@ -266,7 +267,7 @@ describe("distributeDoc", () => {
       dstPath: "/users/test-user-id/documents/test-doc-id",
     };
 
-    await indexUtils.distributeDoc(logicResultDoc, batch);
+    await indexUtils.distributeDoc(logicResultDoc, appVersion, batch);
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
     expect(queueSubmitFormSpy).toHaveBeenCalledTimes(1);
@@ -295,7 +296,7 @@ describe("distributeDoc", () => {
         "@id": "test-doc-id",
       };
 
-      await indexUtils.distributeDoc(logicResultDoc, undefined, transactionMock);
+      await indexUtils.distributeDoc(logicResultDoc, appVersion, undefined, transactionMock);
       expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
       expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
       expect(queueInstructionsSpy).not.toHaveBeenCalled();
@@ -323,7 +324,7 @@ describe("distributeDoc", () => {
       };
 
       const errorSpy = jest.spyOn(console, "error").mockImplementation();
-      await indexUtils.distributeDoc(logicResultDoc, undefined, transactionMock);
+      await indexUtils.distributeDoc(logicResultDoc, appVersion, undefined, transactionMock);
       expect(errorSpy).toHaveBeenCalledWith("Submit-form is not supported in transactional logic result");
       expect(transactionSetMock).toHaveBeenCalledTimes(0);
     });
@@ -344,7 +345,7 @@ describe("distributeDoc", () => {
         "@dateCreated": expect.any(Timestamp),
       };
 
-      await indexUtils.distributeDoc(logicResultDoc, batch);
+      await indexUtils.distributeDoc(logicResultDoc, appVersion, batch);
       expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
       expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
       expect(batchSetSpy).toHaveBeenCalledTimes(1);
@@ -366,7 +367,7 @@ describe("distributeDoc", () => {
         "@id": "test-doc-id",
       };
 
-      await indexUtils.distributeDoc(logicResultDoc, batch);
+      await indexUtils.distributeDoc(logicResultDoc, appVersion, batch);
       expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
       expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
       expect(batchSetSpy).toHaveBeenCalledTimes(1);
@@ -383,7 +384,7 @@ describe("distributeDoc", () => {
         dstPath: "/users/test-user-id/documents/test-doc-id",
       };
 
-      await indexUtils.distributeDoc(logicResultDoc, batch);
+      await indexUtils.distributeDoc(logicResultDoc, appVersion, batch);
       expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
       expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
       expect(batchDeleteSpy).toHaveBeenCalledTimes(1);
@@ -404,7 +405,7 @@ describe("distributeDoc", () => {
         "createdBy": logicResultDoc.doc,
       };
 
-      await indexUtils.distributeDoc(logicResultDoc);
+      await indexUtils.distributeDoc(logicResultDoc, appVersion);
       expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
       expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
 
@@ -426,7 +427,7 @@ describe("distributeDoc", () => {
         },
       };
 
-      await indexUtils.distributeDoc(logicResultDoc);
+      await indexUtils.distributeDoc(logicResultDoc, appVersion);
       expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
       expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
 
@@ -445,7 +446,7 @@ describe("distributeDoc", () => {
         "createdBy": admin.firestore.FieldValue.delete(),
       };
 
-      await indexUtils.distributeDoc(logicResultDoc);
+      await indexUtils.distributeDoc(logicResultDoc, appVersion);
       expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
       expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
 
@@ -470,7 +471,7 @@ describe("distributeDoc", () => {
         },
       };
 
-      await indexUtils.distributeDoc(logicResultDoc);
+      await indexUtils.distributeDoc(logicResultDoc, appVersion);
       expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
       expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
 
@@ -494,7 +495,7 @@ describe("distributeDoc", () => {
         },
       };
 
-      await indexUtils.distributeDoc(logicResultDoc);
+      await indexUtils.distributeDoc(logicResultDoc, appVersion);
       expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
       expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
       const dstDocRef = db.doc(logicResultDoc.dstPath);
@@ -514,7 +515,7 @@ describe("distributeDoc", () => {
         },
       };
 
-      await indexUtils.distributeDoc(logicResultDoc);
+      await indexUtils.distributeDoc(logicResultDoc, appVersion);
       expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
       expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
       const dstDocRef = db.doc(logicResultDoc.dstPath);
@@ -533,6 +534,7 @@ describe("distribute", () => {
   let dbDoc: admin.firestore.DocumentReference<admin.firestore.DocumentData>;
   const batch = BatchUtil.getInstance();
   jest.spyOn(BatchUtil, "getInstance").mockImplementation(() => batch);
+  const appVersion = "1.0.0";
 
   beforeEach(() => {
     dbDoc = ({
@@ -575,7 +577,7 @@ describe("distribute", () => {
       } as LogicResultDoc],
     ]]);
     initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfigs, validatorConfigs, [], patchLogicConfigs);
-    await indexUtils.distributeFnNonTransactional(userDocsByDstPath);
+    await indexUtils.distributeFnNonTransactional(userDocsByDstPath, appVersion);
 
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
@@ -604,7 +606,7 @@ describe("distribute", () => {
         dstPath: "/users/test-user-id/documents/test-doc-id",
       } as LogicResultDoc],
     ]]);
-    await indexUtils.distributeFnNonTransactional(userDocsByDstPath);
+    await indexUtils.distributeFnNonTransactional(userDocsByDstPath, appVersion);
 
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
     expect(admin.firestore().doc).toHaveBeenCalledWith("/users/test-user-id/documents/test-doc-id");
@@ -1809,6 +1811,7 @@ describe("runViewLogics", () => {
 
   it("should run view logics properly", async () => {
     const targetVersion = "2.9.0";
+    const appVersion = "1.0.0";
     const logicResult1: LogicResultDoc = {
       action: "merge" as LogicResultDocAction,
       priority: "normal",
@@ -1823,15 +1826,15 @@ describe("runViewLogics", () => {
     viewLogicFn1V2Point5.mockResolvedValue({});
     viewLogicFn2.mockResolvedValue({});
 
-    const results1 = await runViewLogics(logicResult1, targetVersion);
-    const results2 = await runViewLogics(logicResult2, targetVersion);
+    const results1 = await runViewLogics(logicResult1, targetVersion, appVersion);
+    const results2 = await runViewLogics(logicResult2, targetVersion, appVersion);
     const results = [...results1, ...results2];
 
     expect(viewLogicFn1V2Point5).toHaveBeenCalledTimes(2);
     expect(viewLogicFn1V2Point5.mock.calls[0][0]).toBe(logicResult1);
     expect(viewLogicFn1V2Point5.mock.calls[1][0]).toBe(logicResult2);
     expect(viewLogicFn2).toHaveBeenCalledTimes(1);
-    expect(viewLogicFn2).toHaveBeenCalledWith(logicResult2, targetVersion, undefined);
+    expect(viewLogicFn2).toHaveBeenCalledWith(logicResult2, targetVersion, appVersion, undefined);
     expect(results).toHaveLength(3);
   });
 });

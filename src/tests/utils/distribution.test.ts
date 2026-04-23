@@ -146,8 +146,8 @@ describe("onMessageForDistributionQueue", () => {
     } as CloudEvent<MessagePublishedData>;
     const result = await distribution.onMessageForDistributionQueue(event);
 
-    expect(distributeDocSpy).toHaveBeenCalledWith(doc1);
-    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith( targetVersion, [doc1]);
+    expect(distributeDocSpy).toHaveBeenCalledWith(doc1, appVersion);
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(targetVersion, appVersion, [doc1]);
     expect(queueRunPatchLogicsSpy).toHaveBeenCalledWith(appVersion, doc1.dstPath);
     expect(trackProcessedIdsMock).toHaveBeenCalledWith(FOR_DISTRIBUTION_TOPIC_NAME, event.id);
     expect(result).toEqual("Processed for distribution later");

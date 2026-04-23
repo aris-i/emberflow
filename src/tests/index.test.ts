@@ -849,12 +849,12 @@ describe("onFormSubmit", () => {
 
     expect(expandConsolidateAndGroupByDstPathMock).toHaveBeenNthCalledWith(2, highPriorityDocs);
     expect(indexutils.groupDocsByTargetDocPath).toHaveBeenNthCalledWith(1, highPriorityDstPathLogicDocsMap, docPath);
-    expect(indexutils.distributeFnNonTransactional).toHaveBeenNthCalledWith(1, highPriorityDocsByDocPath);
-    expect(indexutils.distributeFnNonTransactional).toHaveBeenNthCalledWith(2, highPriorityOtherDocsByDocPath);
+    expect(indexutils.distributeFnNonTransactional).toHaveBeenNthCalledWith(1, highPriorityDocsByDocPath, "4.0.0");
+    expect(indexutils.distributeFnNonTransactional).toHaveBeenNthCalledWith(2, highPriorityOtherDocsByDocPath, "4.0.0");
 
     expect(expandConsolidateAndGroupByDstPathMock).toHaveBeenNthCalledWith(3, [...normalPriorityDocs, ...additionalNormalPriorityDocs]);
     expect(indexutils.groupDocsByTargetDocPath).toHaveBeenNthCalledWith(2, normalPriorityDstPathLogicDocsMap, docPath);
-    expect(indexutils.distributeFnNonTransactional).toHaveBeenNthCalledWith(3, normalPriorityDocsByDocPath);
+    expect(indexutils.distributeFnNonTransactional).toHaveBeenNthCalledWith(3, normalPriorityDocsByDocPath, "4.0.0");
     expect(indexutils.distributeLater).toHaveBeenNthCalledWith(1, normalPriorityOtherDocsByDocPath, "4.0.0", "1.0.0");
 
     expect(expandConsolidateAndGroupByDstPathMock).toHaveBeenNthCalledWith(4, lowPriorityDocs);
@@ -877,6 +877,7 @@ describe("onFormSubmit", () => {
     // Should run views update using the target version
     expect(queueRunViewLogicsSpy).toHaveBeenCalledWith(
       "1.0.0",
+      "4.0.0",
       distributedLogicResultDocs,
     );
 
@@ -994,7 +995,7 @@ describe("onUserRegister", () => {
     expect(runTransactionSpy).toHaveBeenCalledTimes(1);
     expect(transactionSetMock).toHaveBeenCalledTimes(1);
     expect(customUserRegisterLogicFn).toHaveBeenCalled();
-    expect(distributeFnTransactionalSpy).toHaveBeenNthCalledWith(1, mockTxn, [customUserRegisterLogicResult]);
+    expect(distributeFnTransactionalSpy).toHaveBeenNthCalledWith(1, mockTxn, [customUserRegisterLogicResult], "999.9.9");
     expect(saveMetricExecution).toHaveBeenNthCalledWith(1, [
       {name: "onUserRegister", execTime: expect.any(Number)},
       {name: "customUserRegisterLogic", execTime: expect.any(Number)},
