@@ -229,6 +229,7 @@ describe("createViewLogicFn", () => {
   });
 
   const targetVersion = "1.0.0";
+  const appVersion = "1.0.0";
 
   it("should log error document does not have @id", async () => {
     jest.spyOn(console, "error").mockImplementation();
@@ -242,7 +243,7 @@ describe("createViewLogicFn", () => {
       },
       priority: "normal",
     };
-    const result = await logicFn[1](logicResultDoc, targetVersion);
+    const result = await logicFn[1](logicResultDoc, targetVersion, appVersion);
     expect(result.documents.length).toEqual(0);
     expect(console.error).toHaveBeenCalledWith("Document does not have an @id attribute");
   });
@@ -260,7 +261,7 @@ describe("createViewLogicFn", () => {
       },
       priority: "normal",
     };
-    const result = await logicFn[1](logicResultDoc, targetVersion);
+    const result = await logicFn[1](logicResultDoc, targetVersion, appVersion);
     expect(result.documents.length).toEqual(0);
     expect(console.error).toHaveBeenCalledWith("srcPath should not have a placeholder");
   });
@@ -268,7 +269,7 @@ describe("createViewLogicFn", () => {
   it("should create @views doc", async () => {
     let logicFn = viewLogics.createViewLogicFn(vd1);
 
-    let result = await logicFn[1](createLogicResultDoc, targetVersion);
+    let result = await logicFn[1](createLogicResultDoc, targetVersion, appVersion);
     expect(result.documents.length).toEqual(1);
     expect(result.documents[0]).toHaveProperty("action", "merge");
     expect(result.documents[0]).toHaveProperty("dstPath", "users/1234/@views/users+1234");
@@ -280,7 +281,7 @@ describe("createViewLogicFn", () => {
 
     logicFn = viewLogics.createViewLogicFn(vd2);
 
-    result = await logicFn[1]({...createLogicResultDoc, dstPath: "users/1234/posts/987#followers[1234]"}, targetVersion);
+    result = await logicFn[1]({...createLogicResultDoc, dstPath: "users/1234/posts/987#followers[1234]"}, targetVersion, appVersion);
     expect(result.documents.length).toEqual(2);
     expect(result.documents[0]).toHaveProperty("action", "merge");
     expect(result.documents[0])
@@ -299,7 +300,7 @@ describe("createViewLogicFn", () => {
 
     logicFn = viewLogics.createViewLogicFn(vd3);
 
-    result = await logicFn[1]({...createLogicResultDoc, dstPath: "servers/123#createdBy"}, targetVersion);
+    result = await logicFn[1]({...createLogicResultDoc, dstPath: "servers/123#createdBy"}, targetVersion, appVersion);
     expect(result.documents.length).toEqual(1);
     expect(result.documents[0]).toHaveProperty("action", "merge");
     expect(result.documents[0])
@@ -315,7 +316,7 @@ describe("createViewLogicFn", () => {
   it("should delete @views doc", async () => {
     let logicFn = viewLogics.createViewLogicFn(vd1);
 
-    let result = await logicFn[1](deleteLogicResultDoc, targetVersion);
+    let result = await logicFn[1](deleteLogicResultDoc, targetVersion, appVersion);
     expect(result.documents.length).toEqual(1);
     expect(result.documents[0]).toHaveProperty("action", "delete");
     expect(result.documents[0]).toHaveProperty("dstPath", "users/1234/@views/users+1234");
@@ -323,7 +324,7 @@ describe("createViewLogicFn", () => {
     logicFn = viewLogics.createViewLogicFn(vd2);
 
     result = await logicFn[1]({...deleteLogicResultDoc, dstPath: "users/1234/posts/987#followers[1234]",
-    }, targetVersion);
+    }, targetVersion, appVersion);
     expect(result.documents.length).toEqual(2);
     expect(result.documents[0]).toHaveProperty("action", "delete");
     expect(result.documents[0])
@@ -336,7 +337,7 @@ describe("createViewLogicFn", () => {
 
     logicFn = viewLogics.createViewLogicFn(vd3);
 
-    result = await logicFn[1]({...deleteLogicResultDoc, dstPath: "servers/123#createdBy"}, targetVersion);
+    result = await logicFn[1]({...deleteLogicResultDoc, dstPath: "servers/123#createdBy"}, targetVersion, appVersion);
     expect(result.documents.length).toEqual(1);
     expect(result.documents[0]).toHaveProperty("action", "delete");
     expect(result.documents[0])
@@ -359,7 +360,7 @@ describe("createViewLogicFn", () => {
     const logicFn = viewLogics.createViewLogicFn(vd1);
 
     // Call the logic function with the test action
-    const result = await logicFn[0](mergeLogicResultDoc, targetVersion);
+    const result = await logicFn[0](mergeLogicResultDoc, targetVersion, appVersion);
 
     expect(colGetMock).toHaveBeenCalledTimes(1);
     expect(docUpdateMock).not.toHaveBeenCalled();
@@ -389,7 +390,7 @@ describe("createViewLogicFn", () => {
     const logicFn = viewLogics.createViewLogicFn(vd1);
 
     // Call the logic function with the test action
-    const result = await logicFn[0](newDeleteLogicResultDoc, targetVersion);
+    const result = await logicFn[0](newDeleteLogicResultDoc, targetVersion, appVersion);
 
     expect(colGetMock).toHaveBeenCalledTimes(1);
     expect(docUpdateMock).not.toHaveBeenCalled();
@@ -430,7 +431,7 @@ describe("createViewLogicFn", () => {
     const logicFn = viewLogics.createViewLogicFn(vd1);
 
     // Call the logic function with the test action
-    const result = await logicFn[0](mergeLogicResultDoc, targetVersion);
+    const result = await logicFn[0](mergeLogicResultDoc, targetVersion, appVersion);
 
     expect(colGetMock).toHaveBeenCalledTimes(1);
     expect(docSpy).toHaveBeenCalledWith("users/1234/@views/users+456+friends+1234");
@@ -576,7 +577,7 @@ describe("createViewLogicFn", () => {
     const logicFn = viewLogics.createViewLogicFn(vd1);
 
     // Call the logic function with the test action
-    const result = await logicFn[0](mergeLogicResultDoc, targetVersion);
+    const result = await logicFn[0](mergeLogicResultDoc, targetVersion, appVersion);
 
     expect(result).toBeDefined();
     expect(result.documents).toBeDefined();
@@ -598,7 +599,7 @@ describe("createViewLogicFn", () => {
     const logicFn2 = viewLogics.createViewLogicFn(vd2);
 
     // Call the logic function with the test action
-    const result2 = await logicFn2[0](mergeLogicResultDoc, targetVersion);
+    const result2 = await logicFn2[0](mergeLogicResultDoc, targetVersion, appVersion);
 
     // Add your expectations here, e.g., result.documents should have the correct properties and values
     expect(result2).toBeDefined();
@@ -625,7 +626,7 @@ describe("createViewLogicFn", () => {
     expect(document).toHaveProperty("dstPath", "users/890/posts/654+followers[1234]");
     expect(document.doc).toEqual({"name": "John Doe", "@updatedByViewDefinitionAt": expect.any(Timestamp)});
 
-    const resultDelete = await logicFn[0](deleteLogicResultDoc, targetVersion);
+    const resultDelete = await logicFn[0](deleteLogicResultDoc, targetVersion, appVersion);
 
     expect(resultDelete).toBeDefined();
     expect(resultDelete.documents).toBeDefined();
@@ -643,7 +644,7 @@ describe("createViewLogicFn", () => {
     const logicFn3 = viewLogics.createViewLogicFn(vd3);
 
     // Call the logic function with the test action
-    const result3 = await logicFn3[0](userLogicResultDoc, targetVersion);
+    const result3 = await logicFn3[0](userLogicResultDoc, targetVersion, appVersion);
 
     expect(result3).toBeDefined();
     expect(result3.documents).toBeDefined();
@@ -683,7 +684,7 @@ describe("createViewLogicFn", () => {
       },
       priority: "normal",
     };
-    const result = await logicFn[1](logicResultDoc, targetVersion);
+    const result = await logicFn[1](logicResultDoc, targetVersion, appVersion);
 
     expect(result.documents[0].dstPath).toBe("topics/topic21/orders/order123/menus/menuItem789/@views/topics+topic21+prepAreas+prepArea2+menus+prepAreaMenuItem34");
   });
@@ -710,7 +711,7 @@ describe("createViewLogicFn", () => {
         "topicId": "topic22",
       },
     };
-    const result = await logicFn[1](logicResultDoc, targetVersion);
+    const result = await logicFn[1](logicResultDoc, targetVersion, appVersion);
 
     expect(result.documents[0].dstPath).toBe("topics/topic22/prepAreas/prepArea2/menus/menuItem789/@views/topics+topic21+prepAreas+prepArea2+menus+prepAreaMenuItem34+orderItem");
   });
@@ -736,7 +737,7 @@ describe("createViewLogicFn", () => {
         "@id": "menuItem789",
       },
     };
-    const result = await logicFn[1](logicResultDoc, targetVersion);
+    const result = await logicFn[1](logicResultDoc, targetVersion, appVersion);
     expect(result.status).toBe("error");
     expect(result.message).toBe("srcPath should not have a placeholder");
   });
@@ -871,7 +872,7 @@ describe("createViewLogicFn", () => {
 
     const logicFn = viewLogics.createViewLogicFn(vd1);
 
-    const result = await logicFn[0](mergeLogicResultDoc, targetVersion);
+    const result = await logicFn[0](mergeLogicResultDoc, targetVersion, appVersion);
 
     expect(result).toBeDefined();
     expect(result.documents).toBeDefined();
@@ -923,7 +924,7 @@ describe("createViewLogicFn", () => {
 
     const logicFn = viewLogics.createViewLogicFn(vd1);
 
-    const result = await logicFn[0](mergeLogicResultDoc, targetVersion);
+    const result = await logicFn[0](mergeLogicResultDoc, targetVersion, appVersion);
 
     expect(result).toBeDefined();
     expect(result.documents).toBeDefined();
@@ -983,14 +984,14 @@ describe("createViewLogicFn", () => {
 
     const logicFn = viewLogics.createViewLogicFn(vd1);
 
-    const result = await logicFn[0](mergeLogicResultDoc, targetVersion);
+    const result = await logicFn[0](mergeLogicResultDoc, targetVersion, appVersion);
 
     expect(result).toBeDefined();
     expect(result.documents).toBeDefined();
     expect(result.documents.length).toEqual(50);
 
     expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(1);
-    expect(queueRunViewLogicsSpy).toHaveBeenNthCalledWith(1, targetVersion, [mergeLogicResultDoc], "50thViewId");
+    expect(queueRunViewLogicsSpy).toHaveBeenNthCalledWith(1, targetVersion, appVersion, [mergeLogicResultDoc], "50thViewId");
   });
 
   it("should be able to process succeeding batches of @views", async () => {
@@ -1075,7 +1076,7 @@ describe("createViewLogicFn", () => {
       it("should return finished logicResult with 2 documents", async () => {
         jest.spyOn(pathsMockable, "doesPathExists").mockResolvedValue(false);
 
-        const result = await logicFn[1](logicResultDoc, targetVersion);
+        const result = await logicFn[1](logicResultDoc, targetVersion, appVersion);
         expect(result.name).toBe("menuItemIngredient Dst-to-Src");
         expect(result.status).toBe("finished");
         expect(result.timeFinished).toBe(undefined);
@@ -1084,7 +1085,7 @@ describe("createViewLogicFn", () => {
       it("should create @syncCreateView in global collection", async () => {
         jest.spyOn(pathsMockable, "doesPathExists").mockResolvedValue(false);
 
-        const result = await logicFn[1](logicResultDoc, targetVersion);
+        const result = await logicFn[1](logicResultDoc, targetVersion, appVersion);
         expect(result.documents[1].dstPath).toBe("@syncCreateViews/topics+topic21+menus+menu1+ingredients");
         expect(result.documents[1].doc).toEqual({
           "destEntity": "menuItemIngredient",
@@ -1102,7 +1103,7 @@ describe("createViewLogicFn", () => {
         jest.spyOn(pathsMockable, "doesPathExists").mockResolvedValue(false);
         const errorSpy = jest.spyOn(console, "error").mockImplementation();
 
-        const result = await logicFn[1](invalidLogicResultDoc, targetVersion);
+        const result = await logicFn[1](invalidLogicResultDoc, targetVersion, appVersion);
         expect(errorSpy).toHaveBeenCalledWith("invalid syncCreate dstPath, topics/topic21/menus/menu1#ingredients");
         expect(result.documents.length).toEqual(1);
         expect(result.documents[0].dstPath).not.toBe("@syncCreateViews/topics+topic21+menus+menu1+ingredients");
@@ -1112,7 +1113,7 @@ describe("createViewLogicFn", () => {
         const infoSpy = jest.spyOn(console, "info").mockImplementation();
         jest.spyOn(pathsMockable, "doesPathExists").mockResolvedValue(true);
 
-        const result = await logicFn[1](logicResultDoc, targetVersion);
+        const result = await logicFn[1](logicResultDoc, targetVersion, appVersion);
         expect(infoSpy).toHaveBeenCalledWith("@syncCreateViews/topics+topic21+menus+menu1+ingredients already exists — skipping creation.");
         expect(result.documents.length).toEqual(1);
         expect(result.documents[0].dstPath).not.toBe("@syncCreateViews/topics+topic21+menus+menu1+ingredients");
@@ -1173,7 +1174,7 @@ describe("createViewLogicFn", () => {
       pathsMockable.doesPathExists = doesPathExistsMock;
 
       it("should auto create source document if there is a matching path in @syncCreateViews", async () => {
-        const result = await logicFn[0](logicResultDoc, targetVersion);
+        const result = await logicFn[0](logicResultDoc, targetVersion, appVersion);
         expect(result.documents.length).toBe(2);
 
         expect(result.documents[0].dstPath).toBe(`${dstPath1}/ingredient1`);
@@ -1181,7 +1182,7 @@ describe("createViewLogicFn", () => {
       });
 
       it("should manually create @view document for each newly created views", async () => {
-        const result = await logicFn[0](logicResultDoc, targetVersion);
+        const result = await logicFn[0](logicResultDoc, targetVersion, appVersion);
 
         const atViewsCollectionPath = `${srcCollection}/ingredient1/@views`;
         expect(result.documents[1].dstPath).toBe(
@@ -1203,7 +1204,7 @@ describe("createViewLogicFn", () => {
           version: "1.0.0",
         });
 
-        const result = await logicFnPropView[0](logicResultDoc, targetVersion);
+        const result = await logicFnPropView[0](logicResultDoc, targetVersion, appVersion);
 
         expect(result.documents.length).toBe(3);
 
@@ -1233,6 +1234,7 @@ describe("queueRunViewLogics", () => {
     ]));
   });
   const targetVersion = "1.0.0";
+  const appVersion = "1.0.0";
 
   it("should queue docs to run view logics", async () => {
     const doc1: LogicResultDoc = {
@@ -1241,10 +1243,10 @@ describe("queueRunViewLogics", () => {
       doc: {name: "test-doc-name-merge"},
       dstPath: "users/test-user-id/documents/doc1",
     };
-    await viewLogics.queueRunViewLogics(targetVersion, [doc1]);
+    await viewLogics.queueRunViewLogics(targetVersion, appVersion, [doc1]);
 
     expect(findMatchingViewLogicsSpy).toHaveBeenCalled();
-    expect(publishMessageSpy).toHaveBeenCalledWith({json: {"doc": doc1, "targetVersion": targetVersion}});
+    expect(publishMessageSpy).toHaveBeenCalledWith({json: {"doc": doc1, targetVersion, appVersion}});
   });
 });
 
@@ -1318,12 +1320,15 @@ describe("onMessageViewLogicsQueue", () => {
     doc: {name: "test-doc-name-updated"},
     dstPath: `users/${userId}`,
   };
+  const targetVersion = "1.0.0";
+  const appVersion = "1.0.0";
   const event = {
     data: {
       message: {
         json: {
           doc: doc1,
-          targetVersion: "1.0.0",
+          targetVersion,
+          appVersion,
         },
       },
     },
@@ -1354,7 +1359,7 @@ describe("onMessageViewLogicsQueue", () => {
     };
     const result = await viewLogics.onMessageViewLogicsQueue(event);
 
-    expect(runViewLogicsSpy).toHaveBeenCalledWith(doc1, "1.0.0", undefined);
+    expect(runViewLogicsSpy).toHaveBeenCalledWith(doc1, targetVersion, appVersion, undefined);
     const expectedMetricExecutions = convertLogicResultsToMetricExecutions([...viewLogicsResult, distributeFnLogicResult]);
     expect(createMetricExecutionSpy).toHaveBeenCalledWith(expectedMetricExecutions);
     expect(expandConsolidateAndGroupByDstPathSpy).toHaveBeenCalled();
@@ -1362,7 +1367,7 @@ describe("onMessageViewLogicsQueue", () => {
     // Since the array is cleared in the function, we can't check its content directly if it's the same reference
     // But we know it was called with the flattened documents
     expect(calledWith).toBeDefined();
-    expect(distributeSpy).toHaveBeenCalledWith(expandConsolidateResult, true);
+    expect(distributeSpy).toHaveBeenCalledWith(expandConsolidateResult, appVersion, true);
     expect(trackProcessedIdsMock).toHaveBeenCalledWith(VIEW_LOGICS_TOPIC_NAME, event.id);
     expect(result).toEqual("Processed view logics");
   });

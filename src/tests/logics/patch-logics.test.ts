@@ -438,7 +438,7 @@ describe("runPatchLogics", () => {
         transactional: true,
         execTime: expect.any(Number),
       },
-    ]);
+    ], appVersion);
     expect(distributeFnTransactionalSpy).toHaveBeenNthCalledWith(2, txnResult2, [
       {
         ...userLogicFn2p5Result,
@@ -456,7 +456,7 @@ describe("runPatchLogics", () => {
         execTime: expect.any(Number),
         transactional: true,
       },
-    ]);
+    ], appVersion);
     expect(queueRunViewLogicsSpy).toHaveBeenCalledTimes(2);
   });
 

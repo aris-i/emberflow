@@ -51,9 +51,9 @@ export async function onMessageForDistributionQueue(event: CloudEvent<MessagePub
 
     const {priority = "normal"} = logicResultDoc;
     if (priority === "high") {
-      await distributeDoc(logicResultDoc);
+      await distributeDoc(logicResultDoc, appVersion);
       if (findMatchingViewLogics(logicResultDoc, targetVersion)?.size) {
-        await queueRunViewLogics(targetVersion, [logicResultDoc]);
+        await queueRunViewLogics(targetVersion, appVersion, [logicResultDoc]);
       }
       const {basePath} = getDestPropAndDestPropId(logicResultDoc.dstPath);
       const {entity} = findMatchingDocPathRegex(basePath);
