@@ -56,6 +56,7 @@ export const _mockable = {
 
 export async function distributeDoc(
   logicResultDoc: LogicResultDoc,
+  appVersion: string,
   batch?: BatchUtil,
   txn?: Transaction) {
   async function _delete(dstDocRef: DocumentReference) {
@@ -153,6 +154,11 @@ export async function distributeDoc(
               });
             if (matchingPatches && matchingPatches.length > 0) {
               doc["@dataVersion"] = matchingPatches.reduce((max, patch) => {
+                // skip if patch.version > appVersion
+                if (versionCompare(patch.version, appVersion) > 0) {
+                  return max;
+                }
+
                 return versionCompare(patch.version, max) > 0 ? patch.version : max;
               }, "0.0.0");
             }
@@ -181,7 +187,7 @@ export async function distributeDoc(
   }
 }
 
-export async function distributeFnNonTransactional(docsByDstPath: Map<string, LogicResultDoc[]>, skipReturn = false) {
+export async function distributeFnNonTransactional(docsByDstPath: Map<string, LogicResultDoc[]>, appVersion: string, skipReturn = false) {
   const distributedDocs: LogicResultDoc[] = [];
   const batch = BatchUtil.getInstance();
   for (const dstPath of Array.from(docsByDstPath.keys()).sort()) {
@@ -192,7 +198,7 @@ export async function distributeFnNonTransactional(docsByDstPath: Map<string, Lo
       if (!skipReturn) {
         distributedDocs.push(resultDoc);
       }
-      await distributeDoc(resultDoc, batch);
+      await distributeDoc(resultDoc, appVersion, batch);
     }
   }
 
@@ -672,6 +678,7 @@ export async function cleanMetricComputations(_event: ScheduledEvent) {
 export async function distributeFnTransactional(
   txn: Transaction,
   logicResults: LogicResult[],
+  appVersion: string,
 ): Promise<LogicResultDoc[]> {
   const distributedLogicResultDocs: LogicResultDoc[] = [];
 
@@ -688,10 +695,9 @@ export async function distributeFnTransactional(
   for (const [_, logicDocs] of transactionalDstPathLogicDocsMap) {
     for (const logicDoc of logicDocs) {
       distributedLogicResultDocs.push(logicDoc);
-      await distributeDoc(logicDoc, undefined, txn);
+      await distributeDoc(logicDoc, appVersion, undefined, txn);
     }
   }
-
 
   return distributedLogicResultDocs;
 }

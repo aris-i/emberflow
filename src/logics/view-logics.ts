@@ -78,7 +78,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     return `${srcPath}/@views/${viewDocId}`;
   }
 
-  const srcToDstLogicFn: ViewLogicFn = async (logicResultDoc, targetVersion, lastProcessedId) => {
+  const srcToDstLogicFn: ViewLogicFn = async (logicResultDoc, targetVersion, appVersion, lastProcessedId) => {
     const {
       doc: srcDoc,
       instructions: srcInstructions,
@@ -287,7 +287,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
 
     if (atViewsDocs.length >= limitPerBatch) {
       const newLastProcessedId = atViewsDocs[atViewsDocs.length - 1].id;
-      await exports.queueRunViewLogics(targetVersion, [logicResultDoc], newLastProcessedId);
+      await exports.queueRunViewLogics(targetVersion, appVersion, [logicResultDoc], newLastProcessedId);
     }
 
     await syncAtViewsSrcPropsIfDifferentFromViewDefinition();
@@ -437,7 +437,11 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
 }
 
 export async function queueRunViewLogics(
-  targetVersion: string, logicResultDocs: LogicResultDoc[], lastProcessedId?: string) {
+  targetVersion: string,
+  appVersion: string,
+  logicResultDocs: LogicResultDoc[],
+  lastProcessedId?: string,
+) {
   try {
     for (const logicResultDoc of logicResultDocs) {
       if (!findMatchingViewLogics(logicResultDoc, targetVersion)?.size) {
@@ -465,7 +469,7 @@ export async function queueRunViewLogics(
           }
         }
         await VIEW_LOGICS_TOPIC.publishMessage({json: {
-          doc: logicResultDoc, targetVersion, lastProcessedId,
+          doc: logicResultDoc, appVersion, targetVersion, lastProcessedId,
         }});
       }
     }
@@ -479,7 +483,12 @@ export async function queueRunViewLogics(
   }
 }
 
-export async function runViewLogics(logicResultDoc: LogicResultDoc, targetVersion: string, lastProcessedId?: string): Promise<LogicResult[]> {
+export async function runViewLogics(
+  logicResultDoc: LogicResultDoc,
+  targetVersion: string,
+  appVersion: string,
+  lastProcessedId?: string,
+): Promise<LogicResult[]> {
   const matchingLogics = findMatchingViewLogics(logicResultDoc, targetVersion);
   if (!matchingLogics || matchingLogics.size === 0) {
     return [];
@@ -489,7 +498,7 @@ export async function runViewLogics(logicResultDoc: LogicResultDoc, targetVersio
   for (const logic of matchingLogics.values()) {
     const start = performance.now();
     try {
-      const viewLogicResult = await logic.viewLogicFn(logicResultDoc, targetVersion, lastProcessedId);
+      const viewLogicResult = await logic.viewLogicFn(logicResultDoc, targetVersion, appVersion, lastProcessedId);
       const end = performance.now();
       const execTime = end - start;
       logicResults.push({
@@ -521,12 +530,12 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
   }
 
   try {
-    const {targetVersion, doc, lastProcessedId} = event.data.message.json;
+    const {appVersion, targetVersion, doc, lastProcessedId} = event.data.message.json;
     const logicResultDoc = reviveDateAndTimestamp(doc) as LogicResultDoc;
 
     logMemoryUsage("Before Running View Logics");
     const start = performance.now();
-    const viewLogicResults: LogicResult[] = await exports.runViewLogics(logicResultDoc, targetVersion, lastProcessedId);
+    const viewLogicResults: LogicResult[] = await exports.runViewLogics(logicResultDoc, targetVersion, appVersion, lastProcessedId);
     const end = performance.now();
     logMemoryUsage("After Running View Logics");
     const metricExecutions = convertLogicResultsToMetricExecutions([...viewLogicResults]);
@@ -549,7 +558,7 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
     const dstPathViewLogicDocsMap: Map<string, LogicResultDoc[]> = await expandConsolidateAndGroupByDstPath(viewLogicResultDocs);
     logMemoryUsage("After Expanding and Grouping View Logic Results");
 
-    await distributeFnNonTransactional(dstPathViewLogicDocsMap, true);
+    await distributeFnNonTransactional(dstPathViewLogicDocsMap, appVersion, true);
     logMemoryUsage("After Distributing View Logic Results");
 
     await pubsubUtils.trackProcessedIds(VIEW_LOGICS_TOPIC_NAME, event.id);

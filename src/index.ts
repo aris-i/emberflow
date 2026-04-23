@@ -530,7 +530,8 @@ export async function onFormSubmit(
       logMemoryUsage(`${formId}: After Saving Logic Logics`);
 
       const distributeTransactionalLogicResultsStart = performance.now();
-      const transactionalLogicResults = await distributeFnTransactional(txn, runBusinessLogicStatus.logicResults);
+      const transactionalLogicResults =
+        await distributeFnTransactional(txn, runBusinessLogicStatus.logicResults, appVersion);
       for (const doc of transactionalLogicResults) {
         if (findMatchingViewLogics(doc, targetVersion)?.size) {
           docsForViewLogics.push(doc);
@@ -596,7 +597,7 @@ export async function onFormSubmit(
 
     await formRef.update({"@status": "finished"});
 
-    await queueRunViewLogics(targetVersion, docsForViewLogics);
+    await queueRunViewLogics(targetVersion, appVersion, docsForViewLogics);
     logMemoryUsage(`${formId}: After Saving Transactional Logic Logics`);
 
     await queueRunPatchLogics(
@@ -677,8 +678,8 @@ async function distributeNonTransactionalLogicResults(
   } = groupDocsByTargetDocPath(highPriorityDstPathLogicDocsMap, docPath);
 
   const distributedHighPriorityDocs = [
-    ...await distributeFnNonTransactional(highPriorityDocsByDocPath),
-    ...await distributeFnNonTransactional(highPriorityOtherDocsByDocPath),
+    ...await distributeFnNonTransactional(highPriorityDocsByDocPath, appVersion),
+    ...await distributeFnNonTransactional(highPriorityOtherDocsByDocPath, appVersion),
   ];
   for (const doc of distributedHighPriorityDocs) {
     if (findMatchingViewLogics(doc, targetVersion)?.size) {
@@ -705,7 +706,8 @@ async function distributeNonTransactionalLogicResults(
     otherDocsByDocPath: normalPriorityOtherDocsByDocPath,
   } = groupDocsByTargetDocPath(normalPriorityDstPathLogicDocsMap, docPath);
 
-  const distributedNormalPriorityDocs = await distributeFnNonTransactional(normalPriorityDocsByDocPath);
+  const distributedNormalPriorityDocs =
+    await distributeFnNonTransactional(normalPriorityDocsByDocPath, appVersion);
   for (const doc of distributedNormalPriorityDocs) {
     if (findMatchingViewLogics(doc, targetVersion)?.size) {
       docsForViewLogics.push(doc);
@@ -801,7 +803,7 @@ export const onUserRegister = async (user: UserRecord) => {
     const customUserRegisterFnLogicResult = await customUserRegisterFn(txnGet, user);
     const logicEnd = performance.now();
     console.debug("Distributing logic results");
-    await distributeFnTransactional(txn, [customUserRegisterFnLogicResult]);
+    await distributeFnTransactional(txn, [customUserRegisterFnLogicResult], "999.9.9");
     console.debug("Finished custom user register function");
 
     return {
