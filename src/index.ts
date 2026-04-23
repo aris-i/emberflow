@@ -803,7 +803,7 @@ export const onUserRegister = async (user: UserRecord) => {
     const customUserRegisterFnLogicResult = await customUserRegisterFn(txnGet, user);
     const logicEnd = performance.now();
     console.debug("Distributing logic results");
-    await distributeFnTransactional(txn, [customUserRegisterFnLogicResult], "999.9.9");
+    await distributeFnTransactional(txn, [customUserRegisterFnLogicResult], "no_app_version");
     console.debug("Finished custom user register function");
 
     return {

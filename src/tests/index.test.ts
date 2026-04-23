@@ -995,7 +995,7 @@ describe("onUserRegister", () => {
     expect(runTransactionSpy).toHaveBeenCalledTimes(1);
     expect(transactionSetMock).toHaveBeenCalledTimes(1);
     expect(customUserRegisterLogicFn).toHaveBeenCalled();
-    expect(distributeFnTransactionalSpy).toHaveBeenNthCalledWith(1, mockTxn, [customUserRegisterLogicResult], "999.9.9");
+    expect(distributeFnTransactionalSpy).toHaveBeenNthCalledWith(1, mockTxn, [customUserRegisterLogicResult], "no_app_version");
     expect(saveMetricExecution).toHaveBeenNthCalledWith(1, [
       {name: "onUserRegister", execTime: expect.any(Number)},
       {name: "customUserRegisterLogic", execTime: expect.any(Number)},

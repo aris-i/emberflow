@@ -155,7 +155,7 @@ export async function distributeDoc(
             if (matchingPatches && matchingPatches.length > 0) {
               doc["@dataVersion"] = matchingPatches.reduce((max, patch) => {
                 // skip if patch.version > appVersion
-                if (versionCompare(patch.version, appVersion) > 0) {
+                if (appVersion !== "no_app_version" && versionCompare(patch.version, appVersion) > 0) {
                   return max;
                 }
 
