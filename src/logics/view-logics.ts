@@ -154,7 +154,10 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
           }
 
           // If destProp only and doesn't exist, delete dstPath and skip creating logicDoc
-          if (!viewDocData?.[viewDestProp]) {
+          const viewObj = viewDocData?.[viewDestProp];
+          const {"@id": viewObjId} = viewObj || {};
+          const sourceDocId = atViewsDoc.ref.parent.parent?.id;
+          if (!viewObj || viewObjId && sourceDocId && viewObjId !== sourceDocId) {
             viewLogicResultDocs.push({
               action: "delete",
               dstPath: atViewsDoc.ref.path,

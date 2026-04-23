@@ -901,6 +901,11 @@ describe("createViewLogicFn", () => {
         id: "users+456+friends+1234+prop1",
         ref: {
           path: "users/1234/@views/users+456+friends+1234",
+          parent: {
+            parent: {
+              id: "1234",
+            },
+          },
         },
         data: () => {
           return {
@@ -912,6 +917,11 @@ describe("createViewLogicFn", () => {
         id: "users+789+friends+1234+prop1[propId1]",
         ref: {
           path: "users/1234/@views/users+789+friends+1234",
+          parent: {
+            parent: {
+              id: "1234",
+            },
+          },
         },
         data: () => {
           return {
@@ -937,6 +947,64 @@ describe("createViewLogicFn", () => {
     document = result.documents[1];
     expect(document).toHaveProperty("action", "delete");
     expect(document).toHaveProperty("dstPath", "users/1234/@views/users+789+friends+1234");
+  });
+
+  it("should create delete logicDoc if viewDoc path destProp id is not equal to source id", async () => {
+    docGetMock.mockResolvedValue({
+      data: () => {
+        return {
+          "@viewsAlreadyBuilt+friend": false,
+        };
+      },
+      exists: true,
+    });
+
+    dbGetAllMock = jest.fn().mockImplementation((...refs: any[]) => {
+      return Promise.resolve(refs.map((ref: any) => ({
+        exists: true,
+        data: () => ({
+          "prop1": {
+            "@id": "5678",
+            "age": 20,
+            "name": "John Doe",
+          },
+        }),
+        ref: ref,
+      })));
+    });
+    jest.spyOn(admin.firestore(), "getAll").mockImplementation(dbGetAllMock);
+
+    colGetMock.mockResolvedValueOnce({
+      docs: [{
+        id: "users+456+friends+1234+prop1",
+        ref: {
+          path: "users/1234/@views/users+456+friends+1234",
+          parent: {
+            parent: {
+              id: "1234",
+            },
+          },
+        },
+        data: () => {
+          return {
+            "path": "users/456/friends/1234#prop1",
+            "srcProps": ["age", "avatar", "name"],
+          };
+        },
+      }],
+    });
+
+    const logicFn = viewLogics.createViewLogicFn(vd1);
+
+    const result = await logicFn[0](mergeLogicResultDoc, targetVersion, appVersion);
+
+    expect(result).toBeDefined();
+    expect(result.documents).toBeDefined();
+    expect(result.documents.length).toEqual(1);
+
+    const document = result.documents[0];
+    expect(document).toHaveProperty("action", "delete");
+    expect(document).toHaveProperty("dstPath", "users/1234/@views/users+456+friends+1234");
   });
 
   it("should only execute 50 @views per batch, then queue the succeeding ones", async () => {
@@ -1018,6 +1086,11 @@ describe("createViewLogicFn", () => {
         id: "users+456+friends+1234+prop1",
         ref: {
           path: "users/1234/@views/users+456+friends+1234",
+          parent: {
+            parent: {
+              id: "1234",
+            },
+          },
         },
         data: () => {
           return {
@@ -1029,6 +1102,11 @@ describe("createViewLogicFn", () => {
         id: "users+789+friends+1234+prop1[propId1]",
         ref: {
           path: "users/1234/@views/users+789+friends+1234",
+          parent: {
+            parent: {
+              id: "1234",
+            },
+          },
         },
         data: () => {
           return {
