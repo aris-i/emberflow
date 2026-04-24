@@ -1,10 +1,10 @@
 import {FormData} from "emberflow-admin-client/lib/types";
 import {db, rtdb, SUBMIT_FORM_TOPIC, SUBMIT_FORM_TOPIC_NAME} from "../index";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
-import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
+import type {MessagePublishedData} from "firebase-functions/v2/pubsub";
 import {submitForm} from "emberflow-admin-client/lib";
 import {pubsubUtils} from "./pubsub";
-import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
+import type {ScheduledEvent} from "firebase-functions/v2/scheduler";
 import {deleteCollection} from "./misc";
 
 export async function queueSubmitForm(formData: FormData) {

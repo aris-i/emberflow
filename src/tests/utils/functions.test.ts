@@ -1,7 +1,7 @@
 import {debounce} from "../../utils/functions";
 import {Instructions} from "../../types";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
-import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
+import type {MessagePublishedData} from "firebase-functions/v2/pubsub";
 const isProcessedMock = jest.fn().mockResolvedValue(false);
 const trackProcessedIdsMock = jest.fn().mockResolvedValue({});
 import {instructionsReducer} from "../../utils/distribution";

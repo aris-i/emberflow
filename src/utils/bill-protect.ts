@@ -1,10 +1,10 @@
 import {admin, db, onFormSubmit, projectConfig} from "../index";
 import {CloudBillingClient} from "@google-cloud/billing";
 import {firestore} from "firebase-admin";
-import {Message} from "firebase-functions/lib/v1/providers/pubsub";
 import {findMatchingDocPathRegex, getDestPropAndDestPropId} from "./paths";
 import {BatchUtil} from "../utils/batch";
-import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
+import {Message} from "firebase-functions/v1/pubsub";
+import type {ScheduledEvent} from "firebase-functions/v2/scheduler";
 
 export const billing = new CloudBillingClient();
 

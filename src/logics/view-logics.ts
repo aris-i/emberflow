@@ -2,7 +2,7 @@ import {LogicResult, LogicResultDoc, MetricExecution, ViewDefinition, ViewLogicC
 import {db, docPaths, docPathsRegex, VIEW_LOGICS_TOPIC, VIEW_LOGICS_TOPIC_NAME} from "../index";
 import * as admin from "firebase-admin";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
-import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
+import type {MessagePublishedData} from "firebase-functions/v2/pubsub";
 import {
   _mockable,
   convertLogicResultsToMetricExecutions, distributeFnNonTransactional, expandConsolidateAndGroupByDstPath,

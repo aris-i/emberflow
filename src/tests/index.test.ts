@@ -18,7 +18,7 @@ import {
 import * as functions from "firebase-functions";
 import {dbStructure, Entity} from "../sample-custom/db-structure";
 import {Firestore} from "firebase-admin/firestore";
-import {DatabaseEvent, DataSnapshot} from "firebase-functions/lib/v2/providers/database";
+import type {DatabaseEvent, DataSnapshot} from "firebase-functions/v2/database";
 import * as paths from "../utils/paths";
 import * as adminClient from "emberflow-admin-client/lib";
 import DocumentReference = firestore.DocumentReference;

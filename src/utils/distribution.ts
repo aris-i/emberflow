@@ -12,7 +12,7 @@ import {
   INSTRUCTIONS_TOPIC_NAME,
 } from "../index";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
-import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
+import type {MessagePublishedData} from "firebase-functions/v2/pubsub";
 import {distributeDoc} from "../index-utils";
 import {firestore} from "firebase-admin";
 import {pubsubUtils} from "./pubsub";

@@ -8,7 +8,7 @@ import {
   computeElapseTime,
 } from "../../utils/bill-protect";
 import {db} from "../../index";
-import {DatabaseEvent, DataSnapshot} from "firebase-functions/lib/v2/providers/database";
+import type {DatabaseEvent, DataSnapshot} from "firebase-functions/v2/database";
 import * as paths from "../../utils/paths";
 
 const funcName = "onFormSubmittedForUser";
