@@ -200,7 +200,7 @@ export function initializeEmberFlow(
 
   functionsConfig["onBudgetAlert"] =
         functions.pubsub.topic(projectConfig.budgetAlertTopicName).onPublish((message) =>
-          stopBillingIfBudgetExceeded(message as any)
+          stopBillingIfBudgetExceeded(message)
         );
   functionsConfig["onMessageSubmitFormQueue"] = onMessagePublished({
     topic: SUBMIT_FORM_TOPIC_NAME,
