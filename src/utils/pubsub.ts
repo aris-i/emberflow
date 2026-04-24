@@ -1,6 +1,6 @@
 import {db, pubSubTopics} from "../index";
 import {deleteCollection} from "./misc";
-import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
+import type {ScheduledEvent} from "firebase-functions/v2/scheduler";
 
 async function trackProcessedIds(topicName: string, id: string) {
   const docRef = db.doc(`@topics/${topicName}/processedIds/${id}`);

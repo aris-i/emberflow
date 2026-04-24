@@ -5,7 +5,7 @@ import {dbStructure, Entity} from "../../sample-custom/db-structure";
 import {securityConfigs} from "../../sample-custom/security";
 import {validatorConfigs} from "../../sample-custom/validators";
 import {cleanPubSubProcessedIds, pubsubUtils} from "../../utils/pubsub";
-import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
+import type {ScheduledEvent} from "firebase-functions/v2/scheduler";
 import * as misc from "../../utils/misc";
 import {firestore} from "firebase-admin";
 

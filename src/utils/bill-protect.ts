@@ -4,7 +4,7 @@ import {firestore} from "firebase-admin";
 import {Message} from "firebase-functions/lib/v1/providers/pubsub";
 import {findMatchingDocPathRegex, getDestPropAndDestPropId} from "./paths";
 import {BatchUtil} from "../utils/batch";
-import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
+import type {ScheduledEvent} from "firebase-functions/v2/scheduler";
 
 export const billing = new CloudBillingClient();
 

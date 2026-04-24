@@ -34,8 +34,8 @@ import {
   queueForDistributionLater,
   queueInstructions,
 } from "./utils/distribution";
-import {FirestoreEvent} from "firebase-functions/lib/v2/providers/firestore";
-import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
+import type {FirestoreEvent} from "firebase-functions/v2/firestore";
+import type {ScheduledEvent} from "firebase-functions/v2/scheduler";
 import {versionCompare} from "./logics/patch-logics";
 import {FormData} from "emberflow-admin-client/lib/types";
 import QueryDocumentSnapshot = firestore.QueryDocumentSnapshot;

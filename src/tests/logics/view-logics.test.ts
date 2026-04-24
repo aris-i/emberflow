@@ -10,7 +10,7 @@ const isProcessedMock = jest.fn();
 const trackProcessedIdsMock = jest.fn();
 import * as viewLogics from "../../logics/view-logics";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
-import {MessagePublishedData} from "firebase-functions/lib/v2/providers/pubsub";
+import type {MessagePublishedData} from "firebase-functions/v2/pubsub";
 import * as indexUtils from "../../index-utils";
 import {firestore} from "firebase-admin";
 import {

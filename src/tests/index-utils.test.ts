@@ -31,7 +31,7 @@ import * as distribution from "../utils/distribution";
 import * as forms from "../utils/forms";
 import {DocumentReference} from "firebase-admin/lib/firestore";
 import * as misc from "../utils/misc";
-import {ScheduledEvent} from "firebase-functions/lib/v2/providers/scheduler";
+import type {ScheduledEvent} from "firebase-functions/v2/scheduler";
 import * as viewLogics from "../logics/view-logics";
 import {runViewLogics} from "../logics/view-logics";
 import {patchLogicConfigs} from "../sample-custom/patch-logics";
