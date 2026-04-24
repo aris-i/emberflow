@@ -1,10 +1,10 @@
 import {admin, db, onFormSubmit, projectConfig} from "../index";
 import {CloudBillingClient} from "@google-cloud/billing";
 import {firestore} from "firebase-admin";
-import {Message} from "firebase-functions/lib/v1/providers/pubsub";
 import {findMatchingDocPathRegex, getDestPropAndDestPropId} from "./paths";
 import {BatchUtil} from "../utils/batch";
 import type {ScheduledEvent} from "firebase-functions/v2/scheduler";
+import * as functions from "firebase-functions";
 
 export const billing = new CloudBillingClient();
 
@@ -177,7 +177,7 @@ export function useBillProtect(onFormSubmit: onFormSubmitType) : onFormSubmitTyp
   };
 }
 
-export async function stopBillingIfBudgetExceeded(message: Message): Promise<string> {
+export async function stopBillingIfBudgetExceeded(message: functions.pubsub.Message<any>): Promise<string> {
   const PROJECT_ID = projectConfig.projectId;
   const PROJECT_NAME = `projects/${PROJECT_ID}`;
 
