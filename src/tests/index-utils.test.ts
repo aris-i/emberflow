@@ -1203,11 +1203,13 @@ describe("runBusinessLogics", () => {
       logicResults: [{
         name: "Logic 1",
         status: "finished",
+        version: "1",
         execTime: expect.any(Number),
         timeFinished: expect.any(Timestamp),
       }, {
         name: "Logic 2",
         status: "finished",
+        version: "1",
         execTime: expect.any(Number),
         timeFinished: expect.any(Timestamp),
       }],
@@ -1288,6 +1290,7 @@ describe("runBusinessLogics", () => {
       status: "done",
       logicResults: [{
         name: "Logic 4",
+        version: "1",
         status: "finished",
         execTime: expect.any(Number),
         timeFinished: expect.any(Timestamp),
@@ -1418,16 +1421,19 @@ describe("runBusinessLogics", () => {
         status: "finished",
         execTime: expect.any(Number),
         timeFinished: expect.any(Timestamp),
+        version: "2.4.6",
       }, {
         name: "Logic2",
         status: "finished",
         execTime: expect.any(Number),
         timeFinished: expect.any(Timestamp),
+        version: "2.4.6",
       }, {
         name: "Logic4",
         status: "finished",
         execTime: expect.any(Number),
         timeFinished: expect.any(Timestamp),
+        version: "2.4.6",
       }],
     });
   });
