@@ -346,6 +346,7 @@ export const runBusinessLogics = async (
         ...result,
         name: logic.name,
         execTime,
+        version: logic.version,
         timeFinished: admin.firestore.Timestamp.now(),
       });
     } catch (e) {
@@ -357,6 +358,7 @@ export const runBusinessLogics = async (
         status: "error" as const,
         documents: [],
         execTime,
+        version: logic.version,
         message: (e as Error).message,
         timeFinished: admin.firestore.Timestamp.now(),
       });
