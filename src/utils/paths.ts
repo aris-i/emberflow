@@ -2,9 +2,12 @@ import {EntityCondition, QueryCondition} from "../types";
 import {fetchIds} from "./query";
 import {docPaths, docPathsRegex, db} from "../index";
 
+import * as paths from "./paths";
+
 export const _mockable = {
-  filterSubDocPathsByEntity,
   doesPathExists,
+  findMatchingDocPathRegex: (docPath: string) => paths.findMatchingDocPathRegex(docPath),
+  filterSubDocPathsByEntity: (entity: string, excludeEntities: string[]) => paths.filterSubDocPathsByEntity(entity, excludeEntities),
 };
 
 export function findMatchingDocPathRegex(docPath: string) {
@@ -45,7 +48,7 @@ export async function expandAndGroupDocPathsByEntity(
     return groupedPaths;
   }
   const entityDocPath = docPaths[entity];
-  const subDocPaths = _mockable.filterSubDocPathsByEntity(entity, excludeEntities);
+  const subDocPaths = _mockable.filterSubDocPathsByEntity(entity, excludeEntities || []);
 
   const values = Object.values(subDocPaths).map((p) => p.replace(entityDocPath, startingDocPath));
   const sortedValues = values.sort();
@@ -195,4 +198,26 @@ export function getParentPath(path: string) {
     return basePath;
   }
   return path.split("/").slice(0, -1).join("/");
+}
+
+/**
+ * Extracts ancestor IDs from the destination path and adds them to the document data with a '@' prefix.
+ * @param {string} dstPath The destination path.
+ * @param {any} doc The document data.
+ */
+export function addAncestorIds(dstPath: string, doc: any) {
+  const matchingDocPath = findMatchingDocPathRegex(dstPath);
+  if (matchingDocPath.entity && docPaths[matchingDocPath.entity]) {
+    const docPathWithPlaceholders = docPaths[matchingDocPath.entity];
+    const placeholders = docPathWithPlaceholders.match(/{([^/]+)Id}/g);
+    const values = dstPath.match(matchingDocPath.regex!);
+    if (placeholders && values) {
+      // values[0] is the full match, values[1...] are the captured groups
+      for (let i = 0; i < placeholders.length - 1; i++) {
+        const placeholder = placeholders[i].slice(1, -1);
+        const value = values[i + 1];
+        doc[`@${placeholder}`] = value;
+      }
+    }
+  }
 }

@@ -1,19 +1,22 @@
 import {
+  AncestorIdsPatchMessage,
   Instructions,
   InstructionsMessage,
   LogicResultDoc,
 } from "../types";
 import {
-  admin,
-  db,
+  ANCESTOR_IDS_PATCH_TOPIC,
+  ANCESTOR_IDS_PATCH_TOPIC_NAME,
   FOR_DISTRIBUTION_TOPIC,
   FOR_DISTRIBUTION_TOPIC_NAME,
   INSTRUCTIONS_TOPIC,
   INSTRUCTIONS_TOPIC_NAME,
+  admin,
+  db,
 } from "../index";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
 import type {MessagePublishedData} from "firebase-functions/v2/pubsub";
-import {distributeDoc} from "../index-utils";
+import {distributeDoc, patchSiblingsWithAncestorIds} from "../index-utils";
 import {firestore} from "firebase-admin";
 import {pubsubUtils} from "./pubsub";
 import {reviveDateAndTimestamp} from "./misc";
@@ -373,3 +376,74 @@ export const instructionsReducer = async (reducedInstructions: Map<string, Instr
     console.error("Error in instructionsReducer:", e);
   }
 };
+
+export const queueAncestorIdsPatch = async (dstPathOrCollectionPath: string, lastPatchedId?: string) => {
+  const segments = dstPathOrCollectionPath.split("/").filter((s) => s.length > 0);
+  const collectionPath = segments.length % 2 === 0 ?
+    "/" + segments.slice(0, -1).join("/") :
+    (dstPathOrCollectionPath.startsWith("/") ? "" : "/") + dstPathOrCollectionPath;
+
+  if (!collectionPath || !collectionPath.includes("/")) {
+    return;
+  }
+
+  // If this is the start of a new patch (no lastPatchedId), check/lock it in Firestore
+  if (!lastPatchedId) {
+    const patchStatusPath = `@emberflow/internal/patches/${collectionPath.replace(/\//g, "_")}`;
+    const patchStatusRef = db.doc(patchStatusPath);
+
+    try {
+      const alreadyQueued = await db.runTransaction(async (txn) => {
+        const doc = await txn.get(patchStatusRef);
+        if (doc.exists) {
+          const data = doc.data();
+          // Allow re-triggering if status is "error" or "reset"
+          if (data?.status !== "error" && data?.status !== "reset") {
+            return true; // Already exists and not in a state that allows restart
+          }
+        }
+        // Create or update record to "lock" it
+        txn.set(patchStatusRef, {
+          status: "queued",
+          collectionPath,
+          count: 0,
+          lastPatchedId: null, // Reset cursor if restarting
+          createdAt: admin.firestore.Timestamp.now(),
+          updatedAt: admin.firestore.Timestamp.now(),
+        }, {merge: true});
+        return false;
+      });
+
+      if (alreadyQueued) {
+        return;
+      }
+    } catch (e) {
+      console.error(`[AncestorIdsPatch] Error during transaction in queueAncestorIdsPatch for ${collectionPath}:`, e);
+      // We don't throw here to avoid failing the distribution, but we don't proceed to publish
+      return;
+    }
+  }
+
+  try {
+    const message: AncestorIdsPatchMessage = {collectionPath, lastPatchedId};
+    await ANCESTOR_IDS_PATCH_TOPIC.publishMessage({json: message});
+  } catch (error: unknown) {
+    console.error(`[AncestorIdsPatch] Received error while publishing to ${ANCESTOR_IDS_PATCH_TOPIC_NAME}:`, error);
+    throw error;
+  }
+};
+
+export async function onMessageAncestorIdsPatchQueue(event: CloudEvent<MessagePublishedData>) {
+  if (await pubsubUtils.isProcessed(ANCESTOR_IDS_PATCH_TOPIC_NAME, event.id)) {
+    return;
+  }
+
+  try {
+    const {collectionPath, lastPatchedId} = event.data.message.json as AncestorIdsPatchMessage;
+    await patchSiblingsWithAncestorIds(collectionPath, lastPatchedId);
+    await pubsubUtils.trackProcessedIds(ANCESTOR_IDS_PATCH_TOPIC_NAME, event.id);
+  } catch (e) {
+    console.error("[AncestorIdsPatch] Error in onMessageAncestorIdsPatchQueue", e);
+    throw new Error("Error in onMessageAncestorIdsPatchQueue");
+  }
+}

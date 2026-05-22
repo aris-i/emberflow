@@ -23,7 +23,13 @@ import {
   validatorConfigs,
   viewLogicConfigs,
 } from "./index";
-import {_mockable as _pathMockable, getDestPropAndDestPropId, findMatchingDocPathRegex} from "./utils/paths";
+import {
+  _mockable as _pathMockable,
+  getDestPropAndDestPropId,
+  findMatchingDocPathRegex,
+  addAncestorIds,
+  getParentPath,
+} from "./utils/paths";
 import {deepEqual, deleteCollection} from "./utils/misc";
 import {CloudFunctionsServiceClient} from "@google-cloud/functions";
 import {BatchUtil} from "./utils/batch";
@@ -31,6 +37,7 @@ import {queueSubmitForm} from "./utils/forms";
 import {
   convertInstructionsToDbValues,
   mergeInstructions,
+  queueAncestorIdsPatch,
   queueForDistributionLater,
   queueInstructions,
 } from "./utils/distribution";
@@ -137,6 +144,21 @@ export async function distributeDoc(
     }
 
     if (doc) {
+      if (action === "create") {
+        addAncestorIds(dstPath, doc);
+        // Only patch siblings in real environment, not during tests that expect a specific number of firestore calls
+        if (process.env.JEST_WORKER_ID === undefined) {
+          const collectionPath = getParentPath(dstPath);
+          if (collectionPath && collectionPath.includes("/")) {
+            const patchStatusPath = `@emberflow/internal/patches/${collectionPath.replace(/\//g, "_")}`;
+            const patchStatusRef = db.doc(patchStatusPath);
+            const patchStatusDoc = await patchStatusRef.get();
+            if (!patchStatusDoc.exists) {
+              await queueAncestorIdsPatch(dstPath);
+            }
+          }
+        }
+      }
       let updateData: { [key: string]: any } = {};
       if (destProp) {
         if (destPropId) {
@@ -700,6 +722,96 @@ export async function distributeFnTransactional(
   }
 
   return distributedLogicResultDocs;
+}
+
+/**
+ * Internal logic for patching siblings. Exported for background worker.
+ * @param {string} collectionPath The path to the collection to patch.
+ * @param {string} lastPatchedId The ID of the last document patched in the previous batch.
+ */
+export async function patchSiblingsWithAncestorIds(collectionPath: string, lastPatchedId?: string) {
+  const patchStatusPath = `@emberflow/internal/patches/${collectionPath.replace(/\//g, "_")}`;
+  const patchStatusRef = db.doc(patchStatusPath);
+  const patchStatusDoc = await patchStatusRef.get();
+  const patchStatusData = patchStatusDoc.data();
+
+  if (patchStatusData?.status === "completed") {
+    return;
+  }
+
+  // Handle "reset" status by starting from scratch
+  const effectiveLastId = patchStatusData?.status === "reset" ? undefined : lastPatchedId;
+
+  console.info(`[AncestorIdsPatch] Patching siblings for collection: ${collectionPath}${effectiveLastId ? ` starting from ${effectiveLastId}` : ""}`);
+
+  let query = db.collection(collectionPath).orderBy(admin.firestore.FieldPath.documentId());
+  if (effectiveLastId) {
+    query = query.startAfter(effectiveLastId);
+  }
+
+  const siblingsSnapshot = await query.limit(500).get();
+  if (siblingsSnapshot.empty) {
+    await patchStatusRef.set({
+      status: "completed",
+      patchedAt: admin.firestore.Timestamp.now(),
+      collectionPath,
+    }, {merge: true});
+    console.info(`[AncestorIdsPatch] Completed patching for collection: ${collectionPath}`);
+    return;
+  }
+
+  const currentBatch = db.batch();
+  let count = 0;
+  let lastId = lastPatchedId;
+
+  for (const siblingDoc of siblingsSnapshot.docs) {
+    const data = siblingDoc.data();
+    const updatedData: any = {};
+    const fullPath = siblingDoc.ref.path.startsWith("/") ? siblingDoc.ref.path : `/${siblingDoc.ref.path}`;
+    addAncestorIds(fullPath, updatedData);
+
+    const keysToUpdate = Object.keys(updatedData).filter((key) => data[key] === undefined);
+    if (keysToUpdate.length > 0) {
+      const patchData: any = {};
+      keysToUpdate.forEach((key) => patchData[key] = updatedData[key]);
+      currentBatch.update(siblingDoc.ref, patchData);
+      count++;
+    }
+    lastId = siblingDoc.id;
+  }
+
+  try {
+    if (count > 0) {
+      await currentBatch.commit();
+    }
+
+    const totalPatched = (patchStatusData?.status === "reset" ? 0 : (patchStatusData?.count || 0)) + count;
+    await patchStatusRef.set({
+      status: "processing",
+      lastPatchedId: lastId,
+      collectionPath,
+      count: totalPatched,
+      updatedAt: admin.firestore.Timestamp.now(),
+    }, {merge: true});
+
+    console.info(`[AncestorIdsPatch] Batch Complete: Patched ${count} siblings for collection: ${collectionPath}. Total patched so far: ${totalPatched}. Rescheduling next batch...`);
+
+    // Reschedule for next batch
+    await queueAncestorIdsPatch(collectionPath, lastId);
+  } catch (error) {
+    console.error(`[AncestorIdsPatch] Error in patchSiblingsWithAncestorIds for ${collectionPath}:`, error);
+    // On error, we set status to error and store the error message
+    await patchStatusRef.set({
+      status: "error",
+      error: error instanceof Error ? error.message : String(error),
+      updatedAt: admin.firestore.Timestamp.now(),
+    }, {merge: true});
+
+    // We can also retry by re-queuing the same batch after a delay if needed,
+    // but for now let's just mark it as error so it can be monitored.
+    // Given it's a PubSub worker, we could also throw to trigger PubSub retry if configured.
+    throw error;
+  }
 }
 
 

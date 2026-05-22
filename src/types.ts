@@ -31,6 +31,7 @@ export interface ProjectConfig {
         onMessagePatchLogicsQueue?: FunctionConfig;
         onMessageForDistributionQueue?: FunctionConfig;
         onMessageInstructionsQueue?: FunctionConfig;
+        onMessageAncestorIdsPatchQueue?: FunctionConfig;
         resetUsageStats?: FunctionConfig;
         cleanPubSubProcessedIds?: FunctionConfig;
         cleanMetricComputations?: FunctionConfig;
@@ -97,6 +98,10 @@ export type Instructions = { [key: string]: string };
 export interface InstructionsMessage{
     dstPath: string;
     instructions: Instructions;
+}
+export interface AncestorIdsPatchMessage {
+    collectionPath: string;
+    lastPatchedId?: string;
 }
 
 export interface LogicResult{

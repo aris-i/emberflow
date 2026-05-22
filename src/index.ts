@@ -59,8 +59,10 @@ import {onMessagePublished} from "firebase-functions/v2/pubsub";
 import {logMemoryUsage, reviveDateAndTimestamp, trimStrings} from "./utils/misc";
 import {
   instructionsReducer,
+  onMessageAncestorIdsPatchQueue,
   onMessageForDistributionQueue,
   onMessageInstructionsQueue,
+  queueAncestorIdsPatch,
 } from "./utils/distribution";
 import {cleanPubSubProcessedIds} from "./utils/pubsub";
 import {onSchedule} from "firebase-functions/v2/scheduler";
@@ -70,6 +72,7 @@ import {debounce} from "./utils/functions";
 import {extractTransactionGetOnly} from "./utils/transaction";
 import Database = database.Database;
 
+export {queueAncestorIdsPatch};
 export let admin: FirebaseAdmin;
 export let db: Firestore;
 export let rtdb: Database;
@@ -91,18 +94,21 @@ export const VIEW_LOGICS_TOPIC_NAME = "view-logics-queue";
 export const PATCH_LOGICS_TOPIC_NAME = "patch-logics-queue";
 export const FOR_DISTRIBUTION_TOPIC_NAME = "for-distribution-queue";
 export const INSTRUCTIONS_TOPIC_NAME = "instructions-queue";
+export const ANCESTOR_IDS_PATCH_TOPIC_NAME = "ancestor-ids-patch-queue";
 export const pubSubTopics = [
   SUBMIT_FORM_TOPIC_NAME,
   VIEW_LOGICS_TOPIC_NAME,
   PATCH_LOGICS_TOPIC_NAME,
   FOR_DISTRIBUTION_TOPIC_NAME,
   INSTRUCTIONS_TOPIC_NAME,
+  ANCESTOR_IDS_PATCH_TOPIC_NAME,
 ];
 export let SUBMIT_FORM_TOPIC: Topic;
 export let VIEW_LOGICS_TOPIC: Topic;
 export let PATCH_LOGICS_TOPIC: Topic;
 export let FOR_DISTRIBUTION_TOPIC: Topic;
 export let INSTRUCTIONS_TOPIC: Topic;
+export let ANCESTOR_IDS_PATCH_TOPIC: Topic;
 let userRegisterFn: UserRegisterFn | undefined;
 
 export const _mockable = {
@@ -139,11 +145,13 @@ export function initializeEmberFlow(
   patchLogicConfigs = [...customPatchLogicConfigs];
   userRegisterFn = customUserRegisterFn;
   initClient(admin.app(), "service", "0.0.0");
+  initDbStructure(dbStructure, Entity);
   SUBMIT_FORM_TOPIC = pubsub.topic(SUBMIT_FORM_TOPIC_NAME);
   VIEW_LOGICS_TOPIC = pubsub.topic(VIEW_LOGICS_TOPIC_NAME);
   PATCH_LOGICS_TOPIC = pubsub.topic(PATCH_LOGICS_TOPIC_NAME);
   FOR_DISTRIBUTION_TOPIC = pubsub.topic(FOR_DISTRIBUTION_TOPIC_NAME);
   INSTRUCTIONS_TOPIC = pubsub.topic(INSTRUCTIONS_TOPIC_NAME);
+  ANCESTOR_IDS_PATCH_TOPIC = pubsub.topic(ANCESTOR_IDS_PATCH_TOPIC_NAME);
 
   const {
     docPaths: dp,
@@ -254,6 +262,14 @@ export function initializeEmberFlow(
       },
     }
   ));
+  functionsConfig["onMessageAncestorIdsPatchQueue"] = onMessagePublished({
+    topic: ANCESTOR_IDS_PATCH_TOPIC_NAME,
+    region: projectConfig.region,
+    memory: "512MiB",
+    maxInstances: 5,
+    timeoutSeconds: 540,
+    ...projectConfig.functionsConfig?.onMessageAncestorIdsPatchQueue as any,
+  }, onMessageAncestorIdsPatchQueue);
   functionsConfig["resetUsageStats"] = onSchedule({
     schedule: "every 1 hours",
     region: projectConfig.region,
