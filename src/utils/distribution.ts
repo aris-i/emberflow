@@ -1,9 +1,5 @@
-import {
-  AncestorIdsPatchMessage,
-  Instructions,
-  InstructionsMessage,
-  LogicResultDoc,
-} from "../types";
+import {AncestorIdsPatchMessage, Instructions, InstructionsMessage, LogicResultDoc} from "../types";
+import {hydrateDocPath} from "./paths";
 import {
   ANCESTOR_IDS_PATCH_TOPIC,
   ANCESTOR_IDS_PATCH_TOPIC_NAME,
@@ -404,7 +400,7 @@ export const queueAncestorIdsPatch = async (dstPathOrCollectionPath: string, las
         }
         // Create or update record to "lock" it
         txn.set(patchStatusRef, {
-          status: "queued",
+          status: collectionPath.includes("{") ? "hydrating" : "queued",
           collectionPath,
           count: 0,
           lastPatchedId: null, // Reset cursor if restarting
@@ -439,8 +435,45 @@ export async function onMessageAncestorIdsPatchQueue(event: CloudEvent<MessagePu
   }
 
   try {
-    const {collectionPath, lastPatchedId} = event.data.message.json as AncestorIdsPatchMessage;
-    await patchSiblingsWithAncestorIds(collectionPath, lastPatchedId);
+    const {collectionPath, lastPatchedId, hydrationState} = event.data.message.json as AncestorIdsPatchMessage;
+
+    if (collectionPath.includes("{")) {
+      console.log(`[AncestorIdsPatch] Hydration in Progress for ${collectionPath}...`);
+      const {documentPaths, hydrationState: nextHydrationState} = await hydrateDocPath(collectionPath, {}, hydrationState);
+
+      const patchStatusPath = `@emberflow/internal/patches/${collectionPath.replace(/\//g, "_")}`;
+      if (nextHydrationState) {
+        // Re-queue hydration
+        const message: AncestorIdsPatchMessage = {
+          collectionPath,
+          hydrationState: nextHydrationState,
+        };
+        await ANCESTOR_IDS_PATCH_TOPIC.publishMessage({json: message});
+
+        await db.doc(patchStatusPath).set({
+          status: "hydrating",
+          updatedAt: admin.firestore.Timestamp.now(),
+        }, {merge: true});
+      } else {
+        // Hydration complete. We should mark the "placeholder" path as completed.
+        await db.doc(patchStatusPath).set({
+          status: "completed",
+          updatedAt: admin.firestore.Timestamp.now(),
+        }, {merge: true});
+        console.log(`[AncestorIdsPatch] Hydration complete for ${collectionPath}`);
+      }
+
+      console.log(`[AncestorIdsPatch] Hydrated ${documentPaths.length} paths for ${collectionPath}. Remaining batches: ${nextHydrationState ? "yes" : "no"}`);
+
+      for (const path of documentPaths) {
+        // We trigger a patch for each hydrated path.
+        // Note: These will go through the same queueAncestorIdsPatch logic,
+        // so they will be tracked/locked individually.
+        await queueAncestorIdsPatch(path);
+      }
+    } else {
+      await patchSiblingsWithAncestorIds(collectionPath, lastPatchedId);
+    }
     await pubsubUtils.trackProcessedIds(ANCESTOR_IDS_PATCH_TOPIC_NAME, event.id);
   } catch (e) {
     console.error("[AncestorIdsPatch] Error in onMessageAncestorIdsPatchQueue", e);

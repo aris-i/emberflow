@@ -1,4 +1,4 @@
-import {EntityCondition, QueryCondition} from "../types";
+import {EntityCondition, HydrationResult, HydrationState, QueryCondition} from "../types";
 import {fetchIds} from "./query";
 import {docPaths, docPathsRegex, db} from "../index";
 
@@ -103,12 +103,16 @@ async function doesPathExists(path: string) {
   return doc.exists;
 }
 
-export async function hydrateDocPath(destDocPath: string, entityCondition: EntityCondition): Promise<string[]> {
-  const pathSegments = destDocPath.split("/");
-  const documentPaths: string[] = [];
+export async function hydrateDocPath(
+  destDocPath: string,
+  entityCondition: EntityCondition,
+  state?: HydrationState,
+  limit = 500
+): Promise<HydrationResult> {
+  const documentPaths: string[] = state?.hydratedPaths || [];
 
   // Create a queue to keep track of the remaining path segments to process
-  const queue: [string[], number][] = [[pathSegments, 0]];
+  const queue: [string[], number][] = state?.queue || [[destDocPath.split("/"), state?.idx || 0]];
 
   // Process the queue until all path segments have been processed
   while (queue.length > 0) {
@@ -134,6 +138,18 @@ export async function hydrateDocPath(destDocPath: string, entityCondition: Entit
         }
       }
       documentPaths.push(path);
+
+      if (documentPaths.length >= limit) {
+        return {
+          documentPaths,
+          hydrationState: queue.length > 0 ? {
+            pathSegments: destDocPath.split("/"),
+            idx,
+            queue,
+            hydratedPaths: [], // Don't pass the already returned paths
+          } : undefined,
+        };
+      }
     } else {
       // Extract the collection path and fetch its IDs
       const collectionPathSegments = segments.slice(0, braceIdx);
@@ -154,7 +170,7 @@ export async function hydrateDocPath(destDocPath: string, entityCondition: Entit
       }
     }
   }
-  return documentPaths;
+  return {documentPaths};
 }
 
 export function parseEntity(docPath: string) {

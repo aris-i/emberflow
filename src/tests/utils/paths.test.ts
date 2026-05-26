@@ -103,7 +103,7 @@ describe("hydrateDocPath", () => {
     });
 
     // Check the result, expecting an empty array since no user IDs were found
-    expect(result).toEqual([]);
+    expect(result).toEqual({documentPaths: []});
 
     // Check if the mocked fetchIds function was called correctly
     expect(mockFetchIds).toHaveBeenCalledTimes(1);
@@ -127,7 +127,7 @@ describe("hydrateDocPath", () => {
     const result = await hydrateDocPath(destDocPath, {});
 
     // Check the result
-    expect(result).toEqual(["users/123/posts/321", "users/789/posts/321"]);
+    expect(result).toEqual({documentPaths: ["users/123/posts/321", "users/789/posts/321"]});
 
     // Check if the mocked Firestore functions were called correctly
     expect(doesPathExistsMock).toHaveBeenCalledTimes(3);
@@ -152,12 +152,14 @@ describe("hydrateDocPath", () => {
     const result = await hydrateDocPath(destDocPath, {
       user: userCondition,
     });
-    expect(result).toEqual([
-      "users/123/posts/321",
-      "users/123/posts/654",
-      "users/456/posts/321",
-      "users/456/posts/654",
-    ]);
+    expect(result).toEqual({
+      documentPaths: [
+        "users/123/posts/321",
+        "users/123/posts/654",
+        "users/456/posts/321",
+        "users/456/posts/654",
+      ],
+    });
     expect(mockFetchIds).toHaveBeenCalledTimes(3);
     expect(mockFetchIds).toHaveBeenNthCalledWith(1, "users", userCondition);
     expect(mockFetchIds).toHaveBeenNthCalledWith(2, "users/123/posts", undefined);
@@ -191,12 +193,14 @@ describe("hydrateDocPath", () => {
     });
 
     // Adjust the expected result based on the postCondition
-    expect(result).toEqual([
-      "users/123/posts/321",
-      "users/123/posts/654",
-      "users/456/posts/321",
-      "users/456/posts/654",
-    ]);
+    expect(result).toEqual({
+      documentPaths: [
+        "users/123/posts/321",
+        "users/123/posts/654",
+        "users/456/posts/321",
+        "users/456/posts/654",
+      ],
+    });
 
     expect(mockFetchIds).toHaveBeenCalledTimes(3);
     expect(mockFetchIds).toHaveBeenNthCalledWith(1, "users", userCondition);
@@ -223,10 +227,12 @@ describe("hydrateDocPath", () => {
       user: userCondition,
     });
 
-    expect(result).toEqual([
-      "users/456/posts/321",
-      "users/456/posts/654",
-    ]);
+    expect(result).toEqual({
+      documentPaths: [
+        "users/456/posts/321",
+        "users/456/posts/654",
+      ],
+    });
     expect(mockFetchIds).toHaveBeenCalledTimes(3);
     expect(mockFetchIds).toHaveBeenNthCalledWith(1, "users", userCondition);
     expect(mockFetchIds).toHaveBeenNthCalledWith(2, "users/123/posts", undefined);

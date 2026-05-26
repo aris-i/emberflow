@@ -102,6 +102,19 @@ export interface InstructionsMessage{
 export interface AncestorIdsPatchMessage {
     collectionPath: string;
     lastPatchedId?: string;
+    hydrationState?: HydrationState;
+}
+
+export interface HydrationState {
+    pathSegments: string[];
+    idx: number;
+    queue: [string[], number][];
+    hydratedPaths: string[];
+}
+
+export interface HydrationResult {
+    documentPaths: string[];
+    hydrationState?: HydrationState;
 }
 
 export interface LogicResult{
