@@ -126,6 +126,7 @@ export interface LogicResult{
     timeFinished?: Timestamp;
     documents: LogicResultDoc[];
     transactional?: boolean;
+    version?: string;
 }
 export type LogicFn = (txnGet: TxnGet, action: Action, sharedMap: Map<string, any>) => Promise<LogicResult>;
 export type LogicActionType = "create" | "update" | "delete";
