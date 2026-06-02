@@ -313,37 +313,6 @@ describe("createViewLogicFn", () => {
     });
   });
 
-  it("should delete @views doc", async () => {
-    let logicFn = viewLogics.createViewLogicFn(vd1);
-
-    let result = await logicFn[1](deleteLogicResultDoc, targetVersion, appVersion);
-    expect(result.documents.length).toEqual(1);
-    expect(result.documents[0]).toHaveProperty("action", "delete");
-    expect(result.documents[0]).toHaveProperty("dstPath", "users/1234/@views/users+1234");
-
-    logicFn = viewLogics.createViewLogicFn(vd2);
-
-    result = await logicFn[1]({...deleteLogicResultDoc, dstPath: "users/1234/posts/987#followers[1234]",
-    }, targetVersion, appVersion);
-    expect(result.documents.length).toEqual(2);
-    expect(result.documents[0]).toHaveProperty("action", "delete");
-    expect(result.documents[0])
-      .toHaveProperty("dstPath", "users/1234/@views/users+1234+posts+987+followers[1234]");
-    expect(result.documents[1]).toHaveProperty("action", "merge");
-    expect(result.documents[1]).toHaveProperty("dstPath", "users/1234/posts/987");
-    expect(result.documents[1].instructions).toEqual({
-      "@followers": "arr(-1234)",
-    });
-
-    logicFn = viewLogics.createViewLogicFn(vd3);
-
-    result = await logicFn[1]({...deleteLogicResultDoc, dstPath: "servers/123#createdBy"}, targetVersion, appVersion);
-    expect(result.documents.length).toEqual(1);
-    expect(result.documents[0]).toHaveProperty("action", "delete");
-    expect(result.documents[0])
-      .toHaveProperty("dstPath", "users/1234/@views/servers+123+createdBy");
-  });
-
   it("should not build @views doc when action is merge and @viewsAlreadyBuilt is true", async () => {
     docGetMock.mockResolvedValue({
       data: () => {
@@ -1124,6 +1093,34 @@ describe("createViewLogicFn", () => {
     expect(result).toBeDefined();
     expect(result.documents).toBeDefined();
     expect(result.documents.length).toEqual(2);
+  });
+
+  it("should remove the id in @{destProp} array when deleting an item in an array-map", async () => {
+    const dstPath = "topics/topic21/menus/menu1#ingredients[ingredient1]";
+    const logicFn = viewLogics.createViewLogicFn( {
+      srcEntity: "recipeIngredient",
+      srcProps: ["amount", "ingredient"],
+      destEntity: "menuItemIngredient",
+      options: {syncCreate: true},
+      destProp: {
+        name: "ingredients",
+        type: "array-map",
+      },
+      version: "1.0.0",
+    });
+    const logicResultDoc: LogicResultDoc = {
+      action: "delete",
+      dstPath,
+    };
+
+    jest.spyOn(pathsMockable, "doesPathExists").mockResolvedValue(false);
+
+    const result = await logicFn[1](logicResultDoc, targetVersion, appVersion);
+    expect(result.documents[0].action).toBe("merge");
+    expect(result.documents[0].dstPath).toBe("topics/topic21/menus/menu1");
+    expect(result.documents[0].instructions).toEqual({
+      "@ingredients": "arr(-ingredient1)",
+    });
   });
 
   describe("SyncCreate ViewLogic", () => {

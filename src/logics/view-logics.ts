@@ -302,32 +302,6 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     }
   };
 
-  function createLogicDocsWhenViewIsDeleted(srcPath: string, viewDstPath: string) {
-    const {
-      destProp: viewDestProp,
-      destPropId: viewDestPropId,
-      isArrayMap: viewIsArrayMap,
-      basePath: viewBasePath,
-    } = getDestPropAndDestPropId(viewDstPath);
-
-    const srcAtViewsPath = formAtViewsPath(viewDstPath, srcPath);
-    const logicResultDocs: LogicResultDoc[] = [];
-    logicResultDocs.push({
-      action: "delete",
-      dstPath: srcAtViewsPath,
-    });
-    if (viewDestProp && viewIsArrayMap) {
-      logicResultDocs.push({
-        action: "merge",
-        dstPath: viewBasePath,
-        instructions: {
-          [`@${viewDestProp}`]: `arr(-${viewDestPropId})`,
-        },
-      });
-    }
-    return logicResultDocs;
-  }
-
   const dstToSrcLogicFn: ViewLogicFn = async (logicResultDoc) => {
     const logicResult: LogicResult = {
       name: `${logicName} Dst-to-Src`,
@@ -339,6 +313,28 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       action: viewAction,
       doc: viewDoc,
     } = logicResultDoc;
+
+    if (viewAction === "delete") {
+      const {
+        destProp: viewDestProp,
+        destPropId: viewDestPropId,
+        isArrayMap: viewIsArrayMap,
+        basePath: viewBasePath,
+      } = getDestPropAndDestPropId(viewDstPath);
+
+      if (viewDestProp && viewIsArrayMap) {
+        logicResult.documents.push({
+          action: "merge",
+          dstPath: viewBasePath,
+          instructions: {
+            [`@${viewDestProp}`]: `arr(-${viewDestPropId})`,
+          },
+        });
+      }
+      return logicResult;
+    }
+
+
     const srcDocId = viewDoc?.["@id"];
     if (!srcDocId) {
       console.error("Document does not have an @id attribute");
@@ -419,18 +415,12 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       return logicResult;
     }
 
-    if (viewAction === "delete") {
-      logicResult.documents.push(
-        ...createLogicDocsWhenViewIsDeleted(srcPath, viewDstPath)
-      );
-    } else {
-      logicResult.documents.push(
-        ...createLogicDocsWhenViewIsCreated(srcPath, viewDstPath)
-      );
+    logicResult.documents.push(
+      ...createLogicDocsWhenViewIsCreated(srcPath, viewDstPath)
+    );
 
-      if (syncCreate) {
-        await rememberForSyncCreate();
-      }
+    if (syncCreate) {
+      await rememberForSyncCreate();
     }
 
     return logicResult;
