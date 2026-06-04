@@ -237,7 +237,7 @@ describe("createViewLogicFn", () => {
 
     const logicResultDoc: LogicResultDoc = {
       action: "create",
-      dstPath: "users/5678/friends/1234",
+      dstPath: "random", // This will not match users/{userId}, so srcPath will have placeholders
       doc: {
         name: "John Doe",
       },
@@ -245,7 +245,7 @@ describe("createViewLogicFn", () => {
     };
     const result = await logicFn[1](logicResultDoc, targetVersion, appVersion);
     expect(result.documents.length).toEqual(0);
-    expect(console.error).toHaveBeenCalledWith("Document does not have an @id attribute");
+    expect(console.error).toHaveBeenCalledWith("srcPath should not have a placeholder");
   });
 
   it("should log error when srcPath includes placeholder", async () => {
@@ -1095,7 +1095,7 @@ describe("createViewLogicFn", () => {
     expect(result.documents.length).toEqual(2);
   });
 
-  it("should remove the id in @{destProp} array when deleting an item in an array-map", async () => {
+  it("should remove the id in @{destProp} array and delete @views doc when deleting an item in an array-map", async () => {
     const dstPath = "topics/topic21/menus/menu1#ingredients[ingredient1]";
     const logicFn = viewLogics.createViewLogicFn( {
       srcEntity: "recipeIngredient",
@@ -1111,15 +1111,230 @@ describe("createViewLogicFn", () => {
     const logicResultDoc: LogicResultDoc = {
       action: "delete",
       dstPath,
+      doc: {
+        "@id": "ingredient1",
+        "topicId": "topic21",
+      },
     };
 
     jest.spyOn(pathsMockable, "doesPathExists").mockResolvedValue(false);
 
     const result = await logicFn[1](logicResultDoc, targetVersion, appVersion);
-    expect(result.documents[0].action).toBe("merge");
-    expect(result.documents[0].dstPath).toBe("topics/topic21/menus/menu1");
-    expect(result.documents[0].instructions).toEqual({
+    expect(result.documents.length).toBe(2);
+    // @views deletion
+    expect(result.documents[0].action).toBe("delete");
+    expect(result.documents[0].dstPath).toBe("topics/topic21/ingredients/ingredient1/@views/topics+topic21+menus+menu1+ingredients[ingredient1]");
+    // array-map removal
+    expect(result.documents[1].action).toBe("merge");
+    expect(result.documents[1].dstPath).toBe("topics/topic21/menus/menu1");
+    expect(result.documents[1].instructions).toEqual({
       "@ingredients": "arr(-ingredient1)",
+    });
+  });
+
+  it("should handle deletion and clean up even if viewDoc is undefined", async () => {
+    const dstPath = "topics/topic21/menuItems/menu1/ingredients/ingredient1";
+    const logicFn = viewLogics.createViewLogicFn( {
+      srcEntity: "recipeIngredient",
+      srcProps: ["amount", "ingredient"],
+      destEntity: "menuItemIngredient",
+      options: {syncCreate: true},
+      version: "1.0.0",
+    });
+    const logicResultDoc: LogicResultDoc = {
+      action: "delete",
+      dstPath,
+      // doc is intentionally missing
+    };
+
+    jest.spyOn(pathsMockable, "doesPathExists").mockResolvedValue(false);
+
+    const result = await logicFn[1](logicResultDoc, targetVersion, appVersion);
+    expect(result.status).toBe("finished");
+    expect(result.documents.length).toBe(1);
+    // @views deletion - srcDocId should have been extracted from dstPath (ingredient1)
+    // topicId (topic21) should have been extracted from dstPath as well
+    expect(result.documents[0].action).toBe("delete");
+    expect(result.documents[0].dstPath).toBe("topics/topic21/ingredients/ingredient1/@views/topics+topic21+menuItems+menu1+ingredients+ingredient1");
+  });
+
+  it("should only delete @views doc when deleting a standard view", async () => {
+    const dstPath = "topics/topic21/menus/menu1/ingredients/ingredient1";
+    const logicFn = viewLogics.createViewLogicFn( {
+      srcEntity: "recipeIngredient",
+      srcProps: ["amount", "ingredient"],
+      destEntity: "menuItemIngredient",
+      options: {syncCreate: true},
+      version: "1.0.0",
+    });
+    const logicResultDoc: LogicResultDoc = {
+      action: "delete",
+      dstPath,
+      doc: {
+        "@id": "ingredient1",
+        "topicId": "topic21",
+      },
+    };
+
+    const result = await logicFn[1](logicResultDoc, targetVersion, appVersion);
+    expect(result.documents.length).toBe(1);
+    expect(result.documents[0].action).toBe("delete");
+    expect(result.documents[0].dstPath).toBe("topics/topic21/ingredients/ingredient1/@views/topics+topic21+menus+menu1+ingredients+ingredient1");
+  });
+
+  it("should handle deletion and clean up with unwrapped viewDoc (new delete behavior)", async () => {
+    // This vd has a destProp 'createdBy' which is a map
+    const vd: ViewDefinition = {
+      srcEntity: "user",
+      srcProps: ["name", "avatarUrl"],
+      destEntity: "server",
+      destProp: {
+        name: "createdBy",
+        type: "map",
+      },
+      version: "1.0.0",
+    };
+    const dstPath = "servers/server1#createdBy";
+    const logicFn = viewLogics.createViewLogicFn(vd);
+
+    // After clarifying changes, queueRunViewLogics for delete will set logicResultDoc.doc to the view document data (unwrapped)
+    const logicResultDoc: LogicResultDoc = {
+      action: "delete",
+      dstPath,
+      doc: {
+        "@id": "user123",
+        "userId": "user123",
+        "someOtherField": "value",
+      },
+    };
+
+    const result = await logicFn[1](logicResultDoc, "1.0.0", "1.0.0");
+    expect(result.status).toBe("finished");
+    expect(result.documents.length).toBe(1);
+    expect(result.documents[0].action).toBe("delete");
+    // Should have extracted user123 from doc["@id"]
+    expect(result.documents[0].dstPath).toContain("users/user123/@views/");
+  });
+
+  it("should handle deletion and clean up with unwrapped viewDoc in array-map (new delete behavior)", async () => {
+    // vd2 has followers as array-map
+    const dstPath = "posts/post1#followers[user456]";
+    const logicFn = viewLogics.createViewLogicFn(vd2);
+
+    // logicResultDoc.doc is just the user document that was inside followers[user456]
+    const logicResultDoc: LogicResultDoc = {
+      action: "delete",
+      dstPath,
+      doc: {
+        "@id": "user456",
+        "name": "User 456",
+      },
+    };
+
+    const result = await logicFn[1](logicResultDoc, "1.0.0", "1.0.0");
+    expect(result.status).toBe("finished");
+    // Should produce @views deletion and array-map removal
+    expect(result.documents.length).toBe(2);
+    expect(result.documents[0].action).toBe("delete");
+    expect(result.documents[0].dstPath).toContain("users/user456/@views/");
+    expect(result.documents[1].action).toBe("merge");
+    expect(result.documents[1].instructions).toEqual({"@followers": "arr(-user456)"});
+  });
+
+  describe("dstToSrcLogicFn edge cases", () => {
+    it("should handle multiple placeholders in srcPath resolved from dstPath", async () => {
+      // srcEntity: recipeIngredient, srcPath: topics/{topicId}/ingredients/{recipeIngredientId}
+      // destEntity: menuItemIngredient, dstPath: topics/{topicId}/menuItems/{menuItemId}/ingredients/{menuItemIngredientId}
+      const vdCustom: ViewDefinition = {
+        srcEntity: "recipeIngredient",
+        srcProps: ["amount"],
+        destEntity: "menuItemIngredient",
+        version: "1.0.0",
+      };
+      const logicFn = viewLogics.createViewLogicFn(vdCustom);
+      const dstPath = "topics/topicA/menuItems/itemB/ingredients/ingredientC";
+      const logicResultDoc: LogicResultDoc = {
+        action: "delete",
+        dstPath,
+        doc: {
+          "@id": "ingredientC",
+          // topicId is missing in doc, should be extracted from dstPath
+        },
+      };
+
+      const result = await logicFn[1](logicResultDoc, "1.0.0", "1.0.0");
+      expect(result.status).toBe("finished");
+      // srcDocId = ingredientC
+      // topicId = topicA (from dstPath topics/topicA/...)
+      // srcPath = topics/topicA/ingredients/ingredientC
+      expect(result.documents[0].dstPath).toBe("topics/topicA/ingredients/ingredientC/@views/topics+topicA+menuItems+itemB+ingredients+ingredientC");
+    });
+
+    it("should handle multiple placeholders in srcPath resolved from both viewDoc and dstPath", async () => {
+      // Let's use recipeIngredient as src and menuItemIngredient as dest
+      const vdCustom: ViewDefinition = {
+        srcEntity: "recipeIngredient",
+        srcProps: ["amount"],
+        destEntity: "menuItemIngredient",
+        version: "1.0.0",
+      };
+      const logicFn = viewLogics.createViewLogicFn(vdCustom);
+      const dstPath = "topics/topicA/menuItems/itemB/ingredients/ingredientC";
+      const logicResultDoc: LogicResultDoc = {
+        action: "delete",
+        dstPath,
+        doc: {
+          "@id": "ingredientC",
+          "topicId": "topicOverride", // Should override topicA from dstPath
+        },
+      };
+
+      const result = await logicFn[1](logicResultDoc, "1.0.0", "1.0.0");
+      expect(result.status).toBe("finished");
+      expect(result.documents[0].dstPath).toBe("topics/topicOverride/ingredients/ingredientC/@views/topics+topicA+menuItems+itemB+ingredients+ingredientC");
+    });
+
+    it("should return error if srcPath placeholder cannot be resolved from viewDoc or dstPath", async () => {
+      const vdCustom: ViewDefinition = {
+        srcEntity: "recipeIngredient",
+        srcProps: ["amount"],
+        destEntity: "menuItemIngredient",
+        version: "1.0.0",
+      };
+      const logicFn = viewLogics.createViewLogicFn(vdCustom);
+      // dstPath that doesn't match topics/{topicId}/menuItems/{menuItemId}/ingredients/{menuItemIngredientId}
+      const dstPath = "random/path/that/doesnt/match";
+      const logicResultDoc: LogicResultDoc = {
+        action: "delete",
+        dstPath,
+        doc: {
+          "@id": "ingredientC",
+          // topicId is missing
+        },
+      };
+
+      jest.spyOn(console, "error").mockImplementation();
+      const result = await logicFn[1](logicResultDoc, "1.0.0", "1.0.0");
+      expect(result.status).toBe("error");
+      expect(result.message).toBe("srcPath should not have a placeholder");
+      expect(console.error).toHaveBeenCalledWith("srcPath should not have a placeholder");
+    });
+
+    it("should extract srcDocId from viewDoc even if it differs from dstPath last segment", async () => {
+      const logicFn = viewLogics.createViewLogicFn(vd1);
+      const dstPath = "friends/friend1";
+      const logicResultDoc: LogicResultDoc = {
+        action: "delete",
+        dstPath,
+        doc: {
+          "@id": "userActualId", // Differs from friend1
+        },
+      };
+
+      const result = await logicFn[1](logicResultDoc, "1.0.0", "1.0.0");
+      expect(result.status).toBe("finished");
+      // Should use userActualId
+      expect(result.documents[0].dstPath).toBe("users/userActualId/@views/friends+friend1");
     });
   });
 
@@ -1322,6 +1537,43 @@ describe("queueRunViewLogics", () => {
 
     expect(findMatchingViewLogicsSpy).toHaveBeenCalled();
     expect(publishMessageSpy).toHaveBeenCalledWith({json: {"doc": doc1, targetVersion, appVersion}});
+  });
+
+  it("should capture unwrapped view document data when action is delete", async () => {
+    // Mock findMatchingViewLogics to return a match for this test
+    jest.spyOn(viewLogics, "findMatchingViewLogics").mockReturnValue(new Map([["test", {viewLogicFn: jest.fn(), name: "test"} as any]]));
+
+    const doc1: LogicResultDoc = {
+      action: "delete",
+      priority: "normal",
+      dstPath: "servers/server1#createdBy",
+    };
+    const mockData = {
+      createdBy: {"name": "test-user", "@id": "user1"},
+      serverName: "Server 1",
+    };
+    const getSpy = jest.fn().mockResolvedValue({
+      data: () => mockData,
+    });
+    const docSpy = jest.spyOn(admin.firestore(), "doc").mockReturnValue({
+      get: getSpy,
+    } as any);
+
+    await viewLogics.queueRunViewLogics(targetVersion, appVersion, [doc1]);
+
+    expect(docSpy).toHaveBeenCalledWith("servers/server1");
+    expect(publishMessageSpy).toHaveBeenCalledWith({
+      json: {
+        "doc": {
+          ...doc1,
+          doc: mockData.createdBy,
+        },
+        targetVersion,
+        appVersion,
+      },
+    });
+    docSpy.mockRestore();
+    (viewLogics.findMatchingViewLogics as jest.Mock).mockRestore();
   });
 });
 
