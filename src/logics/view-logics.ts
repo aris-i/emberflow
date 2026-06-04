@@ -38,6 +38,11 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     return viewDocId;
   }
 
+  function formAtViewsPath(viewDstPath: string, srcPath: string) {
+    const viewDocId = formViewDocId(viewDstPath);
+    return `${srcPath}/@views/${viewDocId}`;
+  }
+
   function createLogicDocsWhenViewIsCreated(srcPath: string, viewDstPath: string) {
     const logicResultDocs: LogicResultDoc[] = [];
 
@@ -73,9 +78,33 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     return logicResultDocs;
   }
 
-  function formAtViewsPath(viewDstPath: string, srcPath: string) {
-    const viewDocId = formViewDocId(viewDstPath);
-    return `${srcPath}/@views/${viewDocId}`;
+  function createLogicDocsWhenViewIsDeleted(srcPath: string, viewDstPath: string) {
+    const {
+      destProp: viewDestProp,
+      destPropId: viewDestPropId,
+      isArrayMap: viewIsArrayMap,
+      basePath: viewBasePath,
+    } = getDestPropAndDestPropId(viewDstPath);
+
+    const srcAtViewsPath = formAtViewsPath(viewDstPath, srcPath);
+    const logicResultDocs: LogicResultDoc[] = [];
+
+    logicResultDocs.push({
+      action: "delete",
+      dstPath: srcAtViewsPath,
+    });
+
+    if (viewDestProp && viewIsArrayMap) {
+      logicResultDocs.push({
+        action: "merge",
+        dstPath: viewBasePath,
+        instructions: {
+          [`@${viewDestProp}`]: `arr(-${viewDestPropId})`,
+        },
+      });
+    }
+
+    return logicResultDocs;
   }
 
   const srcToDstLogicFn: ViewLogicFn = async (logicResultDoc, targetVersion, appVersion, lastProcessedId) => {
@@ -302,32 +331,6 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     }
   };
 
-  function createLogicDocsWhenViewIsDeleted(srcPath: string, viewDstPath: string) {
-    const {
-      destProp: viewDestProp,
-      destPropId: viewDestPropId,
-      isArrayMap: viewIsArrayMap,
-      basePath: viewBasePath,
-    } = getDestPropAndDestPropId(viewDstPath);
-
-    const srcAtViewsPath = formAtViewsPath(viewDstPath, srcPath);
-    const logicResultDocs: LogicResultDoc[] = [];
-    logicResultDocs.push({
-      action: "delete",
-      dstPath: srcAtViewsPath,
-    });
-    if (viewDestProp && viewIsArrayMap) {
-      logicResultDocs.push({
-        action: "merge",
-        dstPath: viewBasePath,
-        instructions: {
-          [`@${viewDestProp}`]: `arr(-${viewDestPropId})`,
-        },
-      });
-    }
-    return logicResultDocs;
-  }
-
   const dstToSrcLogicFn: ViewLogicFn = async (logicResultDoc) => {
     const logicResult: LogicResult = {
       name: `${logicName} Dst-to-Src`,
@@ -339,17 +342,20 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       action: viewAction,
       doc: viewDoc,
     } = logicResultDoc;
-    const srcDocId = viewDoc?.["@id"];
+
+    const {destPropId} = getDestPropAndDestPropId(viewDstPath);
+    const srcDocId = viewDoc?.["@id"] || destPropId || viewDstPath.split("/").pop();
+
     if (!srcDocId) {
-      console.error("Document does not have an @id attribute");
+      console.error("Document does not have an @id attribute and srcDocId could not be determined from dstPath");
       logicResult.status = "error";
-      logicResult.message = "Document does not have an @id attribute";
+      logicResult.message = "Document does not have an @id attribute and srcDocId could not be determined from dstPath";
       return logicResult;
     }
 
     function formSrcPath() {
       const srcDocPath = docPaths[defSrcEntity];
-      let srcPath = srcDocPath.split("/").slice(0, -1).join("/") + "/" + srcDocId;
+      let srcPathParent = srcDocPath.split("/").slice(0, -1).join("/");
 
       const destDocPath = docPaths[defDestEntity];
       const destDocPathRegex = docPathsRegex[defDestEntity];
@@ -373,11 +379,26 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
           const key = srcDocPathKey.replace(/[{}]/g, "");
           const value = viewDoc?.[key] || dstPathKeyValuesMap[key];
           if (value) {
-            srcPath = srcPath.replace(srcDocPathKey, value);
+            srcPathParent = srcPathParent.replace(srcDocPathKey, value);
           }
         }
       }
-      return srcPath;
+      return `${srcPathParent}/${srcDocId}`;
+    }
+
+    const srcPath = formSrcPath();
+    if (srcPath.includes("{")) {
+      console.error("srcPath should not have a placeholder");
+      logicResult.status = "error";
+      logicResult.message = "srcPath should not have a placeholder";
+      return logicResult;
+    }
+
+    if (viewAction === "delete") {
+      logicResult.documents.push(
+        ...createLogicDocsWhenViewIsDeleted(srcPath, viewDstPath)
+      );
+      return logicResult;
     }
 
     async function rememberForSyncCreate() {
@@ -411,26 +432,12 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       return;
     }
 
-    const srcPath = formSrcPath();
-    if (srcPath.includes("{")) {
-      console.error("srcPath should not have a placeholder");
-      logicResult.status = "error";
-      logicResult.message = "srcPath should not have a placeholder";
-      return logicResult;
-    }
+    logicResult.documents.push(
+      ...createLogicDocsWhenViewIsCreated(srcPath, viewDstPath)
+    );
 
-    if (viewAction === "delete") {
-      logicResult.documents.push(
-        ...createLogicDocsWhenViewIsDeleted(srcPath, viewDstPath)
-      );
-    } else {
-      logicResult.documents.push(
-        ...createLogicDocsWhenViewIsCreated(srcPath, viewDstPath)
-      );
-
-      if (syncCreate) {
-        await rememberForSyncCreate();
-      }
+    if (syncCreate) {
+      await rememberForSyncCreate();
     }
 
     return logicResult;
@@ -456,16 +463,17 @@ export async function queueRunViewLogics(
         dstPath,
         skipRunViewLogics,
       } = logicResultDoc;
-      const {basePath, destProp, destPropId} = getDestPropAndDestPropId(dstPath);
+      const {basePath} = getDestPropAndDestPropId(dstPath);
       const dstDocRef = db.doc(basePath);
       if (!skipRunViewLogics && ["create", "merge", "delete"].includes(action)) {
         if (action === "delete") {
           const data = (await dstDocRef.get()).data() || {};
+          const {destProp, destPropId} = getDestPropAndDestPropId(dstPath);
           if (destProp) {
             if (destPropId) {
-              logicResultDoc.doc = {[destProp]: data[destProp]?.[destPropId] || {}};
+              logicResultDoc.doc = data[destProp]?.[destPropId] || {};
             } else {
-              logicResultDoc.doc = {[destProp]: data[destProp] || {}};
+              logicResultDoc.doc = data[destProp] || {};
             }
           } else {
             logicResultDoc.doc = data;
@@ -626,3 +634,5 @@ export const findMatchingViewLogics = (logicResultDoc: LogicResultDoc, targetVer
 
   return matchingLogics;
 };
+
+
