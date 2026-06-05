@@ -54,7 +54,7 @@ describe("findMatchingDocPathRegex", () => {
     const res = findMatchingDocPathRegex(path);
     expect(res).toEqual({
       entity: Entity.Topic,
-      regex: /^topics\/([^/]+)$/,
+      regex: /^\/?topics\/([^/]+)$/,
     });
   });
 
@@ -63,7 +63,7 @@ describe("findMatchingDocPathRegex", () => {
     const res = findMatchingDocPathRegex(path);
     expect(res).toEqual({
       entity: Entity.RecipeIngredient,
-      regex: /^topics\/([^/]+)\/ingredients\/([^/]+)$/,
+      regex: /^\/?topics\/([^/]+)\/ingredients\/([^/]+)$/,
     });
   });
 
@@ -72,7 +72,16 @@ describe("findMatchingDocPathRegex", () => {
     const res = findMatchingDocPathRegex(path);
     expect(res).toEqual({
       entity: Entity.MenuItemIngredient,
-      regex: /^topics\/([^/]+)\/menuItems\/([^/]+)\/ingredients\/([^/]+)$/,
+      regex: /^\/?topics\/([^/]+)\/menuItems\/([^/]+)\/ingredients\/([^/]+)$/,
+    });
+  });
+
+  it("should return entity and regex for path with leading slash", () => {
+    const path = "/topics/topicId/menuItems/menuItemId/ingredients/ingredientId";
+    const res = findMatchingDocPathRegex(path);
+    expect(res).toEqual({
+      entity: Entity.MenuItemIngredient,
+      regex: /^\/?topics\/([^/]+)\/menuItems\/([^/]+)\/ingredients\/([^/]+)$/,
     });
   });
 });

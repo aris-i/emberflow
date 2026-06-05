@@ -226,11 +226,11 @@ export function addAncestorIds(dstPath: string, doc: any) {
   if (matchingDocPath.entity && docPaths[matchingDocPath.entity]) {
     const docPathWithPlaceholders = docPaths[matchingDocPath.entity];
     const placeholders = docPathWithPlaceholders.match(/{([^/]+)Id}/g);
-    const values = dstPath.match(matchingDocPath.regex!);
+    const values = dstPath.split("#")[0].match(matchingDocPath.regex!);
     if (placeholders && values) {
       // values[0] is the full match, values[1...] are the captured groups
       for (let i = 0; i < placeholders.length - 1; i++) {
-        const placeholder = placeholders[i].slice(1, -1);
+        const placeholder = placeholders[i].slice(1, -3);
         const value = values[i + 1];
         doc[`@${placeholder}`] = value;
       }
