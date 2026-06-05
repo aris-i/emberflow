@@ -150,7 +150,7 @@ export async function distributeDoc(
         if (process.env.JEST_WORKER_ID === undefined) {
           const collectionPath = getParentPath(dstPath);
           if (collectionPath && collectionPath.includes("/")) {
-            const patchStatusPath = `@emberflow/internal/patches/${collectionPath.replace(/\//g, "_")}`;
+            const patchStatusPath = `@emberflow/internal/group-query-patches/${collectionPath.replace(/\//g, "_")}`;
             const patchStatusRef = db.doc(patchStatusPath);
             const patchStatusDoc = await patchStatusRef.get();
             if (!patchStatusDoc.exists) {
@@ -732,7 +732,7 @@ export async function distributeFnTransactional(
  * @param {string} lastPatchedId The ID of the last document patched in the previous batch.
  */
 export async function patchSiblingsWithAncestorIds(collectionPath: string, lastPatchedId?: string) {
-  const patchStatusPath = `@emberflow/internal/patches/${collectionPath.replace(/\//g, "_")}`;
+  const patchStatusPath = `@emberflow/internal/group-query-patches/${collectionPath.replace(/\//g, "_")}`;
   const patchStatusRef = db.doc(patchStatusPath);
   const patchStatusDoc = await patchStatusRef.get();
   const patchStatusData = patchStatusDoc.data();

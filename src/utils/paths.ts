@@ -224,6 +224,7 @@ export function getParentPath(path: string) {
 export function addAncestorIds(dstPath: string, doc: any) {
   const matchingDocPath = findMatchingDocPathRegex(dstPath);
   if (matchingDocPath.entity && docPaths[matchingDocPath.entity]) {
+    doc["@entity"] = matchingDocPath.entity;
     const docPathWithPlaceholders = docPaths[matchingDocPath.entity];
     const placeholders = docPathWithPlaceholders.match(/{([^/]+)Id}/g);
     const values = dstPath.split("#")[0].match(matchingDocPath.regex!);

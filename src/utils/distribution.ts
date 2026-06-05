@@ -385,7 +385,7 @@ export const queueAncestorIdsPatch = async (dstPathOrCollectionPath: string, las
 
   // If this is the start of a new patch (no lastPatchedId), check/lock it in Firestore
   if (!lastPatchedId) {
-    const patchStatusPath = `@emberflow/internal/patches/${collectionPath.replace(/\//g, "_")}`;
+    const patchStatusPath = `@emberflow/internal/group-query-patches/${collectionPath.replace(/\//g, "_")}`;
     const patchStatusRef = db.doc(patchStatusPath);
 
     try {
@@ -441,7 +441,7 @@ export async function onMessageAncestorIdsPatchQueue(event: CloudEvent<MessagePu
       console.log(`[AncestorIdsPatch] Hydration in Progress for ${collectionPath}...`);
       const {documentPaths, hydrationState: nextHydrationState} = await hydrateDocPath(collectionPath, {}, hydrationState);
 
-      const patchStatusPath = `@emberflow/internal/patches/${collectionPath.replace(/\//g, "_")}`;
+      const patchStatusPath = `@emberflow/internal/group-query-patches/${collectionPath.replace(/\//g, "_")}`;
       if (nextHydrationState) {
         // Re-queue hydration
         const message: AncestorIdsPatchMessage = {
