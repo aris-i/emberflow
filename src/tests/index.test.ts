@@ -645,6 +645,10 @@ describe("onFormSubmit", () => {
           title: "High priority doc for user 2",
         },
         priority: "high",
+      }, {
+        action: "delete" as LogicResultDocAction,
+        dstPath: "users/user-4",
+        priority: "high",
       },
     ];
     const normalPriorityDocs: LogicResultDoc[] = [
@@ -757,6 +761,7 @@ describe("onFormSubmit", () => {
       otherDocsByDocPath: lowPriorityOtherDocsByDocPath,
     } = groupDocsByTargetDocPath(lowPriorityDstPathLogicDocsMap, docPath);
 
+    dataMock.mockReturnValueOnce({id: "to-be-deleted-doc"});
     jest.spyOn(indexutils, "validateForm").mockResolvedValue([false, {}]);
     jest.spyOn(indexutils, "getFormModifiedFields").mockReturnValue({"field1": "value1", "field2": "value2"});
     jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() => Promise.resolve({status: "allowed"}));
@@ -847,8 +852,27 @@ describe("onFormSubmit", () => {
     expect(expandConsolidateAndGroupByDstPathMock).toHaveBeenNthCalledWith(1, transactionalDocs);
     expect(transactionMock.delete).toHaveBeenCalledTimes(1);
 
+    expect(dataMock).toHaveBeenCalledTimes(1);
+    expect(dataMock).toHaveNthReturnedWith(1, {id: "to-be-deleted-doc"});
+
+    const expectedHighPriorityDstPathLogicDocsMap = new Map(
+      [...highPriorityDstPathLogicDocsMap.entries()].map(([key, items]) => [
+        key,
+        items.map((item) =>
+          item.action === "delete" ?
+            {
+              ...item,
+              doc: {
+                id: "to-be-deleted-doc",
+              },
+            } :
+            item,
+        ),
+      ]),
+    );
+
     expect(expandConsolidateAndGroupByDstPathMock).toHaveBeenNthCalledWith(2, highPriorityDocs);
-    expect(indexutils.groupDocsByTargetDocPath).toHaveBeenNthCalledWith(1, highPriorityDstPathLogicDocsMap, docPath);
+    expect(indexutils.groupDocsByTargetDocPath).toHaveBeenNthCalledWith(1, expectedHighPriorityDstPathLogicDocsMap, docPath);
     expect(indexutils.distributeFnNonTransactional).toHaveBeenNthCalledWith(1, highPriorityDocsByDocPath, "4.0.0");
     expect(indexutils.distributeFnNonTransactional).toHaveBeenNthCalledWith(2, highPriorityOtherDocsByDocPath, "4.0.0");
 
@@ -888,6 +912,7 @@ describe("onFormSubmit", () => {
       "transactions/transaction-1",
       "messages/message-1",
       "users/user-2",
+      "users/user-4",
       "users/user-1/activities/activity-1",
     );
     findMatchingPatchLogicsByEntitySpy.mockRestore();

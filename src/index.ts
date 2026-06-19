@@ -20,7 +20,7 @@ import {
   ViewLogicConfig,
 } from "./types";
 import {
-  _mockable as indexUtilsMockable,
+  _mockable as indexUtilsMockable, attachDeleteDocsToLogicDocsMap,
   cleanMetricComputations,
   cleanMetricExecutions,
   convertLogicResultsToMetricExecutions,
@@ -690,10 +690,15 @@ async function distributeNonTransactionalLogicResults(
   console.info(`Consolidating and Distributing High Priority Logic Results: ${highPriorityDocs.length}`);
   const highPriorityDstPathLogicDocsMap: Map<string, LogicResultDoc[]> =
       await expandConsolidateAndGroupByDstPath(highPriorityDocs);
+
+  // put doc to every delete action logic result docs
+  const finalHighPriorityDstPathLogicDocsMap =
+    await attachDeleteDocsToLogicDocsMap(highPriorityDstPathLogicDocsMap);
+
   const {
     docsByDocPath: highPriorityDocsByDocPath,
     otherDocsByDocPath: highPriorityOtherDocsByDocPath,
-  } = groupDocsByTargetDocPath(highPriorityDstPathLogicDocsMap, docPath);
+  } = groupDocsByTargetDocPath(finalHighPriorityDstPathLogicDocsMap, docPath);
 
   const distributedHighPriorityDocs = [
     ...await distributeFnNonTransactional(highPriorityDocsByDocPath, appVersion),
