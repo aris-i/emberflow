@@ -1,4 +1,3 @@
-import {LogicResult, LogicResultDoc, MetricExecution, ViewDefinition, ViewLogicConfig, ViewLogicFn} from "../types";
 import {db, docPaths, docPathsRegex, VIEW_LOGICS_TOPIC, VIEW_LOGICS_TOPIC_NAME} from "../index";
 import * as admin from "firebase-admin";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
@@ -8,8 +7,18 @@ import {
   convertLogicResultsToMetricExecutions, distributeFnNonTransactional, expandConsolidateAndGroupByDstPath,
 } from "../index-utils";
 import {pubsubUtils} from "../utils/pubsub";
-import {logMemoryUsage, reviveDateAndTimestamp} from "../utils/misc";
+import {queueInstructions} from "../utils/distribution";
+import {logMemoryUsage, reviveDateAndTimestamp, deleteCollection} from "../utils/misc";
 import {chunkQuery} from "../utils/query";
+import {
+  LogicResult,
+  LogicResultDoc,
+  MetricExecution,
+  ViewDefinition,
+  ViewLogicConfig,
+  ViewLogicFn,
+} from "../types";
+import {ScheduledEvent} from "firebase-functions/v2/scheduler";
 import {
   _mockable as pathsMockable,
   findMatchingDocPathRegex,
@@ -138,12 +147,29 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       };
       const viewInstructions: Record<string, string> = {};
       const srcPropsToCopy = [...defSrcProps, "@dataVersion"];
+
+      const srcDocKeys = Object.keys(srcDoc || {});
+      const srcInstructionsKeys = Object.keys(srcInstructions || {});
+
       for (const srcProp of srcPropsToCopy) {
         if (srcDoc?.[srcProp] !== undefined) {
           viewDoc[srcProp] = srcDoc[srcProp];
         }
+
         if (srcInstructions?.[srcProp]) {
           viewInstructions[srcProp] = srcInstructions[srcProp];
+        }
+      }
+
+      // Check for dot-notation keys and log them
+      for (const key of srcDocKeys) {
+        if (key.includes(".")) {
+          console.debug(`Dot-notation key detected in srcDoc: ${key}`);
+        }
+      }
+      for (const key of srcInstructionsKeys) {
+        if (key.includes(".")) {
+          console.debug(`Dot-notation key detected in srcInstructions: ${key}`);
         }
       }
 
@@ -535,6 +561,26 @@ export async function runViewLogics(
   return logicResults;
 }
 
+export async function cleanViewLogicExecutions(_event: ScheduledEvent) {
+  console.info("Running cleanViewLogicExecutions");
+  const query = db.collection("@emberflow").doc("internal").collection("viewLogicExecutions")
+    .where("execDate", "<", new Date(Date.now() - 1000 * 60 * 60 * 24 * 7));
+
+  let i = 0;
+  await deleteCollection(query, async (snapshot) => {
+    const batch = _mockable.getBatchUtil();
+    for (const doc of snapshot.docs) {
+      const docsQuery = doc.ref.collection("docs");
+      await deleteCollection(docsQuery);
+      await batch.deleteDoc(doc.ref);
+      i++;
+    }
+    await batch.commit();
+  });
+
+  console.info(`Cleaned ${i} view logic executions`);
+}
+
 export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishedData>) {
   if (await pubsubUtils.isProcessed(VIEW_LOGICS_TOPIC_NAME, event.id)) {
     return;
@@ -542,14 +588,43 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
 
   try {
     const {appVersion, targetVersion, doc, lastProcessedId} = event.data.message.json;
-    const logicResultDoc = reviveDateAndTimestamp(doc) as LogicResultDoc;
+    const srcLogicResultDoc = reviveDateAndTimestamp(doc) as LogicResultDoc;
 
     logMemoryUsage("Before Running View Logics");
     const start = performance.now();
-    const viewLogicResults: LogicResult[] = await exports.runViewLogics(logicResultDoc, targetVersion, appVersion, lastProcessedId);
+    const viewLogicResults: LogicResult[] = await exports.runViewLogics(srcLogicResultDoc, targetVersion, appVersion, lastProcessedId);
     const end = performance.now();
     logMemoryUsage("After Running View Logics");
     const metricExecutions = convertLogicResultsToMetricExecutions([...viewLogicResults]);
+    for (const result of viewLogicResults) {
+      const {name, execTime, status, message, documents, timeFinished} = result;
+      const viewLogicRef = db.collection("@emberflow").doc("internal").collection("viewLogics").doc(name);
+      if (process.env.JEST_WORKER_ID === undefined) {
+        await queueInstructions(viewLogicRef.path, {
+          totalExecTime: `+${execTime || 0}`,
+          totalExecCount: "++",
+        });
+
+        const batch = db.batch();
+        const execRef = db.collection("@emberflow").doc("internal").collection("viewLogicExecutions").doc();
+        batch.set(execRef, {
+          name,
+          execDate: timeFinished || admin.firestore.Timestamp.now(),
+          execTime: execTime || 0,
+          status,
+          message,
+          srcLogicResultDoc,
+          documentsCount: documents.length,
+        });
+
+        for (const doc of documents) {
+          const docRef = execRef.collection("docs").doc();
+          batch.set(docRef, doc);
+        }
+        await batch.commit();
+      }
+    }
+
     const runViewLogicsMetricExecution: MetricExecution = {
       name: "runViewLogics",
       execTime: end - start,
