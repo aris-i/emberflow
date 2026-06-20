@@ -45,7 +45,13 @@ import {
   versionCompare,
 } from "./logics/patch-logics";
 import {initDbStructure} from "./init-db-structure";
-import {createViewLogicFn, findMatchingViewLogics, onMessageViewLogicsQueue, queueRunViewLogics} from "./logics/view-logics";
+import {
+  cleanViewLogicExecutions,
+  createViewLogicFn,
+  findMatchingViewLogics,
+  onMessageViewLogicsQueue,
+  queueRunViewLogics,
+} from "./logics/view-logics";
 import {resetUsageStats, stopBillingIfBudgetExceeded, useBillProtect} from "./utils/bill-protect";
 import {Firestore} from "firebase-admin/firestore";
 import {DatabaseEvent, DataSnapshot, onValueCreated} from "firebase-functions/v2/database";
@@ -305,6 +311,13 @@ export function initializeEmberFlow(
     timeoutSeconds: 540,
     ...projectConfig.functionsConfig?.cleanActionsAndForms as any,
   }, cleanActionsAndForms);
+  functionsConfig["cleanViewLogicExecutions"] = onSchedule({
+    schedule: "every 24 hours",
+    region: projectConfig.region,
+    memory: "512MiB",
+    timeoutSeconds: 540,
+    ...projectConfig.functionsConfig?.cleanViewLogicExecutions as any,
+  }, cleanViewLogicExecutions);
   functionsConfig["createMetricComputation"] = onSchedule({
     schedule: "every 1 hours",
     region: projectConfig.region,

@@ -37,6 +37,7 @@ export interface ProjectConfig {
         cleanMetricComputations?: FunctionConfig;
         cleanMetricExecutions?: FunctionConfig;
         cleanActionsAndForms?: FunctionConfig;
+        cleanViewLogicExecutions?: FunctionConfig;
         createMetricComputation?: FunctionConfig;
         onDeleteFunctions?: FunctionConfig;
         onUserRegister?: FunctionConfig;
