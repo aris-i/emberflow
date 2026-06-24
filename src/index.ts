@@ -568,10 +568,12 @@ export async function onFormSubmit(
       const distributeTransactionalLogicResultsStart = performance.now();
       const transactionalLogicResults =
         await distributeFnTransactional(txn, runBusinessLogicStatus.logicResults, appVersion);
-      for (const doc of transactionalLogicResults) {
+      for (let doc of transactionalLogicResults) {
+        doc = transformLogicResultDocIfNeeded(doc);
         if (findMatchingViewLogics(doc, targetVersion)?.size) {
           docsForViewLogics.push(doc);
         }
+
         const {basePath} = getDestPropAndDestPropId(doc.dstPath);
         const {entity} = findMatchingDocPathRegex(basePath);
         if (entity && findMatchingPatchLogicsByEntity(entity, targetVersion).length > 0) {
@@ -676,6 +678,22 @@ export async function onFormSubmit(
   }
 }
 
+export function transformLogicResultDocIfNeeded(doc: LogicResultDoc): LogicResultDoc {
+  const {basePath, destProp} = getDestPropAndDestPropId(doc.dstPath);
+  const {entity} = findMatchingDocPathRegex(basePath);
+
+  if (destProp && (!entity || !entityViewDefinitions[entity]?.[destProp])) {
+    return {
+      ...doc,
+      dstPath: basePath,
+      doc: {[destProp]: doc.doc},
+    };
+  }
+
+  return doc;
+}
+
+
 async function distributeNonTransactionalLogicResults(
   logicResults: LogicResult[],
   docPath: string,
@@ -717,10 +735,12 @@ async function distributeNonTransactionalLogicResults(
     ...await distributeFnNonTransactional(highPriorityDocsByDocPath, appVersion),
     ...await distributeFnNonTransactional(highPriorityOtherDocsByDocPath, appVersion),
   ];
-  for (const doc of distributedHighPriorityDocs) {
+  for (let doc of distributedHighPriorityDocs) {
+    doc = transformLogicResultDocIfNeeded(doc);
     if (findMatchingViewLogics(doc, targetVersion)?.size) {
       docsForViewLogics.push(doc);
     }
+
     const {basePath} = getDestPropAndDestPropId(doc.dstPath);
     const {entity} = findMatchingDocPathRegex(basePath);
     if (entity && findMatchingPatchLogicsByEntity(entity, targetVersion).length > 0) {
@@ -744,10 +764,12 @@ async function distributeNonTransactionalLogicResults(
 
   const distributedNormalPriorityDocs =
     await distributeFnNonTransactional(normalPriorityDocsByDocPath, appVersion);
-  for (const doc of distributedNormalPriorityDocs) {
+  for (let doc of distributedNormalPriorityDocs) {
+    doc = transformLogicResultDocIfNeeded(doc);
     if (findMatchingViewLogics(doc, targetVersion)?.size) {
       docsForViewLogics.push(doc);
     }
+
     const {basePath} = getDestPropAndDestPropId(doc.dstPath);
     const {entity} = findMatchingDocPathRegex(basePath);
     if (entity && findMatchingPatchLogicsByEntity(entity, targetVersion).length > 0) {
