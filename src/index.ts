@@ -17,6 +17,7 @@ import {
   UserRegisterFn,
   ValidatorConfig,
   ViewDefinition,
+  EntityViewDefinitions,
   ViewLogicConfig,
 } from "./types";
 import {
@@ -92,6 +93,7 @@ export let patchLogicConfigs: PatchLogicConfig[] = [];
 export let docPaths: Record<string, string> = {};
 export let colPaths: Record<string, string> = {};
 export let docPathsRegex: Record<string, RegExp> = {};
+export let entityViewDefinitions: EntityViewDefinitions = {};
 export let viewLogicConfigs: ViewLogicConfig[] = [];
 export let projectConfig: ProjectConfig;
 export const functionsConfig: Record<string, any> = {};
@@ -136,6 +138,7 @@ export function initializeEmberFlow(
     docPaths: Record<string, string>;
     colPaths: Record<string, string>;
     docPathsRegex: Record<string, RegExp>;
+    entityViewDefinitions: EntityViewDefinitions;
     functionsConfig: Record<string, any>,
   } {
   projectConfig = customProjectConfig;
@@ -164,10 +167,12 @@ export function initializeEmberFlow(
     colPaths: cp,
     docPathsRegex: dbr,
     viewDefinitions: vd,
+    entityViewDefinitions: evd,
   } = initDbStructure(dbStructure, Entity);
   docPaths = dp;
   colPaths = cp;
   docPathsRegex = dbr;
+  entityViewDefinitions = evd;
 
   viewLogicConfigs = vd.map((viewDef: ViewDefinition): ViewLogicConfig[] => {
     const {destEntity, destProp} = viewDef;
@@ -338,7 +343,7 @@ export function initializeEmberFlow(
       ...(onUserRegisterConfig?.maxInstances ? {maxInstances: onUserRegisterConfig.maxInstances} : {}),
     }).auth.user().onCreate(onUserRegister);
 
-  return {docPaths, colPaths, docPathsRegex, functionsConfig};
+  return {docPaths, colPaths, docPathsRegex, entityViewDefinitions, functionsConfig};
 }
 
 function initActionRef(actionId: string) {

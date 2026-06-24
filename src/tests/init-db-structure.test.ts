@@ -1,4 +1,10 @@
-import {mapColPaths, mapDocPaths, mapViewDefinitions, traverseBFS} from "../init-db-structure";
+import {
+  mapColPaths,
+  mapDocPaths,
+  mapEntityViewDefinitions,
+  mapViewDefinitions,
+  traverseBFS
+} from "../init-db-structure";
 
 describe("traverseBFS", () => {
   it("should traverse the object structure and return paths", () => {
@@ -203,6 +209,62 @@ describe("mapViewDefinitions", () => {
     const errorSpy = jest.spyOn(console, "error").mockImplementation();
     const result = mapViewDefinitions(paths, Entity);
     expect(errorSpy).toHaveBeenCalledWith("Unsupported view option: type");
+    expect(result).toEqual(expectedOutput);
+  });
+});
+
+describe("mapEntityViewDefinitions", () => {
+  it("should map entity view definitions correctly", () => {
+    const viewDefinitions = [
+      {
+        destEntity: "preparationMenuItem",
+        destProp: {
+          name: "order",
+          type: "map",
+        },
+        srcProps: ["status"],
+        srcEntity: "order",
+        version: "0.0.1",
+      },
+      {
+        destEntity: "preparationMenuItem",
+        destProp: {
+          name: "instructions",
+          type: "map",
+        },
+        srcProps: ["text"],
+        srcEntity: "instructions",
+        version: "0.0.1",
+      },
+      {
+        destEntity: "order",
+        destProp: {
+          name: "user",
+          type: "map",
+        },
+        srcProps: ["name"],
+        srcEntity: "user",
+        version: "0.0.1",
+      },
+      {
+        destEntity: "standalone",
+        srcProps: ["prop"],
+        srcEntity: "source",
+        version: "0.0.1",
+      }
+    ];
+
+    const expectedOutput = {
+      "preparationMenuItem": {
+        "order": viewDefinitions[0],
+        "instructions": viewDefinitions[1],
+      },
+      "order": {
+        "user": viewDefinitions[2],
+      },
+    };
+
+    const result = mapEntityViewDefinitions(viewDefinitions as any);
     expect(result).toEqual(expectedOutput);
   });
 });

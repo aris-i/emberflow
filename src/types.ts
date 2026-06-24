@@ -224,6 +224,12 @@ export interface ViewDefinition {
     version: string;
 }
 
+export interface EntityViewDefinitions {
+    [entity: string]: {
+        [property: string]: ViewDefinition;
+    };
+}
+
 export type IdGenerator = (collectionPath: string) => Promise<string[]>;
 
 export type ChunkableWhereFilterOp =

@@ -1,4 +1,4 @@
-import {DestPropType, ViewDefinition} from "./types";
+import {DestPropType, EntityViewDefinitions, ViewDefinition} from "./types";
 
 export function traverseBFS(obj: Record<string, object>): string[] {
   const paths: string[] = [];
@@ -151,6 +151,26 @@ export function mapViewDefinitions(
 }
 
 
+export function mapEntityViewDefinitions(viewDefinitions: ViewDefinition[]): EntityViewDefinitions {
+  const entityViewDefinitions: EntityViewDefinitions = {};
+
+  for (const viewDef of viewDefinitions) {
+    if (viewDef.destProp) {
+      const {destEntity} = viewDef;
+      const {name: propName} = viewDef.destProp;
+
+      if (!entityViewDefinitions[destEntity]) {
+        entityViewDefinitions[destEntity] = {};
+      }
+
+      entityViewDefinitions[destEntity][propName] = viewDef;
+    }
+  }
+
+  return entityViewDefinitions;
+}
+
+
 export function initDbStructure(
   dbStructure: Record<string, object>,
   Entity: Record<string, string>
@@ -158,11 +178,12 @@ export function initDbStructure(
   const paths = traverseBFS(dbStructure);
   const docPaths = mapDocPaths(paths, Entity);
   const viewDefinitions = mapViewDefinitions(paths, Entity);
+  const entityViewDefinitions = mapEntityViewDefinitions(viewDefinitions);
   const docPathsRegex: Record<string, RegExp> = {} as Record<string, RegExp>;
   for (const [key, value] of Object.entries(docPaths)) {
     const regexPattern = value.replace(/{([^/]+)Id}/g, "([^/]+)");
     docPathsRegex[key] = new RegExp(`^\\/?${regexPattern}$`);
   }
   const colPaths = mapColPaths(docPaths);
-  return {docPaths, docPathsRegex, colPaths, viewDefinitions};
+  return {docPaths, docPathsRegex, colPaths, viewDefinitions, entityViewDefinitions};
 }
