@@ -587,6 +587,9 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
   }
 
   try {
+    if (!event.data.message.json) {
+      throw new Error("No json in message");
+    }
     const {appVersion, targetVersion, doc, lastProcessedId} = event.data.message.json;
     const srcLogicResultDoc = reviveDateAndTimestamp(doc) as LogicResultDoc;
 
@@ -612,7 +615,7 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
           execDate: timeFinished || admin.firestore.Timestamp.now(),
           execTime: execTime || 0,
           status,
-          message,
+          message: message || null,
           srcLogicResultDoc,
           documentsCount: documents.length,
         });
@@ -650,7 +653,10 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
     await pubsubUtils.trackProcessedIds(VIEW_LOGICS_TOPIC_NAME, event.id);
     return "Processed view logics";
   } catch (e) {
-    console.error("PubSub message was not JSON", e);
+    console.error("Error in onMessageViewLogicsQueue", e);
+    if (e instanceof Error && e.message === "No json in message") {
+      throw e;
+    }
     throw new Error("No json in message");
   }
 }
