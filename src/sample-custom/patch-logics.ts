@@ -1,3 +1,4 @@
+import {Entity} from "./db-structure";
 import {PatchLogicConfig, PatchLogicFn} from "../types";
 import * as admin from "firebase-admin";
 
@@ -29,7 +30,7 @@ const samplePatchLogic: PatchLogicFn = async (dstPath, data) => {
 export const patchLogicConfigs: PatchLogicConfig[] = [
   {
     name: "samplePatchLogic",
-    entity: "user",
+    entity: Entity.User,
     patchLogicFn: samplePatchLogic,
     version: "1",
   },

@@ -8,7 +8,9 @@ import {
 
 // A security function that allows all actions
 const allAllowed: SecurityFn = async (
+  txnGet,
   entity,
+  docPath,
   doc,
   actionType,
   modifiedFields,
