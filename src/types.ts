@@ -1,6 +1,7 @@
 import * as admin from "firebase-admin";
 import {firestore} from "firebase-admin";
 import {MemoryOption} from "firebase-functions/v2/options";
+import {SecretParam} from "firebase-functions/params";
 import Timestamp = firestore.Timestamp;
 import DocumentData = firestore.DocumentData;
 import {FormData} from "emberflow-admin-client/lib/types";
@@ -15,6 +16,11 @@ export interface FunctionConfig {
     maxInstances?: number;
     minInstances?: number;
     retry?: boolean;
+    /**
+     * List of Firebase Secrets to bind to this function.
+     * Required for Genkit/Gemini API keys.
+     */
+    secrets?: (string | SecretParam)[];
 }
 
 export interface ProjectConfig {

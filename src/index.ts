@@ -335,12 +335,22 @@ export function initializeEmberFlow(
     ...projectConfig.functionsConfig?.onDeleteFunctions as any,
   } as any, onDeleteFunction as any);
   const onUserRegisterConfig = projectConfig.functionsConfig?.onUserRegister;
+  const {
+    memory,
+    timeoutSeconds,
+    minInstances,
+    maxInstances,
+    secrets,
+    ...restConfig
+  } = onUserRegisterConfig || {};
   functionsConfig["onUserRegister"] =
     functions.runWith({
-      ...(onUserRegisterConfig?.memory ? {memory: onUserRegisterConfig.memory.replace("MiB", "") as functions.RuntimeOptions["memory"]} : {}),
-      ...(onUserRegisterConfig?.timeoutSeconds ? {timeoutSeconds: onUserRegisterConfig.timeoutSeconds} : {}),
-      ...(onUserRegisterConfig?.minInstances ? {minInstances: onUserRegisterConfig.minInstances} : {}),
-      ...(onUserRegisterConfig?.maxInstances ? {maxInstances: onUserRegisterConfig.maxInstances} : {}),
+      ...(memory ? {memory: memory.replace("MiB", "") as functions.RuntimeOptions["memory"]} : {}),
+      ...(timeoutSeconds ? {timeoutSeconds} : {}),
+      ...(minInstances ? {minInstances} : {}),
+      ...(maxInstances ? {maxInstances} : {}),
+      secrets: secrets || [],
+      ...restConfig,
     }).auth.user().onCreate(onUserRegister);
 
   return {docPaths, colPaths, docPathsRegex, entityViewDefinitions, functionsConfig};
