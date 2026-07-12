@@ -897,7 +897,7 @@ describe("onFormSubmit", () => {
   it("should distribute submit-form logic docs after transaction", async () => {
     const docPath = "users/user-1";
     const form = {
-      formData: JSON.stringify({
+      "formData": JSON.stringify({
         "@actionType": "update",
         "@docPath": docPath,
         "@appVersion": "4.0.0",
