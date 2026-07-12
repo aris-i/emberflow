@@ -198,7 +198,7 @@ export async function distributeDoc(
     }
   } else if (action === "submit-form") {
     if (txn) {
-      console.error("Submit-form is not supported in transactional logic result");
+      console.debug("Submit-form in transactional logic result will be handled after transaction success");
     } else {
       console.debug("Queuing submit form...");
       await queueSubmitForm({

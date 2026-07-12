@@ -312,7 +312,7 @@ describe("distributeDoc", () => {
       expect(transactionSetMock).toHaveBeenNthCalledWith(2, dstDocRef, expectedData, {merge: true});
     });
 
-    it("should not allow submit-form logicResultDoc in transaction", async () => {
+    it("should allow submit-form logicResultDoc in transaction (handled later)", async () => {
       const logicResultDoc: LogicResultDoc = {
         action: "submit-form",
         priority: "normal",
@@ -323,10 +323,11 @@ describe("distributeDoc", () => {
         dstPath: "/users/test-user-id/documents/test-doc-id",
       };
 
-      const errorSpy = jest.spyOn(console, "error").mockImplementation();
+      const debugSpy = jest.spyOn(console, "debug").mockImplementation();
       await indexUtils.distributeDoc(logicResultDoc, appVersion, undefined, transactionMock);
-      expect(errorSpy).toHaveBeenCalledWith("Submit-form is not supported in transactional logic result");
+      expect(debugSpy).toHaveBeenCalledWith("Submit-form in transactional logic result will be handled after transaction success");
       expect(transactionSetMock).toHaveBeenCalledTimes(0);
+      debugSpy.mockRestore();
     });
   });
 

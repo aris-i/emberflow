@@ -28,6 +28,7 @@ import {
   createMetricComputation,
   createMetricLogicDoc,
   delayFormSubmissionAndCheckIfCancelled,
+  distributeDoc,
   distributeFnNonTransactional,
   distributeFnTransactional,
   distributeLater,
@@ -433,6 +434,7 @@ export async function onFormSubmit(
 
     const docsForViewLogics: LogicResultDoc[] = [];
     const pathsForPatchLogics: Set<string> = new Set();
+    let transactionalLogicResultDocs: LogicResultDoc[] = [];
     const actionRef = _mockable.initActionRef(formId);
     let targetVersion = appVersion;
     logMemoryUsage(`${formId}: Starting Transaction`);
@@ -576,9 +578,9 @@ export async function onFormSubmit(
       logMemoryUsage(`${formId}: After Saving Logic Logics`);
 
       const distributeTransactionalLogicResultsStart = performance.now();
-      const transactionalLogicResults =
+      transactionalLogicResultDocs =
         await distributeFnTransactional(txn, runBusinessLogicStatus.logicResults, appVersion);
-      for (let doc of transactionalLogicResults) {
+      for (let doc of transactionalLogicResultDocs) {
         doc = transformLogicResultDocIfNeeded(doc);
         if (findMatchingViewLogics(doc, targetVersion)?.size) {
           docsForViewLogics.push(doc);
@@ -647,6 +649,11 @@ export async function onFormSubmit(
 
     await queueRunViewLogics(targetVersion, appVersion, docsForViewLogics);
     logMemoryUsage(`${formId}: After Saving Transactional Logic Logics`);
+
+    const submitFormLogicDocs = transactionalLogicResultDocs.filter((doc: LogicResultDoc) => doc.action === "submit-form");
+    for (const doc of submitFormLogicDocs) {
+      await distributeDoc(doc, appVersion);
+    }
 
     await queueRunPatchLogics(
       appVersion,

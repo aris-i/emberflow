@@ -893,6 +893,48 @@ describe("onFormSubmit", () => {
     findMatchingPatchLogicsByEntitySpy.mockRestore();
     findMatchingDocPathRegexSpy.mockRestore();
   });
+
+  it("should distribute submit-form logic docs after transaction", async () => {
+    const docPath = "users/user-1";
+    const form = {
+      formData: JSON.stringify({
+        "@actionType": "update",
+        "@docPath": docPath,
+        "@appVersion": "4.0.0",
+      }),
+      "@status": "submit",
+    };
+    const event = createEvent(form);
+
+    const submitFormDoc: LogicResultDoc = {
+      action: "submit-form",
+      dstPath: "users/user-1/forms/test-form",
+      doc: {some: "data"},
+      priority: "normal",
+    };
+
+    const logicResults: LogicResult[] = [
+      {
+        name: "testLogic",
+        status: "finished",
+        timeFinished: _mockable.createNowTimestamp(),
+        documents: [submitFormDoc],
+      },
+    ];
+
+    jest.spyOn(indexutils, "runBusinessLogics").mockResolvedValue({
+      status: "done",
+      logicResults: logicResults,
+    });
+    jest.spyOn(indexutils, "expandConsolidateAndGroupByDstPath").mockResolvedValue(new Map());
+    jest.spyOn(indexutils, "distributeFnTransactional").mockResolvedValue([submitFormDoc]);
+    const distributeDocSpy = jest.spyOn(indexutils, "distributeDoc").mockResolvedValue();
+    jest.spyOn(paths, "findMatchingDocPathRegex").mockReturnValue({entity: "user", regex: /users\/.*/});
+
+    await onFormSubmit(event);
+
+    expect(distributeDocSpy).toHaveBeenCalledWith(submitFormDoc, "4.0.0");
+  });
 });
 
 describe("onUserRegister", () => {
