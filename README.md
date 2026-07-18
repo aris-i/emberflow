@@ -139,6 +139,60 @@ export const logics: LogicConfig[] = [
 ];
 ```
 
+### Patch Logics (`patchLogicConfigs`)
+
+Patch logics handle data migrations and versioning. They are triggered when a document's `@dataVersion` is lower than the required version defined in the patch logic configurations.
+
+#### 1. Define the `PatchLogicFn`
+A patch logic function transforms existing document data to a new version.
+
+```typescript
+import { PatchLogicFn, LogicResult } from "emberflow/src/types";
+
+const updateUserData: PatchLogicFn = async (dstPath, data) => {
+  const { fullName } = data;
+  const [firstName, lastName] = fullName.split(" ");
+
+  return {
+    name: "updateUserData",
+    status: "finished",
+    documents: [
+      {
+        action: "merge",
+        dstPath: dstPath,
+        doc: { firstName, lastName },
+        instructions: { fullName: "del" },
+      },
+    ],
+  };
+};
+```
+
+#### 2. Configure the `PatchLogicConfig`
+Register the patch logic for a specific entity and version.
+
+```typescript
+import { PatchLogicConfig } from "emberflow/src/types";
+
+export const patchLogicConfigs: PatchLogicConfig[] = [
+  {
+    name: "updateUserData",
+    entity: "User",
+    patchLogicFn: updateUserData,
+    version: "1.1.0", // The version this patch achieves
+  },
+];
+```
+
+#### 3. How it Works
+- **Triggering**: Patch logics are automatically queued during form submissions or document distribution if a version mismatch is detected.
+- **Asynchronous Execution**: They run asynchronously via Pub/Sub to ensure high performance.
+- **Versioning**:
+    - **`@dataVersion`**: Incremented automatically after a patch is successfully applied.
+    - **`minDataVersion`**: In `LogicConfig`, use this to ensure business logic only runs on compatible data.
+    - **`obsoleteStartingFromVersion`**: In `LogicConfig`, use this to retire old logic based on the `appVersion`.
+- **Transactions**: Executed within Firestore transactions to ensure data integrity.
+
 ## Reference
 
 For more detailed examples on how to set up these configuration files, you can check the `src/sample-custom` folder in the Emberflow repository.
