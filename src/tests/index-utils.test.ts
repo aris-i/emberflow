@@ -3,6 +3,7 @@ import {firestore} from "firebase-admin";
 import {Readable} from "stream";
 import * as indexUtils from "../index-utils";
 import {
+  attachDeleteDocsToLogicDocsMap,
   cleanMetricComputations,
   cleanMetricExecutions,
   convertLogicResultsToMetricExecutions,
@@ -2154,5 +2155,127 @@ describe("cleanMetricComputations", () => {
     expect(colGetMock).toHaveBeenCalledTimes(1);
     expect(deleteCollectionSpy).toHaveBeenCalled();
     expect(console.info).toHaveBeenCalledWith("Cleaned 1 logic metric computations");
+  });
+});
+
+describe("attachDeleteDocsToLogicDocsMap", () => {
+  let dbSpy: jest.SpyInstance;
+  let dbDoc: admin.firestore.DocumentReference<admin.firestore.DocumentData>;
+
+  beforeEach(() => {
+    dbDoc = ({
+      get: jest.fn(),
+    } as unknown) as admin.firestore.DocumentReference<admin.firestore.DocumentData>;
+
+    dbSpy = jest.spyOn(admin.firestore(), "doc").mockReturnValue(dbDoc);
+  });
+
+  afterEach(() => {
+    dbSpy.mockRestore();
+  });
+
+  it("should attach document data only to delete actions", async () => {
+    const getMock = jest.fn().mockResolvedValue({
+      data: () => ({name: "test-doc"}),
+    });
+
+    dbDoc.get = getMock;
+
+    const logicMap = new Map([
+      [
+        "/users/test-user-id/documents/test-doc-id",
+        [
+          {action: "delete", dstPath: "/users/test-user-id/documents/test-doc-id"},
+          {action: "merge", dstPath: "/users/test-user-id/documents/test-doc-id"},
+        ] as any,
+      ],
+    ]);
+
+    const result = await attachDeleteDocsToLogicDocsMap(logicMap);
+
+    expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
+    expect(admin.firestore().doc).toHaveBeenCalledWith(
+      "/users/test-user-id/documents/test-doc-id",
+    );
+
+    expect(getMock).toHaveBeenCalledTimes(1);
+
+    const updated = result.get("/users/test-user-id/documents/test-doc-id")!;
+
+    expect(updated[0].doc).toEqual({name: "test-doc"});
+    expect(updated[1].doc).toBeUndefined();
+  });
+
+  it("should not fetch when there are no delete actions", async () => {
+    const getMock = jest.fn();
+    dbDoc.get = getMock;
+
+    const logicMap = new Map([
+      [
+        "/users/test-user-id/documents/test-doc-id",
+        [{action: "merge", dstPath: "/users/test-user-id/documents/test-doc-id"}] as any,
+      ],
+    ]);
+
+    const result = await attachDeleteDocsToLogicDocsMap(logicMap);
+
+    expect(admin.firestore().doc).not.toHaveBeenCalled();
+    expect(getMock).not.toHaveBeenCalled();
+    expect(result).toEqual(logicMap);
+  });
+
+  it("should handle multiple paths correctly", async () => {
+    const getMock = jest
+      .fn()
+      .mockResolvedValueOnce({
+        data: () => ({path: "doc-1"}),
+      })
+      .mockResolvedValueOnce({
+        data: () => ({path: "doc-2"}),
+      });
+
+    dbDoc.get = getMock;
+
+    const logicMap = new Map([
+      [
+        "/users/test-user-id/documents/doc-1",
+        [{action: "delete", dstPath: "/users/test-user-id/documents/doc-1"}] as any,
+      ],
+      [
+        "/users/test-user-id/documents/doc-2",
+        [{action: "delete", dstPath: "/users/test-user-id/documents/doc-2"}] as any,
+      ],
+    ]);
+
+    const result = await attachDeleteDocsToLogicDocsMap(logicMap);
+
+    expect(admin.firestore().doc).toHaveBeenCalledTimes(2);
+    expect(getMock).toHaveBeenCalledTimes(2);
+
+    expect(result.get("/users/test-user-id/documents/doc-1")?.[0].doc).toEqual({
+      path: "doc-1",
+    });
+
+    expect(result.get("/users/test-user-id/documents/doc-2")?.[0].doc).toEqual({
+      path: "doc-2",
+    });
+  });
+
+  it("should return a new Map instance", async () => {
+    dbDoc.get = jest.fn().mockResolvedValue({
+      data: () => ({name: "doc"}),
+    });
+
+    const logicMap = new Map([
+      [
+        "/users/test-user-id/documents/test-doc-id",
+        [{action: "delete", dstPath: "/users/test-user-id/documents/test-doc-id"}] as any,
+      ],
+    ]);
+
+    const result = await attachDeleteDocsToLogicDocsMap(logicMap);
+
+    expect(result).not.toBe(logicMap);
+    expect(result instanceof Map).toBe(true);
   });
 });

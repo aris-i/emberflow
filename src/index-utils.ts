@@ -61,6 +61,57 @@ export const _mockable = {
   getBatchUtil: () => BatchUtil.getInstance(),
 };
 
+export async function attachDeleteDocsToLogicDocsMap(
+  logicMap: Map<string, LogicResultDoc[]>,
+  txn?: FirebaseFirestore.Transaction,
+): Promise<Map<string, LogicResultDoc[]>> {
+  const pathsWithDeleteActions = [...logicMap.entries()]
+    .filter(([, logicResults]) =>
+      logicResults.some((logicResult) => logicResult.action === "delete"),
+    ).map(([path]) => path);
+
+  if (!pathsWithDeleteActions.length) return logicMap;
+
+  const snapshots = await Promise.all(
+    pathsWithDeleteActions.map((path) => {
+      const ref = db.doc(path);
+      return txn ? txn.get(ref) : ref.get();
+    }),
+  );
+
+  const documentDataByPath = new Map<string, FirebaseFirestore.DocumentData | undefined>();
+
+  pathsWithDeleteActions.forEach((documentPath, index) => {
+    const snapshot = snapshots[index];
+    const documentData = snapshot.data();
+
+    documentDataByPath.set(documentPath, documentData);
+  });
+
+  const updatedLogicEntries = [...logicMap.entries()].map(
+    ([documentPath, logicResults]) => {
+      const updatedLogicResults = logicResults.map((logicResult) => {
+        const isDeleteAction = logicResult.action === "delete";
+
+        if (!isDeleteAction) {
+          return logicResult;
+        }
+
+        const documentData = documentDataByPath.get(documentPath);
+
+        return {
+          ...logicResult,
+          doc: documentData,
+        };
+      });
+
+      return [documentPath, updatedLogicResults] as const;
+    },
+  );
+
+  return new Map(updatedLogicEntries);
+}
+
 export async function distributeDoc(
   logicResultDoc: LogicResultDoc,
   appVersion: string,
@@ -715,8 +766,12 @@ export async function distributeFnTransactional(
   const transactionalDstPathLogicDocsMap = await expandConsolidateAndGroupByDstPath(
     transactionalResults.flatMap((result) => result.documents)
   );
-    // Write to firestore in one transaction
-  for (const [_, logicDocs] of transactionalDstPathLogicDocsMap) {
+
+  const finalTransactionalDstPathLogicDocsMap = await
+  attachDeleteDocsToLogicDocsMap(transactionalDstPathLogicDocsMap, txn);
+
+  // Write to firestore in one transaction
+  for (const [_, logicDocs] of finalTransactionalDstPathLogicDocsMap) {
     for (const logicDoc of logicDocs) {
       distributedLogicResultDocs.push(logicDoc);
       await distributeDoc(logicDoc, appVersion, undefined, txn);
