@@ -1,8 +1,8 @@
-import {AncestorIdsPatchMessage, Instructions, InstructionsMessage, LogicResultDoc} from "../types";
+import {GroupPatchMessage, GroupPatchProgress, GroupPatchType, Instructions, InstructionsMessage, LogicResultDoc} from "../types";
 import {hydrateDocPath} from "./paths";
 import {
-  ANCESTOR_IDS_PATCH_TOPIC,
-  ANCESTOR_IDS_PATCH_TOPIC_NAME,
+  GROUP_PATCH_TOPIC,
+  GROUP_PATCH_TOPIC_NAME,
   FOR_DISTRIBUTION_TOPIC,
   FOR_DISTRIBUTION_TOPIC_NAME,
   INSTRUCTIONS_TOPIC,
@@ -12,7 +12,7 @@ import {
 } from "../index";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
 import type {MessagePublishedData} from "firebase-functions/v2/pubsub";
-import {distributeDoc, patchSiblingsWithAncestorIds} from "../index-utils";
+import {distributeDoc, patchGroupDocs} from "../index-utils";
 import {firestore} from "firebase-admin";
 import {pubsubUtils} from "./pubsub";
 import {reviveDateAndTimestamp} from "./misc";
@@ -373,7 +373,27 @@ export const instructionsReducer = async (reducedInstructions: Map<string, Instr
   }
 };
 
-export const queueAncestorIdsPatch = async (dstPathOrCollectionPath: string, lastPatchedId?: string) => {
+export function getGroupPatchStatusPath(
+  collectionPath: string,
+  patchType: GroupPatchType,
+  backFillPatchName?: string,
+): string {
+  const patchIdentity = patchType === "back-fill" ?
+    `back-fill_${backFillPatchName}` :
+    "patch-logics";
+  return `@emberflow/internal/group-patches/${collectionPath.replace(/\//g, "_")}_${patchIdentity}`;
+}
+
+export interface QueueGroupPatchParams {
+  path: string;
+  patchType: GroupPatchType;
+  backFillPatchName?: string;
+  appVersion?: string;
+  lastPatchedId?: string;
+}
+
+export const queueGroupPatch = async (params: QueueGroupPatchParams) => {
+  const {path: dstPathOrCollectionPath, patchType, backFillPatchName, appVersion, lastPatchedId} = params;
   const segments = dstPathOrCollectionPath.split("/").filter((s) => s.length > 0);
   const collectionPath = segments.length % 2 === 0 ?
     "/" + segments.slice(0, -1).join("/") :
@@ -385,7 +405,7 @@ export const queueAncestorIdsPatch = async (dstPathOrCollectionPath: string, las
 
   // If this is the start of a new patch (no lastPatchedId), check/lock it in Firestore
   if (!lastPatchedId) {
-    const patchStatusPath = `@emberflow/internal/group-query-patches/${collectionPath.replace(/\//g, "_")}`;
+    const patchStatusPath = getGroupPatchStatusPath(collectionPath, patchType, backFillPatchName);
     const patchStatusRef = db.doc(patchStatusPath);
 
     try {
@@ -401,6 +421,8 @@ export const queueAncestorIdsPatch = async (dstPathOrCollectionPath: string, las
         // Create or update record to "lock" it
         txn.set(patchStatusRef, {
           status: collectionPath.includes("{") ? "hydrating" : "queued",
+          patchType,
+          backFillPatchName: backFillPatchName ?? null,
           collectionPath,
           count: 0,
           lastPatchedId: null, // Reset cursor if restarting
@@ -414,41 +436,45 @@ export const queueAncestorIdsPatch = async (dstPathOrCollectionPath: string, las
         return;
       }
     } catch (e) {
-      console.error(`[AncestorIdsPatch] Error during transaction in queueAncestorIdsPatch for ${collectionPath}:`, e);
+      console.error(`[GroupPatch] Error during transaction in queueGroupPatch for ${collectionPath}:`, e);
       // We don't throw here to avoid failing the distribution, but we don't proceed to publish
       return;
     }
   }
 
   try {
-    const message: AncestorIdsPatchMessage = {collectionPath, lastPatchedId};
-    await ANCESTOR_IDS_PATCH_TOPIC.publishMessage({json: message});
+    const message: GroupPatchMessage = {collectionPath, patchType, backFillPatchName, appVersion, lastPatchedId};
+    await GROUP_PATCH_TOPIC.publishMessage({json: message});
   } catch (error: unknown) {
-    console.error(`[AncestorIdsPatch] Received error while publishing to ${ANCESTOR_IDS_PATCH_TOPIC_NAME}:`, error);
+    console.error(`[GroupPatch] Received error while publishing to ${GROUP_PATCH_TOPIC_NAME}:`, error);
     throw error;
   }
 };
 
-export async function onMessageAncestorIdsPatchQueue(event: CloudEvent<MessagePublishedData>) {
-  if (await pubsubUtils.isProcessed(ANCESTOR_IDS_PATCH_TOPIC_NAME, event.id)) {
+export async function onMessageGroupPatchQueue(event: CloudEvent<MessagePublishedData>) {
+  if (await pubsubUtils.isProcessed(GROUP_PATCH_TOPIC_NAME, event.id)) {
     return;
   }
 
   try {
-    const {collectionPath, lastPatchedId, hydrationState} = event.data.message.json as AncestorIdsPatchMessage;
+    const {collectionPath, patchType, backFillPatchName, appVersion, lastPatchedId, hydrationState} =
+      event.data.message.json as GroupPatchMessage;
 
     if (collectionPath.includes("{")) {
-      console.log(`[AncestorIdsPatch] Hydration in Progress for ${collectionPath}...`);
+      console.log(`[GroupPatch] Hydration in Progress for ${collectionPath}...`);
       const {documentPaths, hydrationState: nextHydrationState} = await hydrateDocPath(collectionPath, {}, hydrationState);
 
-      const patchStatusPath = `@emberflow/internal/group-query-patches/${collectionPath.replace(/\//g, "_")}`;
+      const patchStatusPath = getGroupPatchStatusPath(collectionPath, patchType, backFillPatchName);
       if (nextHydrationState) {
         // Re-queue hydration
-        const message: AncestorIdsPatchMessage = {
+        const message: GroupPatchMessage = {
           collectionPath,
+          patchType,
+          backFillPatchName,
+          appVersion,
           hydrationState: nextHydrationState,
         };
-        await ANCESTOR_IDS_PATCH_TOPIC.publishMessage({json: message});
+        await GROUP_PATCH_TOPIC.publishMessage({json: message});
 
         await db.doc(patchStatusPath).set({
           status: "hydrating",
@@ -460,23 +486,57 @@ export async function onMessageAncestorIdsPatchQueue(event: CloudEvent<MessagePu
           status: "completed",
           updatedAt: admin.firestore.Timestamp.now(),
         }, {merge: true});
-        console.log(`[AncestorIdsPatch] Hydration complete for ${collectionPath}`);
+        console.log(`[GroupPatch] Hydration complete for ${collectionPath}`);
       }
 
-      console.log(`[AncestorIdsPatch] Hydrated ${documentPaths.length} paths for ${collectionPath}. Remaining batches: ${nextHydrationState ? "yes" : "no"}`);
+      console.log(`[GroupPatch] Hydrated ${documentPaths.length} paths for ${collectionPath}. Remaining batches: ${nextHydrationState ? "yes" : "no"}`);
 
       for (const path of documentPaths) {
         // We trigger a patch for each hydrated path.
-        // Note: These will go through the same queueAncestorIdsPatch logic,
+        // Note: These will go through the same queueGroupPatch logic,
         // so they will be tracked/locked individually.
-        await queueAncestorIdsPatch(path);
+        await queueGroupPatch({path, patchType, backFillPatchName, appVersion});
       }
     } else {
-      await patchSiblingsWithAncestorIds(collectionPath, lastPatchedId);
+      await patchGroupDocs({collectionPath, patchType, backFillPatchName, appVersion, lastPatchedId});
     }
-    await pubsubUtils.trackProcessedIds(ANCESTOR_IDS_PATCH_TOPIC_NAME, event.id);
+    await pubsubUtils.trackProcessedIds(GROUP_PATCH_TOPIC_NAME, event.id);
   } catch (e) {
-    console.error("[AncestorIdsPatch] Error in onMessageAncestorIdsPatchQueue", e);
-    throw new Error("Error in onMessageAncestorIdsPatchQueue");
+    console.error("[GroupPatch] Error in onMessageGroupPatchQueue", e);
+    throw new Error("Error in onMessageGroupPatchQueue");
   }
+}
+
+export interface GetGroupPatchProgressParams {
+  collectionPath: string;
+  patchType: GroupPatchType;
+  backFillPatchName?: string;
+}
+
+export async function getGroupPatchProgress(
+  params: GetGroupPatchProgressParams
+): Promise<GroupPatchProgress | undefined> {
+  const {collectionPath, patchType, backFillPatchName} = params;
+  const patchStatusPath = getGroupPatchStatusPath(collectionPath, patchType, backFillPatchName);
+  const patchStatusDoc = await db.doc(patchStatusPath).get();
+  if (!patchStatusDoc.exists) {
+    return undefined;
+  }
+
+  const data = patchStatusDoc.data();
+  if (!data) {
+    return undefined;
+  }
+
+  return {
+    patchType,
+    backFillPatchName,
+    collectionPath,
+    status: data.status,
+    lastPatchedId: data.lastPatchedId ?? undefined,
+    patchedCount: data.count ?? undefined,
+    startedAt: data.createdAt ?? undefined,
+    updatedAt: data.updatedAt ?? undefined,
+    error: data.error ?? undefined,
+  };
 }

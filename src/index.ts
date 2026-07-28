@@ -10,6 +10,7 @@ import {
   LogicResultDoc,
   LogicResultDocAction,
   MetricExecution,
+  BackFillPatchConfig,
   PatchLogicConfig,
   ProjectConfig,
   RunBusinessLogicStatus,
@@ -22,6 +23,7 @@ import {
 } from "./types";
 import {
   _mockable as indexUtilsMockable,
+  ancestorIdsPatchConfig,
   cleanMetricComputations,
   cleanMetricExecutions,
   convertLogicResultsToMetricExecutions,
@@ -66,11 +68,12 @@ import {PubSub, Topic} from "@google-cloud/pubsub";
 import {onMessagePublished} from "firebase-functions/v2/pubsub";
 import {logMemoryUsage, reviveDateAndTimestamp, trimStrings} from "./utils/misc";
 import {
+  getGroupPatchProgress,
   instructionsReducer,
-  onMessageAncestorIdsPatchQueue,
   onMessageForDistributionQueue,
+  onMessageGroupPatchQueue,
   onMessageInstructionsQueue,
-  queueAncestorIdsPatch,
+  queueGroupPatch,
 } from "./utils/distribution";
 import {cleanPubSubProcessedIds} from "./utils/pubsub";
 import {onSchedule} from "firebase-functions/v2/scheduler";
@@ -80,7 +83,7 @@ import {debounce} from "./utils/functions";
 import {extractTransactionGetOnly} from "./utils/transaction";
 import Database = database.Database;
 
-export {queueAncestorIdsPatch};
+export {queueGroupPatch, getGroupPatchProgress, ancestorIdsPatchConfig};
 export let admin: FirebaseAdmin;
 export let db: Firestore;
 export let rtdb: Database;
@@ -91,6 +94,7 @@ export let securityConfigs: SecurityConfig[] = [];
 export let validatorConfigs: ValidatorConfig[] = [];
 export let logicConfigs: LogicConfig[] = [];
 export let patchLogicConfigs: PatchLogicConfig[] = [];
+export let backFillPatchConfigs: BackFillPatchConfig[] = [];
 export let docPaths: Record<string, string> = {};
 export let colPaths: Record<string, string> = {};
 export let docPathsRegex: Record<string, RegExp> = {};
@@ -103,21 +107,21 @@ export const VIEW_LOGICS_TOPIC_NAME = "view-logics-queue";
 export const PATCH_LOGICS_TOPIC_NAME = "patch-logics-queue";
 export const FOR_DISTRIBUTION_TOPIC_NAME = "for-distribution-queue";
 export const INSTRUCTIONS_TOPIC_NAME = "instructions-queue";
-export const ANCESTOR_IDS_PATCH_TOPIC_NAME = "ancestor-ids-patch-queue";
+export const GROUP_PATCH_TOPIC_NAME = "group-patch-queue";
 export const pubSubTopics = [
   SUBMIT_FORM_TOPIC_NAME,
   VIEW_LOGICS_TOPIC_NAME,
   PATCH_LOGICS_TOPIC_NAME,
   FOR_DISTRIBUTION_TOPIC_NAME,
   INSTRUCTIONS_TOPIC_NAME,
-  ANCESTOR_IDS_PATCH_TOPIC_NAME,
+  GROUP_PATCH_TOPIC_NAME,
 ];
 export let SUBMIT_FORM_TOPIC: Topic;
 export let VIEW_LOGICS_TOPIC: Topic;
 export let PATCH_LOGICS_TOPIC: Topic;
 export let FOR_DISTRIBUTION_TOPIC: Topic;
 export let INSTRUCTIONS_TOPIC: Topic;
-export let ANCESTOR_IDS_PATCH_TOPIC: Topic;
+export let GROUP_PATCH_TOPIC: Topic;
 let userRegisterFn: UserRegisterFn | undefined;
 
 export const _mockable = {
@@ -125,16 +129,21 @@ export const _mockable = {
   initActionRef,
 };
 
+export interface InitializeEmberFlowOptions {
+  projectConfig: ProjectConfig;
+  admin: FirebaseAdmin;
+  dbStructure: Record<string, object>;
+  Entity: Record<string, string>;
+  securityConfigs: SecurityConfig[];
+  validatorConfigs: ValidatorConfig[];
+  logicConfigs: LogicConfig[];
+  patchLogicConfigs: PatchLogicConfig[];
+  backFillPatchConfigs?: BackFillPatchConfig[];
+  userRegisterFn?: UserRegisterFn;
+}
+
 export function initializeEmberFlow(
-  customProjectConfig: ProjectConfig,
-  adminInstance: FirebaseAdmin,
-  customDbStructure: Record<string, object>,
-  CustomEntity: Record<string, string>,
-  customSecurityConfigs: SecurityConfig[],
-  customValidatorConfigs: ValidatorConfig[],
-  customLogicConfigs: LogicConfig[],
-  customPatchLogicConfigs: PatchLogicConfig[],
-  customUserRegisterFn?: UserRegisterFn,
+  options: InitializeEmberFlowOptions,
 ) : {
     docPaths: Record<string, string>;
     colPaths: Record<string, string>;
@@ -142,18 +151,26 @@ export function initializeEmberFlow(
     entityViewDefinitions: EntityViewDefinitions;
     functionsConfig: Record<string, any>,
   } {
-  projectConfig = customProjectConfig;
-  admin = adminInstance;
+  projectConfig = options.projectConfig;
+  admin = options.admin;
   db = admin.firestore();
   rtdb = admin.database();
   pubsub = new PubSub();
-  dbStructure = {...customDbStructure, ...internalDbStructure};
-  Entity = {...CustomEntity, ...InternalEntity};
-  securityConfigs = [...customSecurityConfigs];
-  validatorConfigs = [...customValidatorConfigs];
-  logicConfigs = [...customLogicConfigs];
-  patchLogicConfigs = [...customPatchLogicConfigs];
-  userRegisterFn = customUserRegisterFn;
+  dbStructure = {...options.dbStructure, ...internalDbStructure};
+  Entity = {...options.Entity, ...InternalEntity};
+  securityConfigs = [...options.securityConfigs];
+  validatorConfigs = [...options.validatorConfigs];
+  logicConfigs = [...options.logicConfigs];
+  patchLogicConfigs = [...options.patchLogicConfigs];
+  backFillPatchConfigs = [ancestorIdsPatchConfig, ...(options.backFillPatchConfigs ?? [])];
+  const backFillPatchNames = new Set<string>();
+  for (const backFillPatchConfig of backFillPatchConfigs) {
+    if (backFillPatchNames.has(backFillPatchConfig.name)) {
+      throw new Error(`Duplicate BackFillPatchConfig name "${backFillPatchConfig.name}"`);
+    }
+    backFillPatchNames.add(backFillPatchConfig.name);
+  }
+  userRegisterFn = options.userRegisterFn;
   initClient(admin.app(), "service", "0.0.0");
   initDbStructure(dbStructure, Entity);
   SUBMIT_FORM_TOPIC = pubsub.topic(SUBMIT_FORM_TOPIC_NAME);
@@ -161,7 +178,7 @@ export function initializeEmberFlow(
   PATCH_LOGICS_TOPIC = pubsub.topic(PATCH_LOGICS_TOPIC_NAME);
   FOR_DISTRIBUTION_TOPIC = pubsub.topic(FOR_DISTRIBUTION_TOPIC_NAME);
   INSTRUCTIONS_TOPIC = pubsub.topic(INSTRUCTIONS_TOPIC_NAME);
-  ANCESTOR_IDS_PATCH_TOPIC = pubsub.topic(ANCESTOR_IDS_PATCH_TOPIC_NAME);
+  GROUP_PATCH_TOPIC = pubsub.topic(GROUP_PATCH_TOPIC_NAME);
 
   const {
     docPaths: dp,
@@ -274,14 +291,14 @@ export function initializeEmberFlow(
       },
     }
   ));
-  functionsConfig["onMessageAncestorIdsPatchQueue"] = onMessagePublished({
-    topic: ANCESTOR_IDS_PATCH_TOPIC_NAME,
+  functionsConfig["onMessageGroupPatchQueue"] = onMessagePublished({
+    topic: GROUP_PATCH_TOPIC_NAME,
     region: projectConfig.region,
     memory: "512MiB",
     maxInstances: 5,
     timeoutSeconds: 540,
-    ...projectConfig.functionsConfig?.onMessageAncestorIdsPatchQueue as any,
-  }, onMessageAncestorIdsPatchQueue);
+    ...projectConfig.functionsConfig?.onMessageGroupPatchQueue as any,
+  }, onMessageGroupPatchQueue);
   functionsConfig["resetUsageStats"] = onSchedule({
     schedule: "every 1 hours",
     region: projectConfig.region,

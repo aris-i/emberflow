@@ -97,7 +97,16 @@ jest.spyOn(admin, "database")
 
 admin.initializeApp();
 
-initializeEmberFlow(projectConfig, admin, dbStructure, Entity, [], [], [], []);
+initializeEmberFlow({
+  projectConfig,
+  admin,
+  dbStructure,
+  Entity,
+  securityConfigs: [],
+  validatorConfigs: [],
+  logicConfigs: [],
+  patchLogicConfigs: [],
+});
 
 const refUpdateMock = jest.fn();
 const refMock = {
@@ -800,7 +809,7 @@ describe("onFormSubmit", () => {
         async (txnGet, action) => {
           return {
             status: "done",
-            logicResults: logicResults,
+            logicResults,
           };
         },
       );
@@ -924,7 +933,7 @@ describe("onFormSubmit", () => {
 
     jest.spyOn(indexutils, "runBusinessLogics").mockResolvedValue({
       status: "done",
-      logicResults: logicResults,
+      logicResults,
     });
     jest.spyOn(indexutils, "expandConsolidateAndGroupByDstPath").mockResolvedValue(new Map());
     jest.spyOn(indexutils, "distributeFnTransactional").mockResolvedValue([submitFormDoc]);
@@ -982,7 +991,16 @@ describe("onUserRegister", () => {
   });
 
   it("should run the onUserRegister correctly", async () => {
-    initializeEmberFlow(projectConfig, admin, dbStructure, Entity, [], [], [], []);
+    initializeEmberFlow({
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs: [],
+      validatorConfigs: [],
+      logicConfigs: [],
+      patchLogicConfigs: [],
+    });
     runTransactionSpy = jest.spyOn(db, "runTransaction")
       .mockImplementationOnce(async (callback: any) => callback(mockTxn));
     jest.spyOn(_mockable, "createNowTimestamp").mockReturnValue(Timestamp.now());
@@ -1013,7 +1031,17 @@ describe("onUserRegister", () => {
 
   it("should run the onUserRegister along with the customUserRegisterFn", async () => {
     const customUserRegisterLogicFn = jest.fn().mockResolvedValue(customUserRegisterLogicResult);
-    initializeEmberFlow(projectConfig, admin, dbStructure, Entity, [], [], [], [], customUserRegisterLogicFn);
+    initializeEmberFlow({
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs: [],
+      validatorConfigs: [],
+      logicConfigs: [],
+      patchLogicConfigs: [],
+      userRegisterFn: customUserRegisterLogicFn,
+    });
     runTransactionSpy = jest.spyOn(db, "runTransaction")
       .mockImplementationOnce(async (callback: any) => callback(mockTxn));
     jest.spyOn(_mockable, "createNowTimestamp").mockReturnValue(Timestamp.now());

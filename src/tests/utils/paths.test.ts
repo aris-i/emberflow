@@ -28,7 +28,16 @@ const projectConfig: ProjectConfig = {
 admin.initializeApp({
   databaseURL: `https://${projectConfig.rtdbName}.${projectConfig.region}.firebasedatabase.app/`,
 });
-initializeEmberFlow(projectConfig, admin, dbStructure, Entity, [], [], [], []);
+initializeEmberFlow({
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs: [],
+      validatorConfigs: [],
+      logicConfigs: [],
+      patchLogicConfigs: [],
+    });
 
 // Mock fetchIds function
 jest.mock("../../utils/query", () => ({
@@ -37,16 +46,16 @@ jest.mock("../../utils/query", () => ({
 
 describe("findMatchingDocPathRegex", () => {
   beforeEach(() => {
-    initializeEmberFlow(
+    initializeEmberFlow({
       projectConfig,
       admin,
       dbStructure,
       Entity,
-      [],
-      [],
-      [],
-      []
-    );
+      securityConfigs: [],
+      validatorConfigs: [],
+      logicConfigs: [],
+      patchLogicConfigs: [],
+    });
   });
 
   it("should return entity and regex for root level path", () => {

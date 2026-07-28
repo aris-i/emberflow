@@ -37,7 +37,7 @@ export interface ProjectConfig {
         onMessagePatchLogicsQueue?: FunctionConfig;
         onMessageForDistributionQueue?: FunctionConfig;
         onMessageInstructionsQueue?: FunctionConfig;
-        onMessageAncestorIdsPatchQueue?: FunctionConfig;
+        onMessageGroupPatchQueue?: FunctionConfig;
         resetUsageStats?: FunctionConfig;
         cleanPubSubProcessedIds?: FunctionConfig;
         cleanMetricComputations?: FunctionConfig;
@@ -106,10 +106,39 @@ export interface InstructionsMessage{
     dstPath: string;
     instructions: Instructions;
 }
-export interface AncestorIdsPatchMessage {
+export type GroupPatchType = "back-fill" | "patch-logics";
+
+export interface GroupPatchMessage {
     collectionPath: string;
+    patchType: GroupPatchType;
+    backFillPatchName?: string;
+    appVersion?: string;
     lastPatchedId?: string;
     hydrationState?: HydrationState;
+}
+
+export type OneTimePatchFn = (
+    collectionPath: string,
+    docs: FirebaseFirestore.QueryDocumentSnapshot[],
+) => Promise<void>;
+
+export interface BackFillPatchConfig {
+    name: string;
+    patchFn: OneTimePatchFn;
+}
+
+export type GroupPatchRunStatus = "running" | "completed" | "error" | "reset";
+
+export interface GroupPatchProgress {
+    patchType: GroupPatchType;
+    backFillPatchName?: string;
+    collectionPath: string;
+    status: GroupPatchRunStatus;
+    lastPatchedId?: string;
+    patchedCount?: number;
+    startedAt?: Timestamp;
+    updatedAt?: Timestamp;
+    error?: string;
 }
 
 export interface HydrationState {

@@ -55,7 +55,16 @@ admin.initializeApp({
   databaseURL: "https://test-project.firebaseio.com",
 });
 jest.spyOn(pathsMockable, "doesPathExists").mockResolvedValue(true);
-initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfigs, validatorConfigs, [], []);
+initializeEmberFlow({
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs,
+      validatorConfigs,
+      logicConfigs: [],
+      patchLogicConfigs: [],
+    });
 
 const vd1: ViewDefinition = {
   srcEntity: "user",
@@ -158,7 +167,7 @@ describe("createViewLogicFn", () => {
       return Promise.resolve(refs.map((ref: any) => ({
         exists: true,
         data: () => ({}),
-        ref: ref,
+        ref,
       })));
     });
 
@@ -938,7 +947,7 @@ describe("createViewLogicFn", () => {
             "name": "John Doe",
           },
         }),
-        ref: ref,
+        ref,
       })));
     });
     jest.spyOn(admin.firestore(), "getAll").mockImplementation(dbGetAllMock);
@@ -1709,7 +1718,16 @@ describe("findMatchingViewLogics", () => {
   beforeEach(()=> {
     jest.restoreAllMocks();
     jest.spyOn(pathsMockable, "doesPathExists").mockResolvedValue(true);
-    initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfigs, validatorConfigs, [], []);
+    initializeEmberFlow({
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs,
+      validatorConfigs,
+      logicConfigs: [],
+      patchLogicConfigs: [],
+    });
     jest.spyOn(paths, "findMatchingDocPathRegex").mockReturnValue({
       entity: "topic",
       regex: /topics/,

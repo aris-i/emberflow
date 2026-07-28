@@ -35,7 +35,16 @@ admin.initializeApp({
   databaseURL: "https://test-project.firebaseio.com",
 });
 
-initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfigs, validatorConfigs, [], []);
+initializeEmberFlow({
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs,
+      validatorConfigs,
+      logicConfigs: [],
+      patchLogicConfigs: [],
+    });
 
 describe("queueRunPatchLogics", () => {
   const messageId = "test-message-id";
@@ -361,31 +370,31 @@ describe("runPatchLogics", () => {
   };
 
   it("should appropriately group the matched logics by version then run transactions for each group", async () => {
-    initializeEmberFlow(
+    initializeEmberFlow({
       projectConfig,
       admin,
       dbStructure,
       Entity,
       securityConfigs,
       validatorConfigs,
-      [],
-      patchLogicConfigs
-    );
+      logicConfigs: [],
+      patchLogicConfigs,
+    });
     await patchLogics.runPatchLogics(appVersion, dstPath);
     expect(runTransactionSpy).toHaveBeenCalledTimes(2); // for version 2.0.0 and 2.5.0
   });
 
   it("should run all patch logics between dataVersion and appVersion", async () => {
-    initializeEmberFlow(
+    initializeEmberFlow({
       projectConfig,
       admin,
       dbStructure,
       Entity,
       securityConfigs,
       validatorConfigs,
-      [],
-      patchLogicConfigs
-    );
+      logicConfigs: [],
+      patchLogicConfigs,
+    });
     await patchLogics.runPatchLogics(appVersion, dstPath);
 
     expect(userLogicFn1).not.toHaveBeenCalled(); // below data version
@@ -398,16 +407,16 @@ describe("runPatchLogics", () => {
   });
 
   it("should distribute all consolidated logic result docs", async () => {
-    initializeEmberFlow(
+    initializeEmberFlow({
       projectConfig,
       admin,
       dbStructure,
       Entity,
       securityConfigs,
       validatorConfigs,
-      [],
-      patchLogicConfigs
-    );
+      logicConfigs: [],
+      patchLogicConfigs,
+    });
     await patchLogics.runPatchLogics(appVersion, dstPath);
 
     expect(distributeFnTransactionalSpy).toHaveBeenCalledTimes(2);
@@ -461,16 +470,16 @@ describe("runPatchLogics", () => {
   });
 
   it("should run createMetricExecution per group patch", async () => {
-    initializeEmberFlow(
+    initializeEmberFlow({
       projectConfig,
       admin,
       dbStructure,
       Entity,
       securityConfigs,
       validatorConfigs,
-      [],
-      patchLogicConfigs
-    );
+      logicConfigs: [],
+      patchLogicConfigs,
+    });
     await patchLogics.runPatchLogics(appVersion, dstPath);
     expect(createMetricExecutionSpy).toHaveBeenCalledTimes(2);
     // version 2.0.0

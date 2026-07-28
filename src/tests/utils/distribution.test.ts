@@ -9,6 +9,8 @@ import {
   db,
   FOR_DISTRIBUTION_TOPIC,
   FOR_DISTRIBUTION_TOPIC_NAME,
+  GROUP_PATCH_TOPIC,
+  GROUP_PATCH_TOPIC_NAME,
   initializeEmberFlow,
   INSTRUCTIONS_TOPIC, INSTRUCTIONS_TOPIC_NAME,
 } from "../../index";
@@ -56,7 +58,16 @@ admin.initializeApp({
   databaseURL: "https://test-project.firebaseio.com",
 });
 jest.spyOn(paths._mockable, "doesPathExists").mockResolvedValue(true);
-initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfigs, validatorConfigs, [], []);
+initializeEmberFlow({
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs,
+      validatorConfigs,
+      logicConfigs: [],
+      patchLogicConfigs: [],
+    });
 
 describe("queueForDistributionLater", () => {
   let publishMessageSpy: jest.SpyInstance;
@@ -1012,5 +1023,296 @@ describe("instructionsReducer", () => {
     expect(mergeInstructionsSpy).toHaveBeenCalledWith(existingInstructions, doc1.instructions);
     expect(trackProcessedIdsMock).toHaveBeenCalledWith(INSTRUCTIONS_TOPIC_NAME, event.id);
     expect(reducedInstructions.get(doc1.dstPath)).toStrictEqual(expectedReducedInstructions);
+  });
+});
+
+describe("getGroupPatchStatusPath", () => {
+  it("computes independent status paths per patch type/backFillPatchName on the same collection", () => {
+    const collectionPath = "/users/user1/feeds";
+    const ancestorIdsPath = distribution.getGroupPatchStatusPath(collectionPath, "back-fill", "ancestor-ids");
+    const customBackFillPath = distribution.getGroupPatchStatusPath(collectionPath, "back-fill", "custom-back-fill");
+    const patchLogicsPath = distribution.getGroupPatchStatusPath(collectionPath, "patch-logics");
+
+    expect(ancestorIdsPath).not.toEqual(customBackFillPath);
+    expect(ancestorIdsPath).not.toEqual(patchLogicsPath);
+    expect(customBackFillPath).not.toEqual(patchLogicsPath);
+    expect(ancestorIdsPath).toContain("back-fill_ancestor-ids");
+    expect(customBackFillPath).toContain("back-fill_custom-back-fill");
+    expect(patchLogicsPath).toContain("patch-logics");
+  });
+});
+
+describe("queueGroupPatch", () => {
+  let publishMessageSpy: jest.SpyInstance;
+  let runTransactionSpy: jest.SpyInstance;
+  let txnGetMock: jest.Mock;
+  let txnSetMock: jest.Mock;
+
+  beforeEach(() => {
+    jest.restoreAllMocks();
+    publishMessageSpy = jest.spyOn(GROUP_PATCH_TOPIC, "publishMessage")
+      .mockImplementation(() => {
+        return Promise.resolve("message-id");
+      });
+    txnGetMock = jest.fn().mockResolvedValue({exists: false});
+    txnSetMock = jest.fn();
+    runTransactionSpy = jest.spyOn(admin.firestore(), "runTransaction")
+      .mockImplementation(async (fn: any) => fn({get: txnGetMock, set: txnSetMock}));
+  });
+
+  it("locks the status doc and publishes when there is no lastPatchedId", async () => {
+    await distribution.queueGroupPatch({
+      path: "/users/user1/feeds/feed1",
+      patchType: "back-fill",
+      backFillPatchName: "ancestor-ids",
+    });
+
+    expect(runTransactionSpy).toHaveBeenCalledTimes(1);
+    expect(txnSetMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      status: "queued",
+      collectionPath: "/users/user1/feeds",
+      count: 0,
+      lastPatchedId: null,
+    }), {merge: true});
+    expect(publishMessageSpy).toHaveBeenCalledWith({
+      json: {
+        collectionPath: "/users/user1/feeds",
+        patchType: "back-fill",
+        backFillPatchName: "ancestor-ids",
+        appVersion: undefined,
+        lastPatchedId: undefined,
+      },
+    });
+  });
+
+  it("does not publish when a patch is already queued and not in error/reset state", async () => {
+    txnGetMock.mockResolvedValue({exists: true, data: () => ({status: "running"})});
+
+    await distribution.queueGroupPatch({
+      path: "/users/user1/feeds",
+      patchType: "back-fill",
+      backFillPatchName: "ancestor-ids",
+    });
+
+    expect(publishMessageSpy).not.toHaveBeenCalled();
+  });
+
+  it("re-locks and publishes when the previous status is error", async () => {
+    txnGetMock.mockResolvedValue({exists: true, data: () => ({status: "error"})});
+
+    await distribution.queueGroupPatch({
+      path: "/users/user1/feeds",
+      patchType: "back-fill",
+      backFillPatchName: "ancestor-ids",
+    });
+
+    expect(txnSetMock).toHaveBeenCalled();
+    expect(publishMessageSpy).toHaveBeenCalled();
+  });
+
+  it("skips locking and publishes directly when lastPatchedId is provided", async () => {
+    await distribution.queueGroupPatch({
+      path: "/users/user1/feeds",
+      patchType: "patch-logics",
+      appVersion: "1.0.0",
+      lastPatchedId: "feed5",
+    });
+
+    expect(runTransactionSpy).not.toHaveBeenCalled();
+    expect(publishMessageSpy).toHaveBeenCalledWith({
+      json: {
+        collectionPath: "/users/user1/feeds",
+        patchType: "patch-logics",
+        backFillPatchName: undefined,
+        appVersion: "1.0.0",
+        lastPatchedId: "feed5",
+      },
+    });
+  });
+
+  it("tracks independent locks for different patch types/back-fills on the same collection", async () => {
+    const docSpy = jest.spyOn(admin.firestore(), "doc");
+
+    await distribution.queueGroupPatch({
+      path: "/users/user1/feeds",
+      patchType: "back-fill",
+      backFillPatchName: "ancestor-ids",
+    });
+    await distribution.queueGroupPatch({
+      path: "/users/user1/feeds",
+      patchType: "patch-logics",
+      appVersion: "1.0.0",
+    });
+
+    const calledPaths = docSpy.mock.calls.map((call) => call[0]);
+    expect(new Set(calledPaths).size).toBe(calledPaths.length);
+    expect(publishMessageSpy).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("onMessageGroupPatchQueue", () => {
+  let patchGroupDocsSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    isProcessedMock.mockResolvedValue(false);
+    patchGroupDocsSpy = jest.spyOn(indexUtils, "patchGroupDocs").mockResolvedValue();
+  });
+
+  it("skips already processed messages", async () => {
+    isProcessedMock.mockResolvedValue(true);
+    const event = {
+      id: "test-event",
+      data: {message: {json: {collectionPath: "/users/user1/feeds", patchType: "back-fill", backFillPatchName: "ancestor-ids"}}},
+    } as unknown as CloudEvent<MessagePublishedData>;
+
+    await distribution.onMessageGroupPatchQueue(event);
+
+    expect(patchGroupDocsSpy).not.toHaveBeenCalled();
+  });
+
+  it("dispatches to patchGroupDocs for non-placeholder collection paths", async () => {
+    const event = {
+      id: "test-event",
+      data: {
+        message: {
+          json: {
+            collectionPath: "/users/user1/feeds",
+            patchType: "back-fill",
+            backFillPatchName: "ancestor-ids",
+            lastPatchedId: "feed1",
+          },
+        },
+      },
+    } as unknown as CloudEvent<MessagePublishedData>;
+
+    await distribution.onMessageGroupPatchQueue(event);
+
+    expect(patchGroupDocsSpy).toHaveBeenCalledWith({
+      collectionPath: "/users/user1/feeds",
+      patchType: "back-fill",
+      backFillPatchName: "ancestor-ids",
+      appVersion: undefined,
+      lastPatchedId: "feed1",
+    });
+    expect(trackProcessedIdsMock).toHaveBeenCalledWith(GROUP_PATCH_TOPIC_NAME, event.id);
+  });
+
+  it("dispatches to patchGroupDocs for patch-logics messages", async () => {
+    const event = {
+      id: "test-event",
+      data: {
+        message: {
+          json: {
+            collectionPath: "/users/user1/feeds",
+            patchType: "patch-logics",
+            appVersion: "1.0.0",
+          },
+        },
+      },
+    } as unknown as CloudEvent<MessagePublishedData>;
+
+    await distribution.onMessageGroupPatchQueue(event);
+
+    expect(patchGroupDocsSpy).toHaveBeenCalledWith({
+      collectionPath: "/users/user1/feeds",
+      patchType: "patch-logics",
+      backFillPatchName: undefined,
+      appVersion: "1.0.0",
+      lastPatchedId: undefined,
+    });
+  });
+});
+
+describe("getGroupPatchProgress", () => {
+  let docGetMock: jest.Mock;
+
+  beforeEach(() => {
+    docGetMock = jest.fn();
+    jest.spyOn(admin.firestore(), "doc").mockReturnValue({
+      get: docGetMock,
+    } as unknown as admin.firestore.DocumentReference);
+  });
+
+  it("returns undefined when the status doc does not exist", async () => {
+    docGetMock.mockResolvedValue({exists: false});
+
+    const progress = await distribution.getGroupPatchProgress({
+      collectionPath: "/users/user1/feeds",
+      patchType: "back-fill",
+      backFillPatchName: "ancestor-ids",
+    });
+
+    expect(progress).toBeUndefined();
+  });
+
+  it("returns a running progress", async () => {
+    docGetMock.mockResolvedValue({
+      exists: true,
+      data: () => ({status: "running", count: 500, lastPatchedId: "doc500"}),
+    });
+
+    const progress = await distribution.getGroupPatchProgress({
+      collectionPath: "/users/user1/feeds",
+      patchType: "back-fill",
+      backFillPatchName: "ancestor-ids",
+    });
+
+    expect(progress).toEqual(expect.objectContaining({
+      status: "running",
+      patchedCount: 500,
+      lastPatchedId: "doc500",
+      collectionPath: "/users/user1/feeds",
+      patchType: "back-fill",
+      backFillPatchName: "ancestor-ids",
+    }));
+  });
+
+  it("returns a completed progress", async () => {
+    docGetMock.mockResolvedValue({
+      exists: true,
+      data: () => ({status: "completed", count: 1000}),
+    });
+
+    const progress = await distribution.getGroupPatchProgress({
+      collectionPath: "/users/user1/feeds",
+      patchType: "patch-logics",
+    });
+
+    expect(progress).toEqual(expect.objectContaining({status: "completed", patchedCount: 1000}));
+  });
+
+  it("returns an error progress with the error message", async () => {
+    docGetMock.mockResolvedValue({
+      exists: true,
+      data: () => ({status: "error", error: "Something went wrong"}),
+    });
+
+    const progress = await distribution.getGroupPatchProgress({
+      collectionPath: "/users/user1/feeds",
+      patchType: "back-fill",
+      backFillPatchName: "custom-back-fill",
+    });
+
+    expect(progress).toEqual(expect.objectContaining({status: "error", error: "Something went wrong"}));
+  });
+
+  it("tracks independent progress per patch type on the same collection", async () => {
+    const docSpy = jest.spyOn(admin.firestore(), "doc").mockReturnValue({
+      get: docGetMock,
+    } as unknown as admin.firestore.DocumentReference);
+    docGetMock.mockResolvedValue({exists: true, data: () => ({status: "running", count: 1})});
+
+    await distribution.getGroupPatchProgress({
+      collectionPath: "/users/user1/feeds",
+      patchType: "back-fill",
+      backFillPatchName: "ancestor-ids",
+    });
+    await distribution.getGroupPatchProgress({
+      collectionPath: "/users/user1/feeds",
+      patchType: "patch-logics",
+    });
+
+    const calledPaths = docSpy.mock.calls.map((call) => call[0]);
+    expect(calledPaths[0]).not.toEqual(calledPaths[1]);
   });
 });

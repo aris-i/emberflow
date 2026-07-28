@@ -33,7 +33,16 @@ const projectConfig: ProjectConfig = {
 admin.initializeApp({
   databaseURL: "https://test-project.firebaseio.com",
 });
-initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfigs, validatorConfigs, [], patchLogicConfigs);
+initializeEmberFlow({
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs,
+      validatorConfigs,
+      logicConfigs: [],
+      patchLogicConfigs,
+    });
 
 describe("deepEqual", () => {
   it("should correctly compare Firestore Field types", () => {
@@ -196,7 +205,7 @@ describe("deleteCollection", () => {
       docs: [],
     }).mockResolvedValueOnce({
       size: 100,
-      docs: docs,
+      docs,
     });
     const selectMock = jest.fn().mockReturnValue({
       get: getMock,

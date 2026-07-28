@@ -34,6 +34,7 @@ import * as misc from "../utils/misc";
 import type {ScheduledEvent} from "firebase-functions/v2/scheduler";
 import * as viewLogics from "../logics/view-logics";
 import {runViewLogics} from "../logics/view-logics";
+import * as patchLogics from "../logics/patch-logics";
 import {patchLogicConfigs} from "../sample-custom/patch-logics";
 import {FormActionType} from "emberflow-admin-client/lib/types";
 import Timestamp = firestore.Timestamp;
@@ -577,7 +578,16 @@ describe("distribute", () => {
         dstPath: "/users/test-user-id/documents/test-doc-id",
       } as LogicResultDoc],
     ]]);
-    initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfigs, validatorConfigs, [], patchLogicConfigs);
+    initializeEmberFlow({
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs,
+      validatorConfigs,
+      logicConfigs: [],
+      patchLogicConfigs,
+    });
     await indexUtils.distributeFnNonTransactional(userDocsByDstPath, appVersion);
 
     expect(admin.firestore().doc).toHaveBeenCalledTimes(1);
@@ -620,7 +630,16 @@ describe("distributeLater", () => {
   let queueForDistributionLaterSpy: jest.SpyInstance;
 
   beforeEach(() => {
-    initializeEmberFlow(projectConfig, admin, dbStructure, Entity, securityConfigs, validatorConfigs, [], patchLogicConfigs);
+    initializeEmberFlow({
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs,
+      validatorConfigs,
+      logicConfigs: [],
+      patchLogicConfigs,
+    });
     queueForDistributionLaterSpy = jest.spyOn(distribution, "queueForDistributionLater").mockResolvedValue();
   });
 
@@ -656,16 +675,16 @@ describe("distributeLater", () => {
 
 describe("validateForm", () => {
   beforeEach(() => {
-    initializeEmberFlow(
+    initializeEmberFlow({
       projectConfig,
       admin,
       dbStructure,
       Entity,
       securityConfigs,
       validatorConfigs,
-      [],
-      patchLogicConfigs
-    );
+      logicConfigs: [],
+      patchLogicConfigs,
+    });
   });
   const targetVersion = "2.5";
   const entity = "user";
@@ -705,16 +724,16 @@ describe("validateForm", () => {
       },
     ];
 
-    initializeEmberFlow(
+    initializeEmberFlow({
       projectConfig,
       admin,
       dbStructure,
       Entity,
       securityConfigs,
       validatorConfigs,
-      [],
-      patchLogicConfigs
-    );
+      logicConfigs: [],
+      patchLogicConfigs,
+    });
 
     const document = {
       name: "John Doe",
@@ -769,16 +788,16 @@ describe("validateForm", () => {
       },
     ];
 
-    initializeEmberFlow(
+    initializeEmberFlow({
       projectConfig,
       admin,
       dbStructure,
       Entity,
       securityConfigs,
       validatorConfigs,
-      [],
-      patchLogicConfigs
-    );
+      logicConfigs: [],
+      patchLogicConfigs,
+    });
 
     const document = {
       name: "John Doe",
@@ -832,16 +851,16 @@ describe("getSecurityFn", () => {
       },
     ];
 
-    initializeEmberFlow(
+    initializeEmberFlow({
       projectConfig,
       admin,
       dbStructure,
       Entity,
       securityConfigs,
       validatorConfigs,
-      [],
-      patchLogicConfigs
-    );
+      logicConfigs: [],
+      patchLogicConfigs,
+    });
 
     const result = await indexUtils.getSecurityFn(entity, targetVersion);
     expect(result).toEqual(userSecurityFnV2);
@@ -864,16 +883,16 @@ describe("getSecurityFn", () => {
       },
     ];
 
-    initializeEmberFlow(
+    initializeEmberFlow({
       projectConfig,
       admin,
       dbStructure,
       Entity,
       securityConfigs,
       validatorConfigs,
-      [],
-      patchLogicConfigs
-    );
+      logicConfigs: [],
+      patchLogicConfigs,
+    });
 
     const entity = "user";
     // targetVersion is 1.0.0, even if app is 2.0.0
@@ -938,7 +957,16 @@ describe("delayFormSubmissionAndCheckIfCancelled", () => {
 });
 
 describe("groupDocsByTargetDocPath", () => {
-  initializeEmberFlow(projectConfig, admin, dbStructure, Entity, [], [], [], []);
+  initializeEmberFlow({
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs: [],
+      validatorConfigs: [],
+      logicConfigs: [],
+      patchLogicConfigs: [],
+    });
   const docsByDstPath = new Map<string, LogicResultDoc[]>([
     ["users/user123/document1", [{action: "merge", priority: "normal", dstPath: "users/user123/document1", doc: {field1: "value1", field2: "value2"}}]],
     ["users/user123/document1/threads/thread1", [{action: "merge", priority: "normal", dstPath: "users/user123/document1/threads/thread1", doc: {field3: "value3", field6: "value6"}}]],
@@ -984,7 +1012,7 @@ describe("runBusinessLogics", () => {
       docId: "document123",
       formId: "form123",
       docPath: "users/user123",
-      entity: entity,
+      entity,
     },
     actionType,
     document: {
@@ -1103,16 +1131,16 @@ describe("runBusinessLogics", () => {
       },
     ];
 
-    initializeEmberFlow(
+    initializeEmberFlow({
       projectConfig,
       admin,
       dbStructure,
       Entity,
       securityConfigs,
       validatorConfigs,
-      logics,
+      logicConfigs: logics,
       patchLogicConfigs,
-    );
+    });
 
     const txnGet: TxnGet = {get: jest.fn()} as any;
     const {logicResults} = await indexUtils.runBusinessLogics(txnGet, action, appVersion);
@@ -1140,16 +1168,16 @@ describe("runBusinessLogics", () => {
       },
     ];
 
-    initializeEmberFlow(
+    initializeEmberFlow({
       projectConfig,
       admin,
       dbStructure,
       Entity,
       securityConfigs,
       validatorConfigs,
-      logics,
+      logicConfigs: logics,
       patchLogicConfigs,
-    );
+    });
 
     const txnGet: TxnGet = {get: jest.fn()} as any;
     const result = await indexUtils.runBusinessLogics(txnGet, action, appVersion);
@@ -1184,16 +1212,16 @@ describe("runBusinessLogics", () => {
         version: "1",
       },
     ];
-    initializeEmberFlow(
+    initializeEmberFlow({
       projectConfig,
       admin,
       dbStructure,
       Entity,
       securityConfigs,
       validatorConfigs,
-      logics,
+      logicConfigs: logics,
       patchLogicConfigs,
-    );
+    });
     const runStatus = await indexUtils.runBusinessLogics(txnGet, action, "2");
 
     expect(logicFn1).toHaveBeenCalledWith(txnGet, action, new Map());
@@ -1265,16 +1293,16 @@ describe("runBusinessLogics", () => {
         version: "1",
       },
     ];
-    initializeEmberFlow(
+    initializeEmberFlow({
       projectConfig,
       admin,
       dbStructure,
       Entity,
       securityConfigs,
       validatorConfigs,
-      logics,
-      [],
-    );
+      logicConfigs: logics,
+      patchLogicConfigs: [],
+    });
     const newAction = {
       ...action,
       modifiedFields: {
@@ -1387,16 +1415,16 @@ describe("runBusinessLogics", () => {
         obsoleteAfterVersion: "2.4.9",
       },
     ];
-    initializeEmberFlow(
+    initializeEmberFlow({
       projectConfig,
       admin,
       dbStructure,
       Entity,
       securityConfigs,
       validatorConfigs,
-      logics,
-      [],
-    );
+      logicConfigs: logics,
+      patchLogicConfigs: [],
+    });
     const newAction = {
       ...action,
       modifiedFields: {
@@ -1467,16 +1495,16 @@ describe("runBusinessLogics", () => {
         version: "1",
       },
     ];
-    initializeEmberFlow(
+    initializeEmberFlow({
       projectConfig,
       admin,
       dbStructure,
       Entity,
       securityConfigs,
       validatorConfigs,
-      logics,
-      [],
-    );
+      logicConfigs: logics,
+      patchLogicConfigs: [],
+    });
     const runStatus = await indexUtils.runBusinessLogics(txnGet, action, "1");
 
     expect(logicFn1).not.toHaveBeenCalled();
@@ -1532,16 +1560,16 @@ describe("runBusinessLogics", () => {
         version: "1",
       },
     ];
-    initializeEmberFlow(
+    initializeEmberFlow({
       projectConfig,
       admin,
       dbStructure,
       Entity,
       securityConfigs,
       validatorConfigs,
-      logics,
-      [],
-    );
+      logicConfigs: logics,
+      patchLogicConfigs: [],
+    });
     const runStatus = await indexUtils.runBusinessLogics(txnGet, action, "1");
 
     expect(logicFn1).toHaveBeenCalledWith(txnGet, action, expectedSharedMap);
@@ -2154,5 +2182,257 @@ describe("cleanMetricComputations", () => {
     expect(colGetMock).toHaveBeenCalledTimes(1);
     expect(deleteCollectionSpy).toHaveBeenCalled();
     expect(console.info).toHaveBeenCalledWith("Cleaned 1 logic metric computations");
+  });
+});
+
+describe("patchGroupDocs", () => {
+  const collectionPath = "/users/user1/feeds";
+
+  let docGetMock: jest.Mock;
+  let docSetMock: jest.Mock;
+  let colGetMock: jest.Mock;
+  let limitMock: jest.Mock;
+  let startAfterMock: jest.Mock;
+  let orderByMock: jest.Mock;
+  let batchUpdateMock: jest.Mock;
+  let batchCommitMock: jest.Mock;
+  let queueGroupPatchSpy: jest.SpyInstance;
+  let runPatchLogicsSpy: jest.SpyInstance;
+
+  function makeDoc(id: string, data: Record<string, any> = {}) {
+    return {
+      id,
+      data: () => data,
+      ref: {
+        path: `${collectionPath.slice(1)}/${id}`,
+        update: jest.fn(),
+      },
+    } as unknown as FirebaseFirestore.QueryDocumentSnapshot;
+  }
+
+  beforeEach(() => {
+    initializeEmberFlow({
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs,
+      validatorConfigs,
+      logicConfigs: [],
+      patchLogicConfigs: [],
+    });
+
+    docGetMock = jest.fn().mockResolvedValue({exists: false, data: () => undefined});
+    docSetMock = jest.fn().mockResolvedValue({});
+    jest.spyOn(admin.firestore(), "doc").mockReturnValue({
+      get: docGetMock,
+      set: docSetMock,
+    } as unknown as admin.firestore.DocumentReference);
+
+    colGetMock = jest.fn();
+    limitMock = jest.fn().mockReturnValue({get: colGetMock});
+    startAfterMock = jest.fn().mockReturnValue({limit: limitMock});
+    orderByMock = jest.fn().mockReturnValue({limit: limitMock, startAfter: startAfterMock});
+    jest.spyOn(admin.firestore(), "collection").mockReturnValue({
+      orderBy: orderByMock,
+    } as unknown as CollectionReference);
+
+    batchUpdateMock = jest.fn();
+    batchCommitMock = jest.fn().mockResolvedValue({});
+    jest.spyOn(admin.firestore(), "batch").mockReturnValue({
+      update: batchUpdateMock,
+      commit: batchCommitMock,
+    } as unknown as firestore.WriteBatch);
+
+    queueGroupPatchSpy = jest.spyOn(distribution, "queueGroupPatch").mockResolvedValue();
+    runPatchLogicsSpy = jest.spyOn(patchLogics, "runPatchLogics").mockResolvedValue();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("marks the patch as completed and does not reschedule when there are no more docs", async () => {
+    colGetMock.mockResolvedValue({empty: true, docs: []});
+
+    await indexUtils.patchGroupDocs({collectionPath, patchType: "back-fill", backFillPatchName: "ancestor-ids"});
+
+    expect(docSetMock).toHaveBeenCalledWith(expect.objectContaining({status: "completed"}), {merge: true});
+    expect(queueGroupPatchSpy).not.toHaveBeenCalled();
+  });
+
+  it("skips processing entirely when the status is already completed", async () => {
+    docGetMock.mockResolvedValue({exists: true, data: () => ({status: "completed"})});
+
+    await indexUtils.patchGroupDocs({collectionPath, patchType: "back-fill", backFillPatchName: "ancestor-ids"});
+
+    expect(admin.firestore().collection).not.toHaveBeenCalled();
+    expect(queueGroupPatchSpy).not.toHaveBeenCalled();
+  });
+
+  it("runs the built-in ancestor-ids back-fill unchanged: bulk single-batch commit, only undefined keys patched", async () => {
+    const doc1 = makeDoc("feed1");
+    colGetMock.mockResolvedValue({empty: false, docs: [doc1]});
+
+    await indexUtils.patchGroupDocs({collectionPath, patchType: "back-fill", backFillPatchName: "ancestor-ids"});
+
+    expect(admin.firestore().batch).toHaveBeenCalledTimes(1);
+    expect(batchUpdateMock).toHaveBeenCalledWith(doc1.ref, {"@entity": "feed", "@user": "user1"});
+    expect(batchCommitMock).toHaveBeenCalledTimes(1);
+    expect(docSetMock).toHaveBeenCalledWith(
+      expect.objectContaining({status: "running", count: 1, lastPatchedId: "feed1"}),
+      {merge: true}
+    );
+    expect(queueGroupPatchSpy).toHaveBeenCalledWith({
+      path: collectionPath,
+      patchType: "back-fill",
+      backFillPatchName: "ancestor-ids",
+      appVersion: undefined,
+      lastPatchedId: "feed1",
+    });
+  });
+
+  it("does not patch keys that are already defined on the document", async () => {
+    const doc1 = makeDoc("feed1", {"@entity": "feed", "@user": "user1"});
+    colGetMock.mockResolvedValue({empty: false, docs: [doc1]});
+
+    await indexUtils.patchGroupDocs({collectionPath, patchType: "back-fill", backFillPatchName: "ancestor-ids"});
+
+    expect(batchUpdateMock).not.toHaveBeenCalled();
+    expect(batchCommitMock).not.toHaveBeenCalled();
+  });
+
+  it("dispatches to a custom back-fill config registered via initializeEmberFlow options", async () => {
+    const customPatchFn = jest.fn().mockResolvedValue(undefined);
+    initializeEmberFlow({
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs,
+      validatorConfigs,
+      logicConfigs: [],
+      patchLogicConfigs: [],
+      backFillPatchConfigs: [{name: "custom-back-fill", patchFn: customPatchFn}],
+    });
+
+    const doc1 = makeDoc("feed1");
+    colGetMock.mockResolvedValue({empty: false, docs: [doc1]});
+
+    await indexUtils.patchGroupDocs({collectionPath, patchType: "back-fill", backFillPatchName: "custom-back-fill"});
+
+    expect(customPatchFn).toHaveBeenCalledWith(collectionPath, [doc1]);
+    expect(queueGroupPatchSpy).toHaveBeenCalledWith(expect.objectContaining({backFillPatchName: "custom-back-fill"}));
+  });
+
+  it("dispatches to runPatchLogics per doc when patchType is patch-logics", async () => {
+    const doc1 = makeDoc("feed1");
+    const doc2 = makeDoc("feed2");
+    colGetMock.mockResolvedValue({empty: false, docs: [doc1, doc2]});
+
+    await indexUtils.patchGroupDocs({collectionPath, patchType: "patch-logics", appVersion: "1.2.3"});
+
+    expect(runPatchLogicsSpy).toHaveBeenCalledTimes(2);
+    expect(runPatchLogicsSpy).toHaveBeenNthCalledWith(1, "1.2.3", `/${doc1.ref.path}`);
+    expect(runPatchLogicsSpy).toHaveBeenNthCalledWith(2, "1.2.3", `/${doc2.ref.path}`);
+    expect(queueGroupPatchSpy).toHaveBeenCalledWith(expect.objectContaining({
+      patchType: "patch-logics",
+      appVersion: "1.2.3",
+      lastPatchedId: "feed2",
+    }));
+  });
+
+  it("marks the run as error (no silent default) when appVersion is missing for patch-logics", async () => {
+    jest.spyOn(console, "error").mockImplementation();
+    const doc1 = makeDoc("feed1");
+    colGetMock.mockResolvedValue({empty: false, docs: [doc1]});
+
+    await expect(indexUtils.patchGroupDocs({collectionPath, patchType: "patch-logics"})).rejects.toThrow();
+
+    expect(docSetMock).toHaveBeenCalledWith(expect.objectContaining({status: "error"}), {merge: true});
+    expect(runPatchLogicsSpy).not.toHaveBeenCalled();
+    expect(queueGroupPatchSpy).not.toHaveBeenCalled();
+  });
+
+  it("marks the run as error (no silent default) when the back-fill name is unresolved", async () => {
+    jest.spyOn(console, "error").mockImplementation();
+    const doc1 = makeDoc("feed1");
+    colGetMock.mockResolvedValue({empty: false, docs: [doc1]});
+
+    await expect(indexUtils.patchGroupDocs({
+      collectionPath,
+      patchType: "back-fill",
+      backFillPatchName: "does-not-exist",
+    })).rejects.toThrow();
+
+    expect(docSetMock).toHaveBeenCalledWith(
+      expect.objectContaining({status: "error", error: expect.stringContaining("does-not-exist")}),
+      {merge: true}
+    );
+    expect(queueGroupPatchSpy).not.toHaveBeenCalled();
+  });
+
+  it("marks the run as error (no silent default) for an unknown patchType", async () => {
+    jest.spyOn(console, "error").mockImplementation();
+    const doc1 = makeDoc("feed1");
+    colGetMock.mockResolvedValue({empty: false, docs: [doc1]});
+
+    await expect(indexUtils.patchGroupDocs({
+      collectionPath,
+      patchType: "unknown-type" as any,
+    })).rejects.toThrow();
+
+    expect(docSetMock).toHaveBeenCalledWith(expect.objectContaining({status: "error"}), {merge: true});
+    expect(queueGroupPatchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("ancestorIdsPatchConfig", () => {
+  it("is auto-registered as a built-in BackFillPatchConfig named \"ancestor-ids\"", () => {
+    initializeEmberFlow({
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs,
+      validatorConfigs,
+      logicConfigs: [],
+      patchLogicConfigs: [],
+    });
+
+    const registered = indexUtils._mockable.getOneTimePatchConfigs()
+      .find((config) => config.name === "ancestor-ids");
+    expect(registered).toBe(indexUtils.ancestorIdsPatchConfig);
+  });
+
+  it("throws when a custom BackFillPatchConfig reuses the built-in \"ancestor-ids\" name", () => {
+    expect(() => initializeEmberFlow({
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs,
+      validatorConfigs,
+      logicConfigs: [],
+      patchLogicConfigs: [],
+      backFillPatchConfigs: [{name: "ancestor-ids", patchFn: jest.fn()}],
+    })).toThrow();
+  });
+
+  it("throws when two custom BackFillPatchConfigs share the same name", () => {
+    expect(() => initializeEmberFlow({
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs,
+      validatorConfigs,
+      logicConfigs: [],
+      patchLogicConfigs: [],
+      backFillPatchConfigs: [
+        {name: "dup", patchFn: jest.fn()},
+        {name: "dup", patchFn: jest.fn()},
+      ],
+    })).toThrow();
   });
 });

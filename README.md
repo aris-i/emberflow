@@ -9,6 +9,7 @@ Emberflow is a library for Firebase Functions that simplifies the process of set
 - **Business Logics**: Define complex business rules that are automatically triggered by Firestore changes.
 - **View Logics**: Easily create and maintain denormalized data (views) across your database.
 - **Patch Logics**: Handle versioning and data migrations seamlessly.
+- **Group Patch Engine**: Run one-time back-fills or bulk patch-logics runs over an entire collection, with progress tracking.
 - **Billing Protection**: Built-in budget monitoring to prevent unexpected costs.
 
 ## Usage
@@ -36,25 +37,29 @@ import { securityConfigs } from "./security";
 import { validatorConfigs } from "./validators";
 import { logics } from "./business-logics";
 import { patchLogicConfigs } from "./patch-logics";
+import { backFillPatchConfigs } from "./one-time-patches";
 
 admin.initializeApp();
 
-const { functionsConfig } = initializeEmberFlow(
+const { functionsConfig } = initializeEmberFlow({
   projectConfig,
   admin,
   dbStructure,
   Entity,
   securityConfigs,
   validatorConfigs,
-  logics,
-  patchLogicConfigs
-);
+  logicConfigs: logics,
+  patchLogicConfigs,
+  backFillPatchConfigs, // optional, see "Group Patch Engine" below
+});
 
 // Export the generated functions
 Object.entries(functionsConfig).forEach(([key, value]) => {
   exports[key] = value;
 });
 ```
+
+`initializeEmberFlow` takes a single options object (`InitializeEmberFlowOptions`). `projectConfig`, `admin`, `dbStructure`, `Entity`, `securityConfigs`, `validatorConfigs`, `logicConfigs`, and `patchLogicConfigs` are required; `backFillPatchConfigs` and `userRegisterFn` are optional.
 
 ## Configuration
 
@@ -185,13 +190,112 @@ export const patchLogicConfigs: PatchLogicConfig[] = [
 ```
 
 #### 3. How it Works
-- **Triggering**: Patch logics are automatically queued during form submissions or document distribution if a version mismatch is detected.
+- **Triggering**: There are two ways patch logics run:
+    - **Automatic, per-document (default)**: You only register `patchLogicConfigs`. Emberflow
+      automatically queues and runs them for a single document during form submissions or
+      document distribution whenever a version mismatch is detected — projects don't call
+      anything directly here.
+    - **On-demand, collection-wide (bulk migration)**: To re-run patch logics across every
+      existing document in a collection, call the public `queueGroupPatch({ path, patchType:
+      "patch-logics", appVersion })` (see the [Group Patch Engine](#group-patch-engine-queuegrouppatch-getgrouppatchprogress-backfillpatchconfig)
+      below). Progress can be polled with `getGroupPatchProgress`.
 - **Asynchronous Execution**: They run asynchronously via Pub/Sub to ensure high performance.
+- **Version-gating**: In both cases a `PatchLogicConfig` only fires when `config.version <=`
+  the current `appVersion` **and** the document's `@dataVersion` is older than `config.version`.
+  After a successful patch, the document's `@dataVersion` is bumped so it won't run again.
 - **Versioning**:
     - **`@dataVersion`**: Incremented automatically after a patch is successfully applied.
     - **`minDataVersion`**: In `LogicConfig`, use this to ensure business logic only runs on compatible data.
     - **`obsoleteStartingFromVersion`**: In `LogicConfig`, use this to retire old logic based on the `appVersion`.
 - **Transactions**: Executed within Firestore transactions to ensure data integrity.
+
+### Group Patch Engine (`queueGroupPatch`, `getGroupPatchProgress`, `BackFillPatchConfig`)
+
+Emberflow ships with a generic, collection-wide batch engine for running a patch over every
+document in a collection (paging 500 docs at a time, tracking progress, and self-rescheduling
+over Pub/Sub until done). Each run is identified by a `patchType`:
+
+- **`"back-fill"`**: a version-free, one-time bulk back-fill. The actual work is delegated to a
+  `BackFillPatchConfig` resolved by `backFillPatchName`. Emberflow ships with a built-in
+  `ancestorIdsPatchConfig` (named `"ancestor-ids"`) that populates the `@entity`/ancestor id
+  fields used internally — it is **always registered automatically**, so you can trigger it with
+  `queueGroupPatch` at any time without registering it yourself. `appVersion` is **not** used for
+  `back-fill` runs (it's only required for `"patch-logics"`).
+- **`"patch-logics"`**: runs `runPatchLogics(appVersion, path)` for every document in the
+  collection, useful for bulk-applying `patchLogicConfigs` migrations.
+
+#### 1. Register a custom `BackFillPatchConfig`
+
+```typescript
+import { BackFillPatchConfig } from "emberflow/src/types";
+
+const myBackFill: BackFillPatchConfig = {
+  name: "my-back-fill", // used as backFillPatchName; must be unique
+  patchFn: async (collectionPath, docs) => {
+    // Bulk-update `docs` here, e.g. via a single db.batch() commit.
+  },
+};
+
+export const backFillPatchConfigs: BackFillPatchConfig[] = [myBackFill];
+```
+
+Pass `backFillPatchConfigs` to `initializeEmberFlow` (see step 2 above). The built-in
+`"ancestor-ids"` config is always registered automatically; registering a config with a
+duplicate name, or the reserved name `"ancestor-ids"`, throws during initialization.
+
+#### 2. Trigger a group patch
+
+```typescript
+import { queueGroupPatch } from "emberflow";
+
+// Kick off the built-in ancestor-ids back-fill for a collection
+await queueGroupPatch({
+  path: "/users/user123/feeds",
+  patchType: "back-fill",
+  backFillPatchName: "ancestor-ids",
+});
+
+// Kick off your own back-fill
+await queueGroupPatch({
+  path: "/users/user123/feeds",
+  patchType: "back-fill",
+  backFillPatchName: "my-back-fill",
+});
+
+// Bulk-apply patch logics for a target appVersion
+await queueGroupPatch({
+  path: "/users/user123/feeds",
+  patchType: "patch-logics",
+  appVersion: "1.2.0",
+});
+```
+
+`queueGroupPatch` accepts either a collection path or a document path (in which case the parent
+collection is derived). There is no guard/auth on it — it's meant to be called from your own
+trusted code (e.g. an admin-only Cloud Function or script). Placeholder paths (e.g.
+`/users/{userId}/feeds`) are automatically hydrated into concrete collection paths before patching.
+
+> If `backFillPatchName` doesn't resolve to a registered `BackFillPatchConfig` (or a
+> `"patch-logics"` run is missing its `appVersion`), the run is set to status `"error"` — there is
+> no silent default.
+
+#### 3. Track progress
+
+```typescript
+import { getGroupPatchProgress } from "emberflow";
+
+const progress = await getGroupPatchProgress({
+  collectionPath: "/users/user123/feeds",
+  patchType: "back-fill",
+  backFillPatchName: "ancestor-ids",
+});
+// progress?.status -> "running" | "completed" | "error" | "reset"
+```
+
+Progress is tracked independently per `patchType`/`backFillPatchName`, so different patches
+running against the same collection never clobber each other's status. The status doc lives at
+`@emberflow/internal/group-patches/<collection>_back-fill_<backFillPatchName>` (or
+`..._patch-logics` for `"patch-logics"` runs).
 
 ## Reference
 
