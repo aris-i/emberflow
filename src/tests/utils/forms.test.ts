@@ -11,10 +11,6 @@ import * as admin from "firebase-admin";
 import {dbStructure, Entity} from "../../sample-custom/db-structure";
 import {securityConfigs} from "../../sample-custom/security";
 import {validatorConfigs} from "../../sample-custom/validators";
-import type {ScheduledEvent} from "firebase-functions/v2/scheduler";
-import spyOn = jest.spyOn;
-import * as misc from "../../utils/misc";
-import {firestore} from "firebase-admin";
 
 jest.mock("../../utils/pubsub", () => {
   return {
@@ -126,96 +122,5 @@ describe("onMessageSubmitFormQueue", () => {
     expect(submitFormSpy).toHaveBeenCalledWith(formData, {uid: submitFormAs, appVersion});
     expect(trackProcessedIdsMock).toHaveBeenCalledWith(SUBMIT_FORM_TOPIC_NAME, event.id);
     expect(result).toEqual("Processed form data");
-  });
-});
-
-describe("cleanActionsAndForms", () => {
-  let deleteCollectionSpy: jest.SpyInstance;
-  let formRefSpy: jest.SpyInstance;
-  let formUpdateMock: jest.Mock;
-  const snapshot = jest.fn();
-
-  const actionSnapshot = {
-    docs: [
-      {
-        ref: {
-          path: "@actions/test-form-id-1",
-        },
-        data: () => ({
-          eventContext: {
-            formId: "test-form-id-1",
-            uid: "test-uid-1",
-          },
-        }),
-      },
-      {
-        ref: {
-          path: "@actions/test-form-id-2",
-        },
-        data: () => ({
-          eventContext: {
-            formId: "test-form-id-2",
-            uid: "test-uid-1",
-          },
-        }),
-      },
-      {
-        ref: {
-          path: "@actions/test-form-id-3",
-        },
-        data: () => ({
-          eventContext: {
-            formId: "test-form-id-3",
-            uid: "test-uid-2",
-          },
-        }),
-      },
-    ],
-  };
-
-  const logicResultsSnapshot = {
-    docs: [
-      {
-        ref: {
-          path: "@actions/test-form-id-1/logicResults/test-form-id-1-0-0",
-        },
-      },
-    ],
-  };
-
-  snapshot.mockReturnValue(logicResultsSnapshot).mockReturnValueOnce(actionSnapshot);
-
-  beforeEach(() => {
-    deleteCollectionSpy = jest.spyOn(misc, "deleteCollection")
-      .mockImplementation(async (query, callback) => {
-        if (callback) {
-          await callback(snapshot() as unknown as firestore.QuerySnapshot);
-        }
-        return Promise.resolve();
-      });
-
-    formUpdateMock = jest.fn();
-    formRefSpy = jest.spyOn(admin.database(), "ref").mockReturnValue({
-      update: formUpdateMock,
-    } as unknown as admin.database.Reference);
-  });
-
-  it("should clean forms", async () => {
-    spyOn(console, "info").mockImplementation();
-    const event = {} as ScheduledEvent;
-    await forms.cleanActionsAndForms(event);
-
-    expect(console.info).toHaveBeenCalledWith("Running cleanActionsAndForms");
-    expect(deleteCollectionSpy).toHaveBeenCalled();
-    expect(deleteCollectionSpy).toHaveBeenCalledTimes(7);
-    expect(formRefSpy).toHaveBeenCalled();
-    expect(formRefSpy).toHaveBeenCalledTimes(1);
-    expect(formUpdateMock).toHaveBeenCalledWith({
-      "forms/test-uid-1/test-form-id-1": null,
-      "forms/test-uid-1/test-form-id-2": null,
-      "forms/test-uid-2/test-form-id-3": null,
-    });
-    expect(formUpdateMock).toHaveBeenCalledTimes(1);
-    expect(console.info).toHaveBeenCalledWith("Cleaned actions and forms");
   });
 });

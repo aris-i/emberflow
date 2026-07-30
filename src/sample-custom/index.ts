@@ -7,6 +7,7 @@ import {validatorConfigs} from "./validators";
 import {logics} from "./business-logics";
 import {patchLogicConfigs} from "./patch-logics";
 import {backFillPatchConfigs} from "./one-time-patches";
+import {cleanupConfigs} from "./cleanup-configs";
 
 admin.initializeApp();
 
@@ -19,6 +20,7 @@ const {functionsConfig} = initializeEmberFlow({
   validatorConfigs,
   logicConfigs: logics,
   patchLogicConfigs,
+  cleanupConfigs,
   backFillPatchConfigs,
 });
 

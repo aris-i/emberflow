@@ -11,6 +11,7 @@ import {
   LogicResultDocAction,
   MetricExecution,
   BackFillPatchConfig,
+  CleanupConfig,
   PatchLogicConfig,
   ProjectConfig,
   RunBusinessLogicStatus,
@@ -24,8 +25,6 @@ import {
 import {
   _mockable as indexUtilsMockable,
   ancestorIdsPatchConfig,
-  cleanMetricComputations,
-  cleanMetricExecutions,
   convertLogicResultsToMetricExecutions,
   createMetricComputation,
   createMetricLogicDoc,
@@ -50,7 +49,6 @@ import {
 } from "./logics/patch-logics";
 import {initDbStructure} from "./init-db-structure";
 import {
-  cleanViewLogicExecutions,
   createViewLogicFn,
   findMatchingViewLogics,
   onMessageViewLogicsQueue,
@@ -63,7 +61,7 @@ import {findMatchingDocPathRegex, parseEntity, getDestPropAndDestPropId} from ".
 import {database} from "firebase-admin";
 import {initClient} from "emberflow-admin-client/lib";
 import {internalDbStructure, InternalEntity} from "./db-structure";
-import {cleanActionsAndForms, onMessageSubmitFormQueue} from "./utils/forms";
+import {onMessageSubmitFormQueue} from "./utils/forms";
 import {PubSub, Topic} from "@google-cloud/pubsub";
 import {onMessagePublished} from "firebase-functions/v2/pubsub";
 import {logMemoryUsage, reviveDateAndTimestamp, trimStrings} from "./utils/misc";
@@ -75,7 +73,7 @@ import {
   onMessageInstructionsQueue,
   queueGroupPatch,
 } from "./utils/distribution";
-import {cleanPubSubProcessedIds} from "./utils/pubsub";
+import {cleanupCollections} from "./utils/cleanup";
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import {onDocumentCreated} from "firebase-functions/v2/firestore";
 import {UserRecord} from "firebase-admin/lib/auth";
@@ -94,6 +92,7 @@ export let securityConfigs: SecurityConfig[] = [];
 export let validatorConfigs: ValidatorConfig[] = [];
 export let logicConfigs: LogicConfig[] = [];
 export let patchLogicConfigs: PatchLogicConfig[] = [];
+export let cleanupConfigs: CleanupConfig[] = [];
 export let backFillPatchConfigs: BackFillPatchConfig[] = [];
 export let docPaths: Record<string, string> = {};
 export let colPaths: Record<string, string> = {};
@@ -138,6 +137,7 @@ export interface InitializeEmberFlowOptions {
   validatorConfigs: ValidatorConfig[];
   logicConfigs: LogicConfig[];
   patchLogicConfigs: PatchLogicConfig[];
+  cleanupConfigs?: CleanupConfig[];
   backFillPatchConfigs?: BackFillPatchConfig[];
   userRegisterFn?: UserRegisterFn;
 }
@@ -162,6 +162,7 @@ export function initializeEmberFlow(
   validatorConfigs = [...options.validatorConfigs];
   logicConfigs = [...options.logicConfigs];
   patchLogicConfigs = [...options.patchLogicConfigs];
+  cleanupConfigs = [...(options.cleanupConfigs ?? [])];
   backFillPatchConfigs = [ancestorIdsPatchConfig, ...(options.backFillPatchConfigs ?? [])];
   const backFillPatchNames = new Set<string>();
   for (const backFillPatchConfig of backFillPatchConfigs) {
@@ -306,41 +307,13 @@ export function initializeEmberFlow(
     timeoutSeconds: 540,
     ...projectConfig.functionsConfig?.resetUsageStats as any,
   }, resetUsageStats);
-  functionsConfig["cleanPubSubProcessedIds"] = onSchedule({
+  functionsConfig["cleanupCollections"] = onSchedule({
     schedule: "every 1 hours",
     region: projectConfig.region,
     memory: "512MiB",
     timeoutSeconds: 540,
-    ...projectConfig.functionsConfig?.cleanPubSubProcessedIds as any,
-  }, cleanPubSubProcessedIds);
-  functionsConfig["cleanMetricComputations"] = onSchedule({
-    schedule: "every 24 hours",
-    region: projectConfig.region,
-    memory: "512MiB",
-    timeoutSeconds: 540,
-    ...projectConfig.functionsConfig?.cleanMetricComputations as any,
-  }, cleanMetricComputations);
-  functionsConfig["cleanMetricExecutions"] = onSchedule({
-    schedule: "every 24 hours",
-    region: projectConfig.region,
-    memory: "512MiB",
-    timeoutSeconds: 540,
-    ...projectConfig.functionsConfig?.cleanMetricExecutions as any,
-  }, cleanMetricExecutions);
-  functionsConfig["cleanActionsAndForms"] = onSchedule({
-    schedule: "every 24 hours",
-    region: projectConfig.region,
-    memory: "512MiB",
-    timeoutSeconds: 540,
-    ...projectConfig.functionsConfig?.cleanActionsAndForms as any,
-  }, cleanActionsAndForms);
-  functionsConfig["cleanViewLogicExecutions"] = onSchedule({
-    schedule: "every 24 hours",
-    region: projectConfig.region,
-    memory: "512MiB",
-    timeoutSeconds: 540,
-    ...projectConfig.functionsConfig?.cleanViewLogicExecutions as any,
-  }, cleanViewLogicExecutions);
+    ...projectConfig.functionsConfig?.cleanupCollections as any,
+  }, cleanupCollections);
   functionsConfig["createMetricComputation"] = onSchedule({
     schedule: "every 1 hours",
     region: projectConfig.region,

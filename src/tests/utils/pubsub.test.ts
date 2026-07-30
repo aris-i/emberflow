@@ -1,13 +1,10 @@
 import {ProjectConfig} from "../../types";
 import * as admin from "firebase-admin";
-import {initializeEmberFlow, pubSubTopics} from "../../index";
+import {initializeEmberFlow} from "../../index";
 import {dbStructure, Entity} from "../../sample-custom/db-structure";
 import {securityConfigs} from "../../sample-custom/security";
 import {validatorConfigs} from "../../sample-custom/validators";
-import {cleanPubSubProcessedIds, pubsubUtils} from "../../utils/pubsub";
-import type {ScheduledEvent} from "firebase-functions/v2/scheduler";
-import * as misc from "../../utils/misc";
-import {firestore} from "firebase-admin";
+import {pubsubUtils} from "../../utils/pubsub";
 
 const projectConfig: ProjectConfig = {
   projectId: "your-project-id",
@@ -72,39 +69,5 @@ describe("pubsubUtils", () => {
     expect(admin.firestore().doc).toHaveBeenCalledWith("@topics/test-topic/processedIds/test-id");
     expect(docGetMock).toHaveBeenCalledTimes(1);
     expect(result).toBe(true);
-  });
-});
-
-describe("cleanPubSubProcessedIds", () => {
-  let deleteCollectionSpy: jest.SpyInstance;
-
-  beforeEach(() => {
-    jest.spyOn(admin.firestore(), "collection").mockReturnValue({
-      where: jest.fn().mockReturnValue({}),
-    } as any);
-    deleteCollectionSpy = jest.spyOn(misc, "deleteCollection")
-      .mockImplementation(async (query, callback) => {
-        if (callback) {
-          await callback({size: 1} as unknown as firestore.QuerySnapshot);
-        }
-        return Promise.resolve();
-      });
-  });
-
-  afterEach(() => {
-    jest.restoreAllMocks();
-  });
-
-  it("should clean processed ids", async () => {
-    jest.spyOn(console, "info").mockImplementation();
-    await cleanPubSubProcessedIds({} as ScheduledEvent);
-
-    expect(console.info).toHaveBeenCalledWith("Running cleanPubSubProcessedIds");
-    expect(admin.firestore().collection).toHaveBeenCalledTimes(pubSubTopics.length);
-    for (const pubSubTopic of pubSubTopics) {
-      expect(admin.firestore().collection).toHaveBeenCalledWith(`@topics/${pubSubTopic}/processedIds`);
-    }
-    expect(deleteCollectionSpy).toHaveBeenCalled();
-    expect(console.info).toHaveBeenCalledWith(`Cleaned ${pubSubTopics.length} topics of processedIds`);
   });
 });

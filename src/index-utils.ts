@@ -32,7 +32,7 @@ import {
   findMatchingDocPathRegex,
   addAncestorIds,
 } from "./utils/paths";
-import {deepEqual, deleteCollection} from "./utils/misc";
+import {deepEqual} from "./utils/misc";
 import {CloudFunctionsServiceClient} from "@google-cloud/functions";
 import {BatchUtil} from "./utils/batch";
 import {queueSubmitForm} from "./utils/forms";
@@ -613,21 +613,6 @@ async function saveMetricExecution(metricExecutions: MetricExecution[]) {
   }
 }
 
-export async function cleanMetricExecutions(_event: ScheduledEvent) {
-  console.info("Running cleanMetricExecutions");
-  const metricsSnapshot = await db.collection("@metrics").get();
-  let i = 0;
-  for (const metricDoc of metricsSnapshot.docs) {
-    const query = metricDoc.ref.collection("executions")
-      .where("execDate", "<", new Date(Date.now() - 1000 * 60 * 60 * 24 * 7));
-
-    await deleteCollection(query, (snapshot) => {
-      i += snapshot.size;
-    });
-  }
-  console.info(`Cleaned ${i} logic metric executions`);
-}
-
 export async function createMetricComputation(_event: ScheduledEvent) {
   console.info("Creating metric computation");
   const metricsSnapshot = await db.collection("@metrics").get();
@@ -674,21 +659,6 @@ export async function createMetricComputation(_event: ScheduledEvent) {
       jitterTime,
     });
   }
-}
-
-export async function cleanMetricComputations(_event: ScheduledEvent) {
-  console.info("Running cleanMetricComputations");
-  const metricsSnapshot = await db.collection("@metrics").get();
-  let i = 0;
-  for (const metricDoc of metricsSnapshot.docs) {
-    const query = metricDoc.ref.collection("computations")
-      .where("createdAt", "<", new Date(Date.now() - 1000 * 60 * 60 * 24 * 30));
-
-    await deleteCollection(query, (snapshot) => {
-      i += snapshot.size;
-    });
-  }
-  console.info(`Cleaned ${i} logic metric computations`);
 }
 
 export async function distributeFnTransactional(

@@ -168,6 +168,50 @@ async function deleteQueryBatch(query: Query, resolve: () => void, callback?: (s
   });
 }
 
+export async function deleteCollectionRecursive(
+  query: Query,
+  callback?: (snapshot: firestore.QuerySnapshot) => void
+): Promise<void> {
+  // Note: no keys-only .select() here so that field data (e.g. eventContext)
+  // stays available for callbacks that need it.
+  query = query.limit(100);
+  return new Promise((resolve, reject) => {
+    deleteQueryBatchRecursive(query, resolve, callback).catch(reject);
+  });
+}
+
+async function deleteQueryBatchRecursive(
+  query: Query,
+  resolve: () => void,
+  callback?: (snapshot: firestore.QuerySnapshot) => void
+): Promise<void> {
+  const snapshot = await query.get();
+
+  if (snapshot.size === 0) {
+    resolve();
+    return;
+  }
+
+  const batch = BatchUtil.getInstance();
+  for (const doc of snapshot.docs) {
+    const subcollections = await doc.ref.listCollections();
+    for (const subcollection of subcollections) {
+      await deleteCollectionRecursive(subcollection);
+    }
+    await batch.deleteDoc(doc.ref);
+  }
+
+  await batch.commit();
+
+  if (callback) {
+    await callback(snapshot);
+  }
+
+  process.nextTick(() => {
+    deleteQueryBatchRecursive(query, resolve, callback);
+  });
+}
+
 export const reviveDateAndTimestamp = (json: { [key: string]: any }) => {
   const stack = [json];
   while (stack.length > 0) {

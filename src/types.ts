@@ -44,6 +44,7 @@ export interface ProjectConfig {
         cleanMetricExecutions?: FunctionConfig;
         cleanActionsAndForms?: FunctionConfig;
         cleanViewLogicExecutions?: FunctionConfig;
+        cleanupCollections?: FunctionConfig;
         createMetricComputation?: FunctionConfig;
         onDeleteFunctions?: FunctionConfig;
         onUserRegister?: FunctionConfig;
@@ -276,6 +277,35 @@ export interface QueryCondition {
     fieldName: string;
     operator: firestore.WhereFilterOp;
     value: any;
+}
+
+export type CleanupTimeUnit = "hours" | "days" | "months";
+
+export interface CleanupConfig {
+    /** Exact collection path, or collection-group name when isCollectionGroup=true */
+    collectionPath: string;
+    /** If true, uses db.collectionGroup(collectionPath) */
+    isCollectionGroup?: boolean;
+    /** Timestamp/Date field used to compare against the cutoff */
+    timestampField: string;
+    /** Documents with timestampField < now-(value·unit) are deleted */
+    olderThan: {
+        value: number;
+        unit: CleanupTimeUnit;
+    };
+    /**
+     * Optional extra server-side filters, ANDed with the age threshold.
+     * Reuses the existing QueryCondition type: { fieldName, operator, value }.
+     * e.g. [{ fieldName: "hasTopic", operator: "==", value: false }]
+     */
+    conditions?: QueryCondition[];
+    /** If true (default), each matched doc is deleted with its whole subtree. */
+    recursive?: boolean;
+    /**
+     * Internal-only side-effect hook run per deleted batch (e.g. RTDB forms
+     * cleanup). Set only by built-in framework entries; project configs omit it.
+     */
+    onBatchDeleted?: (snapshot: FirebaseFirestore.QuerySnapshot) => Promise<void>;
 }
 
 export type EntityCondition = Record<string, QueryCondition>;

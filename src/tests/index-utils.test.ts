@@ -3,8 +3,6 @@ import {firestore} from "firebase-admin";
 import {Readable} from "stream";
 import * as indexUtils from "../index-utils";
 import {
-  cleanMetricComputations,
-  cleanMetricExecutions,
   convertLogicResultsToMetricExecutions,
   createMetricComputation,
 } from "../index-utils";
@@ -30,7 +28,6 @@ import {BatchUtil} from "../utils/batch";
 import * as distribution from "../utils/distribution";
 import * as forms from "../utils/forms";
 import {DocumentReference} from "firebase-admin/lib/firestore";
-import * as misc from "../utils/misc";
 import type {ScheduledEvent} from "firebase-functions/v2/scheduler";
 import * as viewLogics from "../logics/view-logics";
 import {runViewLogics} from "../logics/view-logics";
@@ -1973,51 +1970,6 @@ describe("createMetricExecution", () => {
   });
 });
 
-describe("cleanMetricExecutions", () => {
-  let colGetMock: jest.Mock;
-  let deleteCollectionSpy: jest.SpyInstance;
-
-  beforeEach(() => {
-    colGetMock = jest.fn().mockResolvedValue({
-      docs: [
-        {
-          ref: {
-            collection: jest.fn().mockReturnValue({
-              where: jest.fn().mockReturnValue({}),
-            }),
-          },
-        },
-      ],
-    });
-    jest.spyOn(admin.firestore(), "collection").mockReturnValue({
-      get: colGetMock,
-    } as any);
-    deleteCollectionSpy = jest.spyOn(misc, "deleteCollection")
-      .mockImplementation(async (query, callback) => {
-        if (callback) {
-          await callback({size: 1} as unknown as firestore.QuerySnapshot);
-        }
-        return Promise.resolve();
-      });
-  });
-
-  afterEach(() => {
-    jest.restoreAllMocks();
-  });
-
-  it("should clean metric executions", async () => {
-    jest.spyOn(console, "info").mockImplementation();
-    await cleanMetricExecutions({} as ScheduledEvent);
-
-    expect(console.info).toHaveBeenCalledWith("Running cleanMetricExecutions");
-    expect(admin.firestore().collection).toHaveBeenCalledTimes(1);
-    expect(admin.firestore().collection).toHaveBeenCalledWith("@metrics");
-    expect(colGetMock).toHaveBeenCalledTimes(1);
-    expect(deleteCollectionSpy).toHaveBeenCalled();
-    expect(console.info).toHaveBeenCalledWith("Cleaned 1 logic metric executions");
-  });
-});
-
 describe("createMetricComputation", () => {
   let colGetMock: jest.Mock;
   let setMock: jest.Mock;
@@ -2137,51 +2089,6 @@ describe("createMetricComputation", () => {
       avgExecTime,
       jitterTime,
     });
-  });
-});
-
-describe("cleanMetricComputations", () => {
-  let colGetMock: jest.Mock;
-  let deleteCollectionSpy: jest.SpyInstance;
-
-  beforeEach(() => {
-    colGetMock = jest.fn().mockResolvedValue({
-      docs: [
-        {
-          ref: {
-            collection: jest.fn().mockReturnValue({
-              where: jest.fn().mockReturnValue({}),
-            }),
-          },
-        },
-      ],
-    });
-    jest.spyOn(admin.firestore(), "collection").mockReturnValue({
-      get: colGetMock,
-    } as any);
-    deleteCollectionSpy = jest.spyOn(misc, "deleteCollection")
-      .mockImplementation(async (query, callback) => {
-        if (callback) {
-          await callback({size: 1} as unknown as firestore.QuerySnapshot);
-        }
-        return Promise.resolve();
-      });
-  });
-
-  afterEach(() => {
-    jest.restoreAllMocks();
-  });
-
-  it("should clean metric computations", async () => {
-    jest.spyOn(console, "info").mockImplementation();
-    await cleanMetricComputations({} as ScheduledEvent);
-
-    expect(console.info).toHaveBeenCalledWith("Running cleanMetricComputations");
-    expect(admin.firestore().collection).toHaveBeenCalledTimes(1);
-    expect(admin.firestore().collection).toHaveBeenCalledWith("@metrics");
-    expect(colGetMock).toHaveBeenCalledTimes(1);
-    expect(deleteCollectionSpy).toHaveBeenCalled();
-    expect(console.info).toHaveBeenCalledWith("Cleaned 1 logic metric computations");
   });
 });
 

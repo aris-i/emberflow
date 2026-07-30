@@ -8,7 +8,7 @@ import {
 } from "../index-utils";
 import {pubsubUtils} from "../utils/pubsub";
 import {queueInstructions} from "../utils/distribution";
-import {logMemoryUsage, reviveDateAndTimestamp, deleteCollection} from "../utils/misc";
+import {logMemoryUsage, reviveDateAndTimestamp} from "../utils/misc";
 import {chunkQuery} from "../utils/query";
 import {
   LogicResult,
@@ -18,7 +18,6 @@ import {
   ViewLogicConfig,
   ViewLogicFn,
 } from "../types";
-import {ScheduledEvent} from "firebase-functions/v2/scheduler";
 import {
   _mockable as pathsMockable,
   findMatchingDocPathRegex,
@@ -559,26 +558,6 @@ export async function runViewLogics(
     }
   }
   return logicResults;
-}
-
-export async function cleanViewLogicExecutions(_event: ScheduledEvent) {
-  console.info("Running cleanViewLogicExecutions");
-  const query = db.collection("@emberflow").doc("internal").collection("viewLogicExecutions")
-    .where("execDate", "<", new Date(Date.now() - 1000 * 60 * 60 * 24 * 7));
-
-  let i = 0;
-  await deleteCollection(query, async (snapshot) => {
-    const batch = _mockable.getBatchUtil();
-    for (const doc of snapshot.docs) {
-      const docsQuery = doc.ref.collection("docs");
-      await deleteCollection(docsQuery);
-      await batch.deleteDoc(doc.ref);
-      i++;
-    }
-    await batch.commit();
-  });
-
-  console.info(`Cleaned ${i} view logic executions`);
 }
 
 export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishedData>) {

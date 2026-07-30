@@ -2,6 +2,7 @@ import {
   computeHashCode,
   deepEqual,
   deleteCollection,
+  deleteCollectionRecursive,
   LimitedSet,
   reviveDateAndTimestamp, trimStrings,
 } from "../../utils/misc";
@@ -222,6 +223,103 @@ describe("deleteCollection", () => {
     expect(selectMock).toHaveBeenCalledTimes(1);
     expect(batchDeleteDocMock).toHaveBeenCalledTimes(100);
     expect(batchCommitMock).toHaveBeenCalledTimes(1);
+    expect(callbackMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("deleteCollectionRecursive", () => {
+  let callbackMock: jest.Mock;
+  let batchDeleteDocMock: jest.Mock;
+  let batchCommitMock: jest.Mock;
+
+  beforeEach(() => {
+    callbackMock = jest.fn();
+    batchDeleteDocMock = jest.fn();
+    batchCommitMock = jest.fn();
+    jest.spyOn(BatchUtil, "getInstance").mockImplementation(() => {
+      return {
+        deleteDoc: batchDeleteDocMock,
+        commit: batchCommitMock,
+      } as unknown as BatchUtil;
+    });
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("should not use keys-only select so callbacks receive field data", async () => {
+    const selectMock = jest.fn();
+    const limitMock = jest.fn().mockReturnValue({
+      get: jest.fn().mockResolvedValue({size: 0, docs: []}),
+      select: selectMock,
+    });
+    await deleteCollectionRecursive({
+      limit: limitMock,
+    } as unknown as Query, callbackMock);
+
+    expect(limitMock).toHaveBeenCalledTimes(1);
+    expect(limitMock).toHaveBeenCalledWith(100);
+    expect(selectMock).not.toHaveBeenCalled();
+    expect(callbackMock).not.toHaveBeenCalled();
+  });
+
+  it("should delete matched docs that have no subcollections", async () => {
+    const docs = [];
+    for (let i = 0; i < 3; i++) {
+      docs.push({
+        ref: {
+          listCollections: jest.fn().mockResolvedValue([]),
+        },
+      });
+    }
+    const getMock = jest.fn()
+      .mockResolvedValue({size: 0, docs: []})
+      .mockResolvedValueOnce({size: docs.length, docs});
+    const limitMock = jest.fn().mockReturnValue({get: getMock});
+
+    await deleteCollectionRecursive({
+      limit: limitMock,
+    } as unknown as Query, callbackMock);
+
+    expect(limitMock).toHaveBeenCalledTimes(1);
+    expect(limitMock).toHaveBeenCalledWith(100);
+    expect(batchDeleteDocMock).toHaveBeenCalledTimes(3);
+    expect(batchCommitMock).toHaveBeenCalledTimes(1);
+    expect(callbackMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("should recursively delete each doc's subcollections before the doc", async () => {
+    const leafDoc = {
+      ref: {
+        listCollections: jest.fn().mockResolvedValue([]),
+      },
+    };
+    const subGetMock = jest.fn()
+      .mockResolvedValue({size: 0, docs: []})
+      .mockResolvedValueOnce({size: 1, docs: [leafDoc]});
+    const subLimitMock = jest.fn().mockReturnValue({get: subGetMock});
+    const subcollection = {limit: subLimitMock};
+
+    const parentDoc = {
+      ref: {
+        listCollections: jest.fn().mockResolvedValue([subcollection]),
+      },
+    };
+    const getMock = jest.fn()
+      .mockResolvedValue({size: 0, docs: []})
+      .mockResolvedValueOnce({size: 1, docs: [parentDoc]});
+    const limitMock = jest.fn().mockReturnValue({get: getMock});
+
+    await deleteCollectionRecursive({
+      limit: limitMock,
+    } as unknown as Query, callbackMock);
+
+    // the subcollection was traversed recursively
+    expect(subLimitMock).toHaveBeenCalledWith(100);
+    expect(parentDoc.ref.listCollections).toHaveBeenCalledTimes(1);
+    // both the leaf doc and the parent doc are deleted
+    expect(batchDeleteDocMock).toHaveBeenCalledTimes(2);
     expect(callbackMock).toHaveBeenCalledTimes(1);
   });
 });
