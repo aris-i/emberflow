@@ -10,6 +10,7 @@ Emberflow is a library for Firebase Functions that simplifies the process of set
 - **View Logics**: Easily create and maintain denormalized data (views) across your database.
 - **Patch Logics**: Handle versioning and data migrations seamlessly.
 - **Group Patch Engine**: Run one-time back-fills or bulk patch-logics runs over an entire collection, with progress tracking.
+- **Pluggable Cleanup**: Automatically purge stale documents on a schedule using declarative, config-driven cleanup rules.
 - **Billing Protection**: Built-in budget monitoring to prevent unexpected costs.
 
 ## Usage
@@ -37,6 +38,7 @@ import { securityConfigs } from "./security";
 import { validatorConfigs } from "./validators";
 import { logics } from "./business-logics";
 import { patchLogicConfigs } from "./patch-logics";
+import { cleanupConfigs } from "./cleanup-configs";
 import { backFillPatchConfigs } from "./one-time-patches";
 
 admin.initializeApp();
@@ -50,6 +52,7 @@ const { functionsConfig } = initializeEmberFlow({
   validatorConfigs,
   logicConfigs: logics,
   patchLogicConfigs,
+  cleanupConfigs, // optional, see "Collection Cleanup" below
   backFillPatchConfigs, // optional, see "Group Patch Engine" below
 });
 
@@ -59,7 +62,7 @@ Object.entries(functionsConfig).forEach(([key, value]) => {
 });
 ```
 
-`initializeEmberFlow` takes a single options object (`InitializeEmberFlowOptions`). `projectConfig`, `admin`, `dbStructure`, `Entity`, `securityConfigs`, `validatorConfigs`, `logicConfigs`, and `patchLogicConfigs` are required; `backFillPatchConfigs` and `userRegisterFn` are optional.
+`initializeEmberFlow` takes a single options object (`InitializeEmberFlowOptions`). `projectConfig`, `admin`, `dbStructure`, `Entity`, `securityConfigs`, `validatorConfigs`, `logicConfigs`, and `patchLogicConfigs` are required; `cleanupConfigs`, `backFillPatchConfigs`, and `userRegisterFn` are optional.
 
 ## Configuration
 
@@ -296,6 +299,72 @@ Progress is tracked independently per `patchType`/`backFillPatchName`, so differ
 running against the same collection never clobber each other's status. The status doc lives at
 `@emberflow/internal/group-patches/<collection>_back-fill_<backFillPatchName>` (or
 `..._patch-logics` for `"patch-logics"` runs).
+
+### Collection Cleanup (`cleanupConfigs`, `CleanupConfig`)
+
+Emberflow ships with a single, scheduled `cleanupCollections` Cloud Function that runs **every
+hour** and purges stale documents based on declarative rules. Instead of writing a bespoke
+scheduled function for each collection you want to prune, you describe *what* to delete with a
+`CleanupConfig` and Emberflow handles the *how* (querying, batching, recursive subtree deletion,
+and self-paced iteration).
+
+Two layers of rules are merged and executed by the same runner:
+
+1. **Built-in (framework) rules** — always active. They keep Emberflow's own internal
+   bookkeeping collections tidy (Pub/Sub `processedIds`, metric `executions`/`computations`,
+   view-logic executions, and `@actions` — the latter also nulls out the corresponding
+   `forms/{uid}/{formId}` entries in the Realtime Database).
+2. **Project-supplied rules** — whatever you pass via the optional `cleanupConfigs` init option.
+   These are appended to the built-in rules, so your rules run alongside them.
+
+#### 1. Define a `CleanupConfig`
+
+```typescript
+import { CleanupConfig } from "emberflow/src/types";
+
+export const cleanupConfigs: CleanupConfig[] = [
+  {
+    // Exact collection path, or a collection-group name when isCollectionGroup=true.
+    collectionPath: "askJaris",
+    // Match this subcollection name anywhere in Firestore (collection-group query).
+    isCollectionGroup: true,
+    // Timestamp/Date field compared against the computed cutoff.
+    timestampField: "createdAt",
+    // Delete docs whose timestampField is older than (value · unit).
+    // unit is one of "hours" | "days" | "months".
+    olderThan: { value: 1, unit: "months" },
+    // Optional extra server-side filters, ANDed with the age threshold.
+    conditions: [
+      { fieldName: "hasTopic", operator: "==", value: false },
+    ],
+    // recursive defaults to true: each matched doc is deleted with its whole
+    // subtree. Set to false to delete only the matched documents.
+    recursive: true,
+  },
+];
+```
+
+Then pass `cleanupConfigs` to `initializeEmberFlow` (see step 2 in **Usage** above).
+
+#### 2. How it Works
+
+- **Scheduling**: A single `cleanupCollections` scheduled function runs `every 1 hours`. You can
+  override its schedule/region/memory/timeout via `projectConfig.functionsConfig.cleanupCollections`.
+- **Cutoff computation**: `olderThan` is converted to a cutoff `Date`; documents whose
+  `timestampField` is `< cutoff` are selected. `"months"` is calendar-aware (it subtracts
+  calendar months rather than a fixed number of days).
+- **Extra filters (`conditions`)**: Optional `QueryCondition` entries (`{ fieldName, operator,
+  value }`) are ANDed with the age threshold as additional server-side `where` clauses.
+- **Deletion mode (`recursive`)**: Defaults to `true`, deleting each matched document together
+  with its entire subtree. Set `recursive: false` to delete only the matched documents (leaving
+  any subcollections untouched).
+- **Isolation**: Each config is executed independently inside its own `try/catch`, so a failure
+  in one rule (e.g. a missing index) won't stop the others; failures are logged and the number of
+  deleted documents per collection is reported to the logs.
+
+> **Composite indexes**: Collection-group queries and any `conditions` combined with the
+> timestamp filter may require composite Firestore indexes in your project. If a rule fails,
+> check the function logs for an index-creation link.
 
 ## Reference
 
