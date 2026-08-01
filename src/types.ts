@@ -50,6 +50,7 @@ export interface ProjectConfig {
         onUserRegister?: FunctionConfig;
     }
 }
+
 export type ActionType = "create" | "update" | "delete";
 export interface Action{
     eventContext: EventContext,

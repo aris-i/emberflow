@@ -363,8 +363,117 @@ Then pass `cleanupConfigs` to `initializeEmberFlow` (see step 2 in **Usage** abo
   deleted documents per collection is reported to the logs.
 
 > **Composite indexes**: Collection-group queries and any `conditions` combined with the
-> timestamp filter may require composite Firestore indexes in your project. If a rule fails,
-> check the function logs for an index-creation link.
+> timestamp filter may require composite Firestore indexes in your project. Emberflow's own
+> collection-group cleanup fields are covered by the shipped `firestore.indexes.json` fragment
+> (see **Firestore Indexes** below); composite indexes for your **own** cleanup configs must be
+> declared in your project's `firestore.indexes.json` and deployed with
+> `firebase deploy --only firestore:indexes`. If a rule fails, check the function logs for an
+> index-creation link.
+
+### Firestore Indexes (`firestore.indexes.json`)
+
+Emberflow's internal collection-group cleanup queries
+(`computations`/`createdAt`, `executions`/`execDate`, `processedIds`/`timestamp`) require
+single-field indexes at `COLLECTION_GROUP` scope, which Firestore does **not** auto-create. To
+avoid manual `COLLECTION_GROUP_ASC` exemptions, Emberflow ships those index definitions as a static
+`firestore.indexes.json` fragment at the root of the package.
+
+Emberflow only declares the indexes **its own internal queries require**. It does **not** manage
+your application's indexes — you keep those in your own `firestore.indexes.json`. This gives a
+single, unambiguous owner for every index: Emberflow owns the framework indexes, your app owns the
+rest.
+
+The shipped fragment contains single-field `fieldOverrides` that enable Emberflow's internal
+collection-group queries while preserving the collection-scope single-field indexes other queries
+still rely on.
+
+#### Option A — Merge with the `emberflow-indexes` CLI (recommended)
+
+Emberflow ships an `emberflow-indexes` binary that merges the shipped fragment into your
+project's `firestore.indexes.json` for you, so you never have to hand-copy the overrides.
+Run it via `npx` from the directory that holds your `firestore.indexes.json`:
+
+```bash
+npx emberflow-indexes merge
+```
+
+By default it reads `firestore.indexes.json` in the current directory (creating it from an empty
+base if it doesn't exist), merges in Emberflow's required overrides, and writes the file back.
+Useful flags:
+
+- `-p, --path <file>` — path to your `firestore.indexes.json` (default: `firestore.indexes.json`).
+- `-o, --out <file>` — where to write the merged result (default: same as `--path`).
+- `-f, --fragment <file>` — path to Emberflow's fragment (default: the copy shipped in the package).
+- `--dry-run` — print the merged result to stdout without writing to disk.
+
+The merge is safe to run repeatedly: it is keyed by `(collectionGroup, fieldPath)`, so it never
+creates a second override for the same field. If your file already has an override for one of
+Emberflow's fields, the CLI **unions the scope/order rows** into your existing entry (rather than
+clobbering it), and it leaves all of your own indexes untouched.
+
+Wire it into a Firebase **`predeploy`** hook so your indexes are always up to date before every
+deploy:
+
+```json
+// firebase.json
+{
+  "firestore": {
+    "indexes": "firestore.indexes.json",
+    "predeploy": [
+      "npx emberflow-indexes merge"
+    ]
+  }
+}
+```
+
+Then deploy as usual:
+
+```bash
+firebase deploy --only firestore:indexes
+```
+
+#### Option B — Merge manually
+
+If you'd rather not run the CLI, merge Emberflow's fragment into your project's
+`firestore.indexes.json` by hand. The fragment lives at
+`node_modules/emberflow/firestore.indexes.json` and looks like:
+
+```json
+{
+  "indexes": [],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "computations",
+      "fieldPath": "createdAt",
+      "indexes": [
+        { "queryScope": "COLLECTION", "order": "ASCENDING" },
+        { "queryScope": "COLLECTION", "order": "DESCENDING" },
+        { "queryScope": "COLLECTION_GROUP", "order": "ASCENDING" },
+        { "queryScope": "COLLECTION_GROUP", "order": "DESCENDING" }
+      ]
+    }
+    // ...executions/execDate and processedIds/timestamp
+  ]
+}
+```
+
+Add its `indexes` and `fieldOverrides` entries alongside your own, then deploy:
+
+```bash
+firebase deploy --only firestore:indexes
+```
+
+#### Notes
+
+- **Field overrides**: When you add one of Emberflow's `fieldOverrides` for a field, it **replaces**
+  the field's automatic single-field index config — that's why each override keeps the `COLLECTION`
+  scope rows in addition to `COLLECTION_GROUP`, so collection-scope queries keep working. When
+  merging manually, never create two overrides for the same `(collectionGroup, fieldPath)`; union
+  the scope rows into a single entry (the CLI does this for you).
+- **Idempotent**: both the CLI merge and `firebase deploy --only firestore:indexes` are declarative
+  — unchanged entries are left as-is, so re-running/re-deploying is safe.
+- **Async builds**: A deploy only *requests* an index; it then sits in **Building** in the Firestore
+  console until Firestore finishes, so it may not be usable immediately after the deploy.
 
 ## Reference
 

@@ -1,12 +1,16 @@
 {
   "name": "emberflow",
-  "version": "2.0.0",
+  "version": "2.0.2",
   "description": "A Firebase Cloud Functions library for handling document changes in a structured way",
   "main": "lib/index.js",
   "types": "lib/index.d.js",
+  "bin": {
+    "emberflow-indexes": "lib/bin/merge-indexes.js"
+  },
   "files": [
     "lib/",
-    "src/sample-custom"
+    "src/sample-custom",
+    "firestore.indexes.json"
   ],
   "scripts": {
     "prepublishOnly": "tsc"

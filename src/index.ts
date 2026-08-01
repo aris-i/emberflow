@@ -301,21 +301,21 @@ export function initializeEmberFlow(
     ...projectConfig.functionsConfig?.onMessageGroupPatchQueue as any,
   }, onMessageGroupPatchQueue);
   functionsConfig["resetUsageStats"] = onSchedule({
-    schedule: "every 1 hours",
+    schedule: "0 * * * *",
     region: projectConfig.region,
     memory: "512MiB",
     timeoutSeconds: 540,
     ...projectConfig.functionsConfig?.resetUsageStats as any,
   }, resetUsageStats);
   functionsConfig["cleanupCollections"] = onSchedule({
-    schedule: "every 1 hours",
+    schedule: "0 * * * *",
     region: projectConfig.region,
     memory: "512MiB",
     timeoutSeconds: 540,
     ...projectConfig.functionsConfig?.cleanupCollections as any,
   }, cleanupCollections);
   functionsConfig["createMetricComputation"] = onSchedule({
-    schedule: "every 1 hours",
+    schedule: "0 * * * *",
     region: projectConfig.region,
     memory: "512MiB",
     timeoutSeconds: 540,
