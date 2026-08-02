@@ -47,6 +47,7 @@ export interface ProjectConfig {
         cleanupCollections?: FunctionConfig;
         createMetricComputation?: FunctionConfig;
         onDeleteFunctions?: FunctionConfig;
+        onGroupPatchRequests?: FunctionConfig;
         onUserRegister?: FunctionConfig;
     }
 }

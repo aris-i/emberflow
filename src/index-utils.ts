@@ -539,6 +539,31 @@ export async function onDeleteFunction(event: FirestoreEvent<QueryDocumentSnapsh
   return deleteFunction(projectConfig.projectId, name);
 }
 
+export async function onGroupPatchRequest(
+  event: FirestoreEvent<QueryDocumentSnapshot | undefined, {requestId: string}>
+) {
+  const data = event.data;
+  if (!data) {
+    console.error("Data should not be null");
+    return;
+  }
+  const {path, patchType, backFillPatchName, appVersion} = data.data();
+  if (!path) {
+    console.error("path should not be null");
+    return;
+  }
+  if (patchType !== "back-fill" && patchType !== "patch-logics") {
+    console.error(`Invalid patchType "${patchType}". Must be "back-fill" or "patch-logics"`);
+    return;
+  }
+  return queueGroupPatch({
+    path,
+    patchType,
+    backFillPatchName,
+    appVersion,
+  });
+}
+
 async function getFunctionLocation(projectId: string, functionName: string): Promise<string | undefined> {
   const client = new CloudFunctionsServiceClient();
 

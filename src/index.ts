@@ -38,6 +38,7 @@ import {
   getSecurityFn,
   groupDocsByTargetDocPath,
   onDeleteFunction,
+  onGroupPatchRequest,
   runBusinessLogics,
   validateForm,
 } from "./index-utils";
@@ -325,6 +326,10 @@ export function initializeEmberFlow(
     document: "@server/delete/functions/{deleteFuncId}",
     ...projectConfig.functionsConfig?.onDeleteFunctions as any,
   } as any, onDeleteFunction as any);
+  functionsConfig["onGroupPatchRequests"] = onDocumentCreated({
+    document: "@emberflow/internal/group-patch-requests/{requestId}",
+    ...projectConfig.functionsConfig?.onGroupPatchRequests as any,
+  } as any, onGroupPatchRequest as any);
   const onUserRegisterConfig = projectConfig.functionsConfig?.onUserRegister;
   const {
     memory,

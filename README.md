@@ -282,6 +282,41 @@ trusted code (e.g. an admin-only Cloud Function or script). Placeholder paths (e
 > `"patch-logics"` run is missing its `appVersion`), the run is set to status `"error"` — there is
 > no silent default.
 
+##### Trigger from the Firebase Console / CLI (no code)
+
+If you'd rather kick off a run manually — from the Firebase Console, the `gcloud`/Firebase CLI, or
+an admin script — Emberflow ships a Firestore-document trigger, `onGroupPatchRequests`, that wraps
+`queueGroupPatch` for you. Simply **create** a document under
+`@emberflow/internal/group-patch-requests/{requestId}` and the function will call `queueGroupPatch`
+with its fields (keeping the full locking / progress / path-hydration behaviour):
+
+| Field               | Required | Description                                                        |
+|---------------------|----------|--------------------------------------------------------------------|
+| `path`              | yes      | Collection path (or a document path, whose parent is derived).     |
+| `patchType`         | yes      | `"back-fill"` or `"patch-logics"`.                                  |
+| `backFillPatchName` | for back-fills | The `BackFillPatchConfig` name, e.g. `"ancestor-ids"`.       |
+| `appVersion`        | for patch-logics | Target `appVersion` for the `"patch-logics"` run.         |
+
+For example, from the command line:
+
+```sh
+# Back-fill (Firebase CLI)
+firebase firestore:documents:create \
+  "@emberflow/internal/group-patch-requests/$(date +%s)" \
+  --data '{"path":"/users/user123/feeds","patchType":"back-fill","backFillPatchName":"ancestor-ids"}'
+
+# patch-logics for a target appVersion (gcloud)
+gcloud firestore documents create \
+  "projects/<projectId>/databases/(default)/documents/@emberflow/internal/group-patch-requests/$(date +%s)" \
+  --fields 'path="/users/user123/feeds",patchType="patch-logics",appVersion="1.2.0"'
+```
+
+Or, in the **Firebase Console**, go to Firestore → create a document under
+`@emberflow/internal/group-patch-requests` with the fields above. The trigger validates `path`/`patchType`
+(logging and ignoring malformed requests) and then delegates to `queueGroupPatch`, so all the
+safeguards from the programmatic path still apply. You can override its
+region/memory/timeout via `projectConfig.functionsConfig.onGroupPatchRequests`.
+
 #### 3. Track progress
 
 ```typescript

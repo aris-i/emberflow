@@ -2343,3 +2343,73 @@ describe("ancestorIdsPatchConfig", () => {
     })).toThrow();
   });
 });
+
+describe("onGroupPatchRequest", () => {
+  let queueGroupPatchSpy: jest.SpyInstance;
+
+  function makeEvent(data?: Record<string, any>) {
+    return {
+      data: data === undefined ? undefined : {data: () => data},
+      params: {requestId: "req1"},
+    } as any;
+  }
+
+  beforeEach(() => {
+    queueGroupPatchSpy = jest.spyOn(distribution, "queueGroupPatch").mockResolvedValue();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("queues a back-fill group patch from the request document", async () => {
+    await indexUtils.onGroupPatchRequest(makeEvent({
+      path: "/users/user123/feeds",
+      patchType: "back-fill",
+      backFillPatchName: "ancestor-ids",
+    }));
+
+    expect(queueGroupPatchSpy).toHaveBeenCalledWith({
+      path: "/users/user123/feeds",
+      patchType: "back-fill",
+      backFillPatchName: "ancestor-ids",
+      appVersion: undefined,
+    });
+  });
+
+  it("queues a patch-logics group patch with appVersion", async () => {
+    await indexUtils.onGroupPatchRequest(makeEvent({
+      path: "/users/user123/feeds",
+      patchType: "patch-logics",
+      appVersion: "1.2.0",
+    }));
+
+    expect(queueGroupPatchSpy).toHaveBeenCalledWith({
+      path: "/users/user123/feeds",
+      patchType: "patch-logics",
+      backFillPatchName: undefined,
+      appVersion: "1.2.0",
+    });
+  });
+
+  it("does nothing when the event has no data", async () => {
+    jest.spyOn(console, "error").mockImplementation();
+    await indexUtils.onGroupPatchRequest(makeEvent(undefined));
+    expect(queueGroupPatchSpy).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when path is missing", async () => {
+    jest.spyOn(console, "error").mockImplementation();
+    await indexUtils.onGroupPatchRequest(makeEvent({patchType: "back-fill"}));
+    expect(queueGroupPatchSpy).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when patchType is invalid", async () => {
+    jest.spyOn(console, "error").mockImplementation();
+    await indexUtils.onGroupPatchRequest(makeEvent({
+      path: "/users/user123/feeds",
+      patchType: "bogus",
+    }));
+    expect(queueGroupPatchSpy).not.toHaveBeenCalled();
+  });
+});
