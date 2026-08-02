@@ -328,6 +328,9 @@ export function initializeEmberFlow(
   } as any, onDeleteFunction as any);
   functionsConfig["onGroupPatchRequests"] = onDocumentCreated({
     document: "@emberflow/internal/group-patch-requests/{requestId}",
+    region: projectConfig.region,
+    memory: "512MiB",
+    timeoutSeconds: 540,
     ...projectConfig.functionsConfig?.onGroupPatchRequests as any,
   } as any, onGroupPatchRequest as any);
   const onUserRegisterConfig = projectConfig.functionsConfig?.onUserRegister;

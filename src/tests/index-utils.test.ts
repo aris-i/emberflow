@@ -955,15 +955,15 @@ describe("delayFormSubmissionAndCheckIfCancelled", () => {
 
 describe("groupDocsByTargetDocPath", () => {
   initializeEmberFlow({
-      projectConfig,
-      admin,
-      dbStructure,
-      Entity,
-      securityConfigs: [],
-      validatorConfigs: [],
-      logicConfigs: [],
-      patchLogicConfigs: [],
-    });
+    projectConfig,
+    admin,
+    dbStructure,
+    Entity,
+    securityConfigs: [],
+    validatorConfigs: [],
+    logicConfigs: [],
+    patchLogicConfigs: [],
+  });
   const docsByDstPath = new Map<string, LogicResultDoc[]>([
     ["users/user123/document1", [{action: "merge", priority: "normal", dstPath: "users/user123/document1", doc: {field1: "value1", field2: "value2"}}]],
     ["users/user123/document1/threads/thread1", [{action: "merge", priority: "normal", dstPath: "users/user123/document1/threads/thread1", doc: {field3: "value3", field6: "value6"}}]],
@@ -2346,10 +2346,12 @@ describe("ancestorIdsPatchConfig", () => {
 
 describe("onGroupPatchRequest", () => {
   let queueGroupPatchSpy: jest.SpyInstance;
+  let updateMock: jest.Mock;
 
   function makeEvent(data?: Record<string, any>) {
+    updateMock = jest.fn().mockResolvedValue(undefined);
     return {
-      data: data === undefined ? undefined : {data: () => data},
+      data: data === undefined ? undefined : {data: () => data, ref: {update: updateMock}},
       params: {requestId: "req1"},
     } as any;
   }
@@ -2369,6 +2371,7 @@ describe("onGroupPatchRequest", () => {
       backFillPatchName: "ancestor-ids",
     }));
 
+    expect(updateMock).toHaveBeenCalledWith({status: "received"});
     expect(queueGroupPatchSpy).toHaveBeenCalledWith({
       path: "/users/user123/feeds",
       patchType: "back-fill",
@@ -2384,6 +2387,7 @@ describe("onGroupPatchRequest", () => {
       appVersion: "1.2.0",
     }));
 
+    expect(updateMock).toHaveBeenCalledWith({status: "received"});
     expect(queueGroupPatchSpy).toHaveBeenCalledWith({
       path: "/users/user123/feeds",
       patchType: "patch-logics",

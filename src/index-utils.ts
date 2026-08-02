@@ -556,6 +556,7 @@ export async function onGroupPatchRequest(
     console.error(`Invalid patchType "${patchType}". Must be "back-fill" or "patch-logics"`);
     return;
   }
+  await data.ref.update({status: "received"});
   return queueGroupPatch({
     path,
     patchType,
