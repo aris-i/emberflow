@@ -167,7 +167,7 @@ describe("deleteCollection", () => {
     callbackMock = jest.fn();
     batchDeleteDocMock = jest.fn();
     batchCommitMock = jest.fn();
-    jest.spyOn(BatchUtil, "getInstance").mockImplementation(() => {
+    jest.spyOn(BatchUtil, "create").mockImplementation(() => {
       return {
         deleteDoc: batchDeleteDocMock,
         commit: batchCommitMock,
@@ -236,7 +236,7 @@ describe("deleteCollectionRecursive", () => {
     callbackMock = jest.fn();
     batchDeleteDocMock = jest.fn();
     batchCommitMock = jest.fn();
-    jest.spyOn(BatchUtil, "getInstance").mockImplementation(() => {
+    jest.spyOn(BatchUtil, "create").mockImplementation(() => {
       return {
         deleteDoc: batchDeleteDocMock,
         commit: batchCommitMock,

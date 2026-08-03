@@ -236,7 +236,7 @@ export async function resetUsageStats(_event: ScheduledEvent) {
   const usageCollectionPath = "@server/usage/functions";
   const collectionRef = db.collection(usageCollectionPath);
   const querySnapshot = await collectionRef.select(firestore.FieldPath.documentId()).get();
-  const batch = BatchUtil.getInstance();
+  const batch = BatchUtil.create();
   querySnapshot.forEach((doc) => {
     return batch.set(doc.ref, {
       totalElapsedTimeInMs: 0,

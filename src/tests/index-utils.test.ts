@@ -88,8 +88,8 @@ describe("distributeDoc", () => {
   let queueRunViewLogicsSpy: jest.SpyInstance;
   let queueInstructionsSpy: jest.SpyInstance;
   let dbDoc: admin.firestore.DocumentReference<admin.firestore.DocumentData>;
-  const batch = BatchUtil.getInstance();
-  jest.spyOn(BatchUtil, "getInstance").mockImplementation(() => batch);
+  const batch = BatchUtil.create();
+  jest.spyOn(BatchUtil, "create").mockImplementation(() => batch);
   const appVersion = "1.0.0";
 
   beforeEach(() => {
@@ -531,8 +531,8 @@ describe("distribute", () => {
   let queueInstructionsSpy: jest.SpyInstance;
   let queueRunViewLogicsSpy: jest.SpyInstance;
   let dbDoc: admin.firestore.DocumentReference<admin.firestore.DocumentData>;
-  const batch = BatchUtil.getInstance();
-  jest.spyOn(BatchUtil, "getInstance").mockImplementation(() => batch);
+  const batch = BatchUtil.create();
+  jest.spyOn(BatchUtil, "create").mockImplementation(() => batch);
   const appVersion = "1.0.0";
 
   beforeEach(() => {

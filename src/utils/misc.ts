@@ -152,7 +152,7 @@ async function deleteQueryBatch(query: Query, resolve: () => void, callback?: (s
     return;
   }
 
-  const batch = BatchUtil.getInstance();
+  const batch = BatchUtil.create();
   for (const doc of snapshot.docs) {
     await batch.deleteDoc(doc.ref);
   }
@@ -192,7 +192,7 @@ async function deleteQueryBatchRecursive(
     return;
   }
 
-  const batch = BatchUtil.getInstance();
+  const batch = BatchUtil.create();
   for (const doc of snapshot.docs) {
     const subcollections = await doc.ref.listCollections();
     for (const subcollection of subcollections) {

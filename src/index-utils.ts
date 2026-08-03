@@ -62,7 +62,7 @@ export const _mockable = {
   getOneTimePatchConfigs: () => backFillPatchConfigs,
   createNowTimestamp: () => admin.firestore.Timestamp.now(),
   saveMetricExecution: saveMetricExecution,
-  getBatchUtil: () => BatchUtil.getInstance(),
+  getBatchUtil: () => BatchUtil.create(),
 };
 
 export async function distributeDoc(
@@ -203,7 +203,7 @@ export async function distributeDoc(
 
 export async function distributeFnNonTransactional(docsByDstPath: Map<string, LogicResultDoc[]>, appVersion: string, skipReturn = false) {
   const distributedDocs: LogicResultDoc[] = [];
-  const batch = BatchUtil.getInstance();
+  const batch = BatchUtil.create();
   for (const dstPath of Array.from(docsByDstPath.keys()).sort()) {
     console.log(`Documents for path ${dstPath}:`);
     const resultDocs = docsByDstPath.get(dstPath);
@@ -216,8 +216,8 @@ export async function distributeFnNonTransactional(docsByDstPath: Map<string, Lo
     }
   }
 
-  if (batch.writeCount > 0) {
-    console.log(`Committing final batch of ${batch.writeCount} writes...`);
+  if (batch.pendingWrites > 0) {
+    console.log(`Committing final batch of ${batch.pendingWrites} writes...`);
     await batch.commit();
   }
 
