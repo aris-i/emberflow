@@ -390,10 +390,15 @@ export interface QueueGroupPatchParams {
   backFillPatchName?: string;
   appVersion?: string;
   lastPatchedId?: string;
+  /**
+   * When true, ignore the collection's stored status and (re)run the patch from
+   * scratch, bypassing the "already queued/running/completed" guard.
+   */
+  force?: boolean;
 }
 
 export const queueGroupPatch = async (params: QueueGroupPatchParams) => {
-  const {path: dstPathOrCollectionPath, patchType, backFillPatchName, appVersion, lastPatchedId} = params;
+  const {path: dstPathOrCollectionPath, patchType, backFillPatchName, appVersion, lastPatchedId, force} = params;
   const segments = dstPathOrCollectionPath.split("/").filter((s) => s.length > 0);
   const collectionPath = segments.length % 2 === 0 ?
     "/" + segments.slice(0, -1).join("/") :
@@ -411,9 +416,10 @@ export const queueGroupPatch = async (params: QueueGroupPatchParams) => {
     try {
       const alreadyQueued = await db.runTransaction(async (txn) => {
         const doc = await txn.get(patchStatusRef);
-        if (doc.exists) {
+        if (doc.exists && !force) {
           const data = doc.data();
-          // Allow re-triggering if status is "error" or "reset"
+          // Allow re-triggering if status is "error" or "reset".
+          // When `force` is set we always fall through and re-lock, ignoring status.
           if (data?.status !== "error" && data?.status !== "reset") {
             return true; // Already exists and not in a state that allows restart
           }
@@ -443,7 +449,7 @@ export const queueGroupPatch = async (params: QueueGroupPatchParams) => {
   }
 
   try {
-    const message: GroupPatchMessage = {collectionPath, patchType, backFillPatchName, appVersion, lastPatchedId};
+    const message: GroupPatchMessage = {collectionPath, patchType, backFillPatchName, appVersion, lastPatchedId, force};
     await GROUP_PATCH_TOPIC.publishMessage({json: message});
   } catch (error: unknown) {
     console.error(`[GroupPatch] Received error while publishing to ${GROUP_PATCH_TOPIC_NAME}:`, error);
@@ -457,7 +463,7 @@ export async function onMessageGroupPatchQueue(event: CloudEvent<MessagePublishe
   }
 
   try {
-    const {collectionPath, patchType, backFillPatchName, appVersion, lastPatchedId, hydrationState} =
+    const {collectionPath, patchType, backFillPatchName, appVersion, lastPatchedId, hydrationState, force} =
       event.data.message.json as GroupPatchMessage;
 
     if (collectionPath.includes("{")) {
@@ -473,6 +479,7 @@ export async function onMessageGroupPatchQueue(event: CloudEvent<MessagePublishe
           backFillPatchName,
           appVersion,
           hydrationState: nextHydrationState,
+          force,
         };
         await GROUP_PATCH_TOPIC.publishMessage({json: message});
 
@@ -494,11 +501,12 @@ export async function onMessageGroupPatchQueue(event: CloudEvent<MessagePublishe
       for (const path of documentPaths) {
         // We trigger a patch for each hydrated path.
         // Note: These will go through the same queueGroupPatch logic,
-        // so they will be tracked/locked individually.
-        await queueGroupPatch({path, patchType, backFillPatchName, appVersion});
+        // so they will be tracked/locked individually. Propagate `force` so each
+        // hydrated collection ignores its stored status too.
+        await queueGroupPatch({path, patchType, backFillPatchName, appVersion, force});
       }
     } else {
-      await patchGroupDocs({collectionPath, patchType, backFillPatchName, appVersion, lastPatchedId});
+      await patchGroupDocs({collectionPath, patchType, backFillPatchName, appVersion, lastPatchedId, force});
     }
     await pubsubUtils.trackProcessedIds(GROUP_PATCH_TOPIC_NAME, event.id);
   } catch (e) {

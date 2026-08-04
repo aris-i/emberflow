@@ -2177,6 +2177,40 @@ describe("patchGroupDocs", () => {
     expect(queueGroupPatchSpy).not.toHaveBeenCalled();
   });
 
+  it("processes even when the status is completed if force is set", async () => {
+    docGetMock.mockResolvedValue({exists: true, data: () => ({status: "completed"})});
+    const doc1 = makeDoc("feed1");
+    colGetMock.mockResolvedValue({empty: false, docs: [doc1]});
+
+    await indexUtils.patchGroupDocs({collectionPath, patchType: "back-fill", backFillPatchName: "ancestor-ids", force: true});
+
+    expect(admin.firestore().collection).toHaveBeenCalled();
+    expect(batchCommitMock).toHaveBeenCalledTimes(1);
+    expect(queueGroupPatchSpy).toHaveBeenCalled();
+  });
+
+  it("restarts from the first document and resets the count when force is set", async () => {
+    docGetMock.mockResolvedValue({exists: true, data: () => ({status: "running", count: 42, lastPatchedId: "feed3"})});
+    const doc1 = makeDoc("feed1");
+    colGetMock.mockResolvedValue({empty: false, docs: [doc1]});
+
+    await indexUtils.patchGroupDocs({
+      collectionPath,
+      patchType: "back-fill",
+      backFillPatchName: "ancestor-ids",
+      lastPatchedId: "feed3",
+      force: true,
+    });
+
+    // Cursor is ignored: no startAfter, so we scan from the very first document.
+    expect(startAfterMock).not.toHaveBeenCalled();
+    // Count is reset to 0 before adding this batch's size.
+    expect(docSetMock).toHaveBeenCalledWith(
+      expect.objectContaining({status: "running", count: 1, lastPatchedId: "feed1"}),
+      {merge: true}
+    );
+  });
+
   it("runs the built-in ancestor-ids back-fill unchanged: bulk single-batch commit, only undefined keys patched", async () => {
     const doc1 = makeDoc("feed1");
     colGetMock.mockResolvedValue({empty: false, docs: [doc1]});
@@ -2371,12 +2405,13 @@ describe("onGroupPatchRequest", () => {
       backFillPatchName: "ancestor-ids",
     }));
 
-    expect(updateMock).toHaveBeenCalledWith({status: "received"});
+    expect(updateMock).toHaveBeenCalledWith({status: "received", receivedAt: expect.anything()});
     expect(queueGroupPatchSpy).toHaveBeenCalledWith({
       path: "/users/user123/feeds",
       patchType: "back-fill",
       backFillPatchName: "ancestor-ids",
       appVersion: undefined,
+      force: false,
     });
   });
 
@@ -2387,13 +2422,28 @@ describe("onGroupPatchRequest", () => {
       appVersion: "1.2.0",
     }));
 
-    expect(updateMock).toHaveBeenCalledWith({status: "received"});
+    expect(updateMock).toHaveBeenCalledWith({status: "received", receivedAt: expect.anything()});
     expect(queueGroupPatchSpy).toHaveBeenCalledWith({
       path: "/users/user123/feeds",
       patchType: "patch-logics",
       backFillPatchName: undefined,
       appVersion: "1.2.0",
+      force: false,
     });
+  });
+
+  it("forwards force from the request document", async () => {
+    await indexUtils.onGroupPatchRequest(makeEvent({
+      path: "/users/user123/feeds",
+      patchType: "back-fill",
+      backFillPatchName: "ancestor-ids",
+      force: true,
+    }));
+
+    expect(queueGroupPatchSpy).toHaveBeenCalledWith(expect.objectContaining({
+      path: "/users/user123/feeds",
+      force: true,
+    }));
   });
 
   it("does nothing when the event has no data", async () => {

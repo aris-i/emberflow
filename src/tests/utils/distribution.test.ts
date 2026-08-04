@@ -1110,6 +1110,48 @@ describe("queueGroupPatch", () => {
     expect(publishMessageSpy).toHaveBeenCalled();
   });
 
+  it("re-locks and publishes with force even when the previous status is running", async () => {
+    txnGetMock.mockResolvedValue({exists: true, data: () => ({status: "running"})});
+
+    await distribution.queueGroupPatch({
+      path: "/users/user1/feeds",
+      patchType: "back-fill",
+      backFillPatchName: "ancestor-ids",
+      force: true,
+    });
+
+    expect(txnSetMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      status: "queued",
+      collectionPath: "/users/user1/feeds",
+      count: 0,
+      lastPatchedId: null,
+    }), {merge: true});
+    expect(publishMessageSpy).toHaveBeenCalledWith({
+      json: {
+        collectionPath: "/users/user1/feeds",
+        patchType: "back-fill",
+        backFillPatchName: "ancestor-ids",
+        appVersion: undefined,
+        lastPatchedId: undefined,
+        force: true,
+      },
+    });
+  });
+
+  it("re-locks and publishes with force even when the previous status is completed", async () => {
+    txnGetMock.mockResolvedValue({exists: true, data: () => ({status: "completed"})});
+
+    await distribution.queueGroupPatch({
+      path: "/users/user1/feeds",
+      patchType: "back-fill",
+      backFillPatchName: "ancestor-ids",
+      force: true,
+    });
+
+    expect(txnSetMock).toHaveBeenCalled();
+    expect(publishMessageSpy).toHaveBeenCalled();
+  });
+
   it("skips locking and publishes directly when lastPatchedId is provided", async () => {
     await distribution.queueGroupPatch({
       path: "/users/user1/feeds",
@@ -1195,6 +1237,31 @@ describe("onMessageGroupPatchQueue", () => {
       lastPatchedId: "feed1",
     });
     expect(trackProcessedIdsMock).toHaveBeenCalledWith(GROUP_PATCH_TOPIC_NAME, event.id);
+  });
+
+  it("propagates force to patchGroupDocs", async () => {
+    const event = {
+      id: "test-event",
+      data: {
+        message: {
+          json: {
+            collectionPath: "/users/user1/feeds",
+            patchType: "back-fill",
+            backFillPatchName: "ancestor-ids",
+            force: true,
+          },
+        },
+      },
+    } as unknown as CloudEvent<MessagePublishedData>;
+
+    await distribution.onMessageGroupPatchQueue(event);
+
+    expect(patchGroupDocsSpy).toHaveBeenCalledWith(expect.objectContaining({
+      collectionPath: "/users/user1/feeds",
+      patchType: "back-fill",
+      backFillPatchName: "ancestor-ids",
+      force: true,
+    }));
   });
 
   it("dispatches to patchGroupDocs for patch-logics messages", async () => {

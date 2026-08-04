@@ -547,7 +547,7 @@ export async function onGroupPatchRequest(
     console.error("Data should not be null");
     return;
   }
-  const {path, patchType, backFillPatchName, appVersion} = data.data();
+  const {path, patchType, backFillPatchName, appVersion, force} = data.data();
   if (!path) {
     console.error("path should not be null");
     return;
@@ -556,12 +556,13 @@ export async function onGroupPatchRequest(
     console.error(`Invalid patchType "${patchType}". Must be "back-fill" or "patch-logics"`);
     return;
   }
-  await data.ref.update({status: "received"});
+  await data.ref.update({status: "received", receivedAt: admin.firestore.Timestamp.now()});
   return queueGroupPatch({
     path,
     patchType,
     backFillPatchName,
     appVersion,
+    force: force === true,
   });
 }
 
@@ -752,6 +753,11 @@ export interface PatchGroupDocsParams {
   backFillPatchName?: string;
   appVersion?: string;
   lastPatchedId?: string;
+  /**
+   * When true, ignore the stored status (including "completed") and patch the
+   * whole collection from the first document, resetting the cursor and count.
+   */
+  force?: boolean;
 }
 
 /**
@@ -759,18 +765,20 @@ export interface PatchGroupDocsParams {
  * @param {PatchGroupDocsParams} params The collection path, patch type, and cursor.
  */
 export async function patchGroupDocs(params: PatchGroupDocsParams) {
-  const {collectionPath, patchType, backFillPatchName, appVersion, lastPatchedId} = params;
+  const {collectionPath, patchType, backFillPatchName, appVersion, lastPatchedId, force} = params;
   const patchStatusPath = getGroupPatchStatusPath(collectionPath, patchType, backFillPatchName);
   const patchStatusRef = db.doc(patchStatusPath);
   const patchStatusDoc = await patchStatusRef.get();
   const patchStatusData = patchStatusDoc.data();
 
-  if (patchStatusData?.status === "completed") {
+  // When `force` is set, ignore the stored status entirely (even "completed").
+  if (!force && patchStatusData?.status === "completed") {
     return;
   }
 
-  // Handle "reset" status by starting from scratch
-  const effectiveLastId = patchStatusData?.status === "reset" ? undefined : lastPatchedId;
+  // Handle "reset" status (or a forced run) by starting from scratch
+  const restartFromScratch = force || patchStatusData?.status === "reset";
+  const effectiveLastId = restartFromScratch ? undefined : lastPatchedId;
 
   console.info(`[GroupPatch] Patching docs for collection: ${collectionPath}${effectiveLastId ? ` starting from ${effectiveLastId}` : ""}`);
 
@@ -813,7 +821,7 @@ export async function patchGroupDocs(params: PatchGroupDocsParams) {
       throw new Error(`Unknown patchType "${patchType}" for collection: ${collectionPath}`);
     }
 
-    const totalPatched = (patchStatusData?.status === "reset" ? 0 : (patchStatusData?.count || 0)) + docsSnapshot.docs.length;
+    const totalPatched = (restartFromScratch ? 0 : (patchStatusData?.count || 0)) + docsSnapshot.docs.length;
     await patchStatusRef.set({
       status: "running",
       patchType,

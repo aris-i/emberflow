@@ -118,6 +118,12 @@ export interface GroupPatchMessage {
     appVersion?: string;
     lastPatchedId?: string;
     hydrationState?: HydrationState;
+    /**
+     * When true, the patch runs even if the collection's status doc is in a
+     * state that would normally block a (re)trigger (e.g. "queued", "running"
+     * or "completed"), and the patch restarts from the first document.
+     */
+    force?: boolean;
 }
 
 export type OneTimePatchFn = (
