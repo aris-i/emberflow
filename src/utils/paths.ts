@@ -131,9 +131,19 @@ export async function hydrateDocPath(
       // We've reached the end of the path, so add it to the document paths
       const path = segments.join("/");
       if (idx < segments.length - 1) {
-        // This means that the path contains hard coded ids, so we need to check if that pat exists in the database
-        if (!await _mockable.doesPathExists(path)) {
-          console.error(`Document ${path} does not exist. Skipping...`);
+        // This means that the path contains hard coded ids, so we need to check if that pat exists in the database.
+        // `doesPathExists` uses `db.doc`, which requires a document path (even number of components). When the hydrated
+        // path points to a (sub)collection (odd number of components) — e.g. a group-patch collection path such as
+        // "topics/<id>/statistics/hourly/sales" — check the parent document's existence instead.
+        const nonEmptySegments = path.split("/").filter((s) => s.length > 0);
+        const pathToCheck = nonEmptySegments.length % 2 === 0 ?
+          path :
+          nonEmptySegments.slice(0, -1).join("/");
+        if (
+          pathToCheck.split("/").filter((s) => s.length > 0).length >= 2 &&
+          !await _mockable.doesPathExists(pathToCheck)
+        ) {
+          console.error(`Document ${pathToCheck} does not exist. Skipping...`);
           continue;
         }
       }

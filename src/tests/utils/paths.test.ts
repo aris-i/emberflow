@@ -154,6 +154,28 @@ describe("hydrateDocPath", () => {
     expect(doesPathExistsMock).toHaveBeenNthCalledWith(3, "users/789/posts/321");
   });
 
+  it("checks the parent document (not the collection) for a hydrated collection path", async () => {
+    // Group-patch style collection path: the hydrated path ends in a subcollection
+    // ("sales"), i.e. it has an odd number of components. The existence check must
+    // target the parent document ("topics/<id>/statistics/hourly") instead of calling
+    // db.doc on the collection path, which would otherwise throw.
+    const destDocPath = "topics/{topicId}/statistics/hourly/sales";
+    const mockFetchIds = fetchIds as jest.MockedFunction<typeof fetchIds>;
+    mockFetchIds.mockResolvedValue(["t1", "t2"]);
+
+    const doesPathExistsMock = jest.fn()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    pathsMockable.doesPathExists = doesPathExistsMock;
+
+    const result = await hydrateDocPath(destDocPath, {});
+
+    expect(result).toEqual({documentPaths: ["topics/t1/statistics/hourly/sales"]});
+    expect(doesPathExistsMock).toHaveBeenCalledTimes(2);
+    expect(doesPathExistsMock).toHaveBeenNthCalledWith(1, "topics/t1/statistics/hourly");
+    expect(doesPathExistsMock).toHaveBeenNthCalledWith(2, "topics/t2/statistics/hourly");
+  });
+
   it("should return all possible document paths", async () => {
     const mockFetchIds = fetchIds as jest.MockedFunction<typeof fetchIds>;
     mockFetchIds
