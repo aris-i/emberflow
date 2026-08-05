@@ -1,6 +1,6 @@
 import {
   expandAndGroupDocPathsByEntity,
-  hydrateDocPath,
+  hydratePath,
   filterSubDocPathsByEntity,
   _mockable as pathsMockable,
   findMatchingDocPathRegex,
@@ -95,7 +95,7 @@ describe("findMatchingDocPathRegex", () => {
   });
 });
 
-describe("hydrateDocPath", () => {
+describe("hydratePath", () => {
   beforeEach(() => {
     // Clear the mock before each test
     (fetchIds as jest.Mock).mockClear();
@@ -108,15 +108,15 @@ describe("hydrateDocPath", () => {
       .mockResolvedValueOnce([])
       .mockResolvedValue(["321", "654"]);
 
-    const destDocPath = "users/{userId}/posts/{postId}";
+    const path = "users/{userId}/posts/{postId}";
     const userCondition: QueryCondition = {
       fieldName: "id",
       operator: "in",
       value: ["123", "456"],
     };
 
-    // Execute the hydrateDocPath function
-    const result = await hydrateDocPath(destDocPath, {
+    // Execute the hydratePath function
+    const result = await hydratePath(path, {
       user: userCondition,
     });
 
@@ -128,52 +128,41 @@ describe("hydrateDocPath", () => {
     expect(mockFetchIds).toHaveBeenNthCalledWith(1, "users", userCondition);
   });
 
-  it("should handle hard-coded IDs and skip non-existent paths", async () => {
+  it("should handle hard-coded IDs and return all hydrated paths without checking existence", async () => {
     // Define the input document path with hardcoded IDs
-    const destDocPath = "users/{userId}/posts/321";
+    const path = "users/{userId}/posts/321";
     const mockFetchIds = fetchIds as jest.MockedFunction<typeof fetchIds>;
     mockFetchIds
       .mockResolvedValue(["123", "456", "789"]);
 
-    const doesPathExistsMock = jest.fn()
-      .mockResolvedValueOnce(true)
-      .mockResolvedValueOnce(false)
-      .mockResolvedValueOnce(true);
+    const doesPathExistsMock = jest.fn();
     pathsMockable.doesPathExists = doesPathExistsMock;
 
-    // Execute the hydrateDocPath function
-    const result = await hydrateDocPath(destDocPath, {});
+    // Execute the hydratePath function
+    const result = await hydratePath(path, {});
 
-    // Check the result
-    expect(result).toEqual({documentPaths: ["users/123/posts/321", "users/789/posts/321"]});
+    // All hydrated paths are returned; existence is no longer checked.
+    expect(result).toEqual({documentPaths: ["users/123/posts/321", "users/456/posts/321", "users/789/posts/321"]});
 
-    // Check if the mocked Firestore functions were called correctly
-    expect(doesPathExistsMock).toHaveBeenCalledTimes(3);
-    expect(doesPathExistsMock).toHaveBeenNthCalledWith(1, "users/123/posts/321");
-    expect(doesPathExistsMock).toHaveBeenNthCalledWith(2, "users/456/posts/321");
-    expect(doesPathExistsMock).toHaveBeenNthCalledWith(3, "users/789/posts/321");
+    // The existence check has been removed, so it should never be called.
+    expect(doesPathExistsMock).not.toHaveBeenCalled();
   });
 
-  it("checks the parent document (not the collection) for a hydrated collection path", async () => {
+  it("returns hydrated collection paths without checking the parent document", async () => {
     // Group-patch style collection path: the hydrated path ends in a subcollection
-    // ("sales"), i.e. it has an odd number of components. The existence check must
-    // target the parent document ("topics/<id>/statistics/hourly") instead of calling
-    // db.doc on the collection path, which would otherwise throw.
-    const destDocPath = "topics/{topicId}/statistics/hourly/sales";
+    // ("sales"), i.e. it has an odd number of components. Existence is no longer
+    // checked, so every hydrated path is returned as-is.
+    const path = "topics/{topicId}/statistics/hourly/sales";
     const mockFetchIds = fetchIds as jest.MockedFunction<typeof fetchIds>;
     mockFetchIds.mockResolvedValue(["t1", "t2"]);
 
-    const doesPathExistsMock = jest.fn()
-      .mockResolvedValueOnce(true)
-      .mockResolvedValueOnce(false);
+    const doesPathExistsMock = jest.fn();
     pathsMockable.doesPathExists = doesPathExistsMock;
 
-    const result = await hydrateDocPath(destDocPath, {});
+    const result = await hydratePath(path, {});
 
-    expect(result).toEqual({documentPaths: ["topics/t1/statistics/hourly/sales"]});
-    expect(doesPathExistsMock).toHaveBeenCalledTimes(2);
-    expect(doesPathExistsMock).toHaveBeenNthCalledWith(1, "topics/t1/statistics/hourly");
-    expect(doesPathExistsMock).toHaveBeenNthCalledWith(2, "topics/t2/statistics/hourly");
+    expect(result).toEqual({documentPaths: ["topics/t1/statistics/hourly/sales", "topics/t2/statistics/hourly/sales"]});
+    expect(doesPathExistsMock).not.toHaveBeenCalled();
   });
 
   it("should return all possible document paths", async () => {
@@ -182,14 +171,14 @@ describe("hydrateDocPath", () => {
       .mockResolvedValueOnce(["123", "456"])
       .mockResolvedValue(["321", "654"]);
 
-    const destDocPath = "users/{userId}/posts/{postId}";
+    const path = "users/{userId}/posts/{postId}";
     const allowedUsers = ["321", "654"];
     const userCondition: QueryCondition = {
       fieldName: "id",
       operator: "in",
       value: allowedUsers,
     };
-    const result = await hydrateDocPath(destDocPath, {
+    const result = await hydratePath(path, {
       user: userCondition,
     });
     expect(result).toEqual({
@@ -212,7 +201,7 @@ describe("hydrateDocPath", () => {
       .mockResolvedValueOnce(["123", "456"])
       .mockResolvedValue(["321", "654"]);
 
-    const destDocPath = "users/{userId}/posts/{postId}";
+    const path = "users/{userId}/posts/{postId}";
     const allowedUsers = ["321", "654"];
     const userCondition: QueryCondition = {
       fieldName: "id",
@@ -227,7 +216,7 @@ describe("hydrateDocPath", () => {
       value: "technology",
     };
 
-    const result = await hydrateDocPath(destDocPath, {
+    const result = await hydratePath(path, {
       user: userCondition,
       post: postCondition,
     });
@@ -255,7 +244,7 @@ describe("hydrateDocPath", () => {
       .mockResolvedValueOnce([])
       .mockResolvedValue(["321", "654"]);
 
-    const destDocPath = "users/{userId}/posts/{postId}";
+    const path = "users/{userId}/posts/{postId}";
     const allowedUsers = ["123", "456"];
     const userCondition: QueryCondition = {
       fieldName: "id",
@@ -263,7 +252,7 @@ describe("hydrateDocPath", () => {
       value: allowedUsers,
     };
 
-    const result = await hydrateDocPath(destDocPath, {
+    const result = await hydratePath(path, {
       user: userCondition,
     });
 

@@ -103,8 +103,29 @@ async function doesPathExists(path: string) {
   return doc.exists;
 }
 
-export async function hydrateDocPath(
-  destDocPath: string,
+/**
+ * Expands a templated path (containing `{entity}` placeholders) into all of its concrete
+ * collection/document paths by fetching the matching IDs for each placeholder.
+ *
+ * NOTE: This is intentionally a pure path-expansion utility and does NOT verify that the
+ * hydrated paths actually exist in Firestore. The previous per-path `doesPathExists` check
+ * was removed on purpose because:
+ *   - It cost one Firestore read per hydrated path.
+ *   - Firestore is path-based and (sub)collections are virtual: a hydrated collection path
+ *     (e.g. "topics/<id>/statistics/hourly/sales") can legitimately hold documents even when
+ *     an intermediate ancestor document does not exist, so the old check could wrongly skip
+ *     valid paths.
+ *   - Existence is a caller concern: callers that need it should check themselves
+ *     (downstream consumers such as `patchGroupDocs` already tolerate empty collections).
+ * Please do not re-add an existence check here.
+ * @param {string} path The templated path to hydrate.
+ * @param {EntityCondition} entityCondition Query conditions keyed by entity, used when fetching IDs for each placeholder.
+ * @param {HydrationState} [state] Optional saved state to resume a previously paused hydration.
+ * @param {number} [limit] Maximum number of hydrated paths to return before pausing.
+ * @return {Promise<HydrationResult>} The hydrated document paths and, if the limit was reached, the state to resume from.
+ */
+export async function hydratePath(
+  path: string,
   entityCondition: EntityCondition,
   state?: HydrationState,
   limit = 500
@@ -112,7 +133,7 @@ export async function hydrateDocPath(
   const documentPaths: string[] = state?.hydratedPaths || [];
 
   // Create a queue to keep track of the remaining path segments to process
-  const queue: [string[], number][] = state?.queue || [[destDocPath.split("/"), state?.idx || 0]];
+  const queue: [string[], number][] = state?.queue || [[path.split("/"), state?.idx || 0]];
 
   // Process the queue until all path segments have been processed
   while (queue.length > 0) {
@@ -128,32 +149,15 @@ export async function hydrateDocPath(
     }
 
     if (braceIdx === -1) {
-      // We've reached the end of the path, so add it to the document paths
-      const path = segments.join("/");
-      if (idx < segments.length - 1) {
-        // This means that the path contains hard coded ids, so we need to check if that pat exists in the database.
-        // `doesPathExists` uses `db.doc`, which requires a document path (even number of components). When the hydrated
-        // path points to a (sub)collection (odd number of components) — e.g. a group-patch collection path such as
-        // "topics/<id>/statistics/hourly/sales" — check the parent document's existence instead.
-        const nonEmptySegments = path.split("/").filter((s) => s.length > 0);
-        const pathToCheck = nonEmptySegments.length % 2 === 0 ?
-          path :
-          nonEmptySegments.slice(0, -1).join("/");
-        if (
-          pathToCheck.split("/").filter((s) => s.length > 0).length >= 2 &&
-          !await _mockable.doesPathExists(pathToCheck)
-        ) {
-          console.error(`Document ${pathToCheck} does not exist. Skipping...`);
-          continue;
-        }
-      }
-      documentPaths.push(path);
+      // We've reached the end of the path, so add it to the document paths.
+      const hydratedPath = segments.join("/");
+      documentPaths.push(hydratedPath);
 
       if (documentPaths.length >= limit) {
         return {
           documentPaths,
           hydrationState: queue.length > 0 ? {
-            pathSegments: destDocPath.split("/"),
+            pathSegments: path.split("/"),
             idx,
             queue,
             hydratedPaths: [], // Don't pass the already returned paths

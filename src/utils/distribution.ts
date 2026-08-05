@@ -1,5 +1,5 @@
 import {GroupPatchMessage, GroupPatchProgress, GroupPatchType, Instructions, InstructionsMessage, LogicResultDoc} from "../types";
-import {hydrateDocPath} from "./paths";
+import {hydratePath} from "./paths";
 import {
   GROUP_PATCH_TOPIC,
   GROUP_PATCH_TOPIC_NAME,
@@ -398,11 +398,11 @@ export interface QueueGroupPatchParams {
 }
 
 export const queueGroupPatch = async (params: QueueGroupPatchParams) => {
-  const {path: dstPathOrCollectionPath, patchType, backFillPatchName, appVersion, lastPatchedId, force} = params;
-  const segments = dstPathOrCollectionPath.split("/").filter((s) => s.length > 0);
+  const {path, patchType, backFillPatchName, appVersion, lastPatchedId, force} = params;
+  const segments = path.split("/").filter((s) => s.length > 0);
   const collectionPath = segments.length % 2 === 0 ?
     "/" + segments.slice(0, -1).join("/") :
-    (dstPathOrCollectionPath.startsWith("/") ? "" : "/") + dstPathOrCollectionPath;
+    (path.startsWith("/") ? "" : "/") + path;
 
   if (!collectionPath || !collectionPath.includes("/")) {
     return;
@@ -468,7 +468,7 @@ export async function onMessageGroupPatchQueue(event: CloudEvent<MessagePublishe
 
     if (collectionPath.includes("{")) {
       console.log(`[GroupPatch] Hydration in Progress for ${collectionPath}...`);
-      const {documentPaths, hydrationState: nextHydrationState} = await hydrateDocPath(collectionPath, {}, hydrationState);
+      const {documentPaths, hydrationState: nextHydrationState} = await hydratePath(collectionPath, {}, hydrationState);
 
       const patchStatusPath = getGroupPatchStatusPath(collectionPath, patchType, backFillPatchName);
       if (nextHydrationState) {
