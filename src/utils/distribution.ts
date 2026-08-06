@@ -408,8 +408,13 @@ export const queueGroupPatch = async (params: QueueGroupPatchParams) => {
     return;
   }
 
-  // If this is the start of a new patch (no lastPatchedId), check/lock it in Firestore
-  if (!lastPatchedId) {
+  // If this is the start of a new patch (no lastPatchedId), check/lock it in Firestore.
+  // Placeholder (wildcard) paths are NOT locked/tracked here: they never patch a real
+  // document, they only get hydrated into concrete collections downstream, and each
+  // concrete collection goes through queueGroupPatch again and gets its own status
+  // doc + in-flight guard (which is what actually prevents a runaway backfill). So for
+  // a placeholder path we skip straight to publishing the hydration message.
+  if (!lastPatchedId && !collectionPath.includes("{")) {
     const patchStatusPath = getGroupPatchStatusPath(collectionPath, patchType, backFillPatchName);
     const patchStatusRef = db.doc(patchStatusPath);
 
@@ -443,7 +448,7 @@ export const queueGroupPatch = async (params: QueueGroupPatchParams) => {
         }
         // Create or update record to "lock" it
         txn.set(patchStatusRef, {
-          status: collectionPath.includes("{") ? "hydrating" : "queued",
+          status: "queued",
           patchType,
           backFillPatchName: backFillPatchName ?? null,
           collectionPath,
@@ -487,7 +492,10 @@ export async function onMessageGroupPatchQueue(event: CloudEvent<MessagePublishe
       console.log(`[GroupPatch] Hydration in Progress for ${collectionPath}...`);
       const {documentPaths, hydrationState: nextHydrationState} = await hydratePath(collectionPath, {}, hydrationState);
 
-      const patchStatusPath = getGroupPatchStatusPath(collectionPath, patchType, backFillPatchName);
+      // Note: we do NOT create/update a status doc for the placeholder (wildcard)
+      // path here. Placeholder paths are not tracked (see queueGroupPatch) — only
+      // the concrete collections that hydration fans out to get their own status
+      // doc + in-flight guard.
       if (nextHydrationState) {
         // Re-queue hydration
         const message: GroupPatchMessage = {
@@ -498,17 +506,7 @@ export async function onMessageGroupPatchQueue(event: CloudEvent<MessagePublishe
           hydrationState: nextHydrationState,
         };
         await GROUP_PATCH_TOPIC.publishMessage({json: message});
-
-        await db.doc(patchStatusPath).set({
-          status: "hydrating",
-          updatedAt: admin.firestore.Timestamp.now(),
-        }, {merge: true});
       } else {
-        // Hydration complete. We should mark the "placeholder" path as completed.
-        await db.doc(patchStatusPath).set({
-          status: "completed",
-          updatedAt: admin.firestore.Timestamp.now(),
-        }, {merge: true});
         console.log(`[GroupPatch] Hydration complete for ${collectionPath}`);
       }
 

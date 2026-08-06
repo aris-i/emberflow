@@ -561,7 +561,11 @@ export const GROUP_PATCHES_COLLECTION = "@emberflow/internal/group-patches";
  * stamps them to "reset", clearing the previous error/count/cursor. The normal
  * (no-force) `queueGroupPatch` flow then restarts each matching collection from
  * scratch, while every anti-runaway guard (circuit breaker, cursor hard-stop)
- * stays intact. Returns the number of status docs that were reset.
+ * stays intact.
+ *
+ * @param {GroupPatchType} patchType The patch type to match (`"back-fill"` or `"patch-logics"`).
+ * @param {string} [backFillPatchName] The back-fill patch name to match (matched against `null` when omitted).
+ * @return {Promise<number>} The number of status docs that were reset.
  */
 export async function resetGroupPatchStatuses(
   patchType: GroupPatchType,
@@ -613,8 +617,11 @@ export async function onGroupPatchRequest(
   }
   await data.ref.update({status: "received", receivedAt: admin.firestore.Timestamp.now()});
   // Operator restart option: when requested, reset all status docs for this
-  // patch first so the (settled) run can start over from scratch.
-  if (resetStatus === true) {
+  // patch first so the (settled) run can start over from scratch. The request
+  // doc may carry the flag as a real boolean (true) or as the string "true"
+  // (e.g. written from a console/HTTP form), so accept both.
+  const shouldResetStatus = resetStatus === true || resetStatus === "true";
+  if (shouldResetStatus) {
     await resetGroupPatchStatuses(patchType, backFillPatchName);
   }
   return queueGroupPatch({

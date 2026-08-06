@@ -2557,6 +2557,50 @@ describe("onGroupPatchRequest", () => {
     });
   });
 
+  it("resets matching status docs when resetStatus is the string \"true\"", async () => {
+    const statusRef1 = {id: "s1"} as unknown as DocumentReference;
+    const getMock = jest.fn().mockResolvedValue({
+      empty: false,
+      size: 1,
+      docs: [{ref: statusRef1}],
+    });
+    const where2Mock = jest.fn().mockReturnValue({get: getMock});
+    const where1Mock = jest.fn().mockReturnValue({where: where2Mock});
+    jest.spyOn(admin.firestore(), "collection").mockReturnValue({
+      where: where1Mock,
+    } as unknown as CollectionReference);
+    const batchSetMock = jest.fn();
+    const batchCommitMock = jest.fn().mockResolvedValue({});
+    jest.spyOn(admin.firestore(), "batch").mockReturnValue({
+      set: batchSetMock,
+      commit: batchCommitMock,
+    } as unknown as firestore.WriteBatch);
+
+    await indexUtils.onGroupPatchRequest(makeEvent({
+      path: "/users/user123/feeds",
+      patchType: "back-fill",
+      backFillPatchName: "ancestor-ids",
+      resetStatus: "true",
+    }));
+
+    // A string "true" (e.g. from a console/HTTP form) is treated the same as a
+    // real boolean true, so the matching status docs are still reset.
+    expect(admin.firestore().collection).toHaveBeenCalledWith("@emberflow/internal/group-patches");
+    expect(batchSetMock).toHaveBeenCalledWith(statusRef1, expect.objectContaining({
+      status: "reset",
+      error: null,
+      count: 0,
+      lastPatchedId: null,
+    }), {merge: true});
+    expect(batchCommitMock).toHaveBeenCalledTimes(1);
+    expect(queueGroupPatchSpy).toHaveBeenCalledWith({
+      path: "/users/user123/feeds",
+      patchType: "back-fill",
+      backFillPatchName: "ancestor-ids",
+      appVersion: undefined,
+    });
+  });
+
   it("does not reset any status docs when resetStatus is not set", async () => {
     const collectionSpy = jest.spyOn(admin.firestore(), "collection");
 

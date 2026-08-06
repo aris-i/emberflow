@@ -1097,6 +1097,30 @@ describe("queueGroupPatch", () => {
     expect(publishMessageSpy).not.toHaveBeenCalled();
   });
 
+  it("does NOT lock/track a placeholder (wildcard) path and publishes it directly for hydration", async () => {
+    // A placeholder path never patches a real document; it only gets hydrated into
+    // concrete collections downstream, each of which gets its own status doc + guard.
+    // So the lock transaction is skipped entirely and the message is published as-is.
+    await distribution.queueGroupPatch({
+      path: "/users/{userId}/feeds",
+      patchType: "back-fill",
+      backFillPatchName: "ancestor-ids",
+    });
+
+    expect(runTransactionSpy).not.toHaveBeenCalled();
+    expect(txnSetMock).not.toHaveBeenCalled();
+    expect(publishMessageSpy).toHaveBeenCalledWith({
+      json: {
+        collectionPath: "/users/{userId}/feeds",
+        patchType: "back-fill",
+        backFillPatchName: "ancestor-ids",
+        appVersion: undefined,
+        lastPatchedId: undefined,
+        iteration: undefined,
+      },
+    });
+  });
+
   it("re-locks and publishes when the previous status is error", async () => {
     txnGetMock.mockResolvedValue({exists: true, data: () => ({status: "error"})});
 
@@ -1307,6 +1331,62 @@ describe("onMessageGroupPatchQueue", () => {
       appVersion: "1.0.0",
       lastPatchedId: undefined,
     });
+  });
+
+  it("does NOT write a placeholder status doc while hydration is in progress", async () => {
+    const hydratePathSpy = jest.spyOn(paths, "hydratePath").mockResolvedValue({
+      documentPaths: [],
+      hydrationState: {batch: 2} as any,
+    });
+    const docSetMock = jest.fn();
+    jest.spyOn(admin.firestore(), "doc").mockReturnValue({
+      set: docSetMock,
+    } as unknown as admin.firestore.DocumentReference);
+    const publishMessageSpy = jest.spyOn(GROUP_PATCH_TOPIC, "publishMessage")
+      .mockImplementation(() => Promise.resolve("message-id"));
+
+    const event = {
+      id: "test-event",
+      data: {message: {json: {collectionPath: "/users/{userId}/feeds", patchType: "back-fill", backFillPatchName: "ancestor-ids"}}},
+    } as unknown as CloudEvent<MessagePublishedData>;
+
+    await distribution.onMessageGroupPatchQueue(event);
+
+    expect(hydratePathSpy).toHaveBeenCalled();
+    // A re-queue message is still published to continue hydration...
+    expect(publishMessageSpy).toHaveBeenCalledWith({
+      json: expect.objectContaining({
+        collectionPath: "/users/{userId}/feeds",
+        hydrationState: {batch: 2},
+      }),
+    });
+    // ...but the wildcard/placeholder path is NOT tracked with a status doc.
+    expect(docSetMock).not.toHaveBeenCalled();
+  });
+
+  it("does NOT write a placeholder status doc when hydration completes", async () => {
+    const hydratePathSpy = jest.spyOn(paths, "hydratePath").mockResolvedValue({
+      documentPaths: [],
+      hydrationState: undefined,
+    });
+    const docSetMock = jest.fn();
+    jest.spyOn(admin.firestore(), "doc").mockReturnValue({
+      set: docSetMock,
+    } as unknown as admin.firestore.DocumentReference);
+    jest.spyOn(GROUP_PATCH_TOPIC, "publishMessage").mockImplementation(() => Promise.resolve("message-id"));
+
+    const event = {
+      id: "test-event",
+      data: {message: {json: {collectionPath: "/users/{userId}/feeds", patchType: "back-fill", backFillPatchName: "ancestor-ids"}}},
+    } as unknown as CloudEvent<MessagePublishedData>;
+
+    await distribution.onMessageGroupPatchQueue(event);
+
+    expect(hydratePathSpy).toHaveBeenCalled();
+    // The placeholder path is never stamped "hydrating"/"completed"...
+    expect(docSetMock).not.toHaveBeenCalled();
+    // ...and the message is still marked processed.
+    expect(trackProcessedIdsMock).toHaveBeenCalledWith(GROUP_PATCH_TOPIC_NAME, event.id);
   });
 });
 

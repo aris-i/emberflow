@@ -296,7 +296,7 @@ with its fields (keeping the full locking / progress / path-hydration behaviour)
 | `patchType`         | yes      | `"back-fill"` or `"patch-logics"`.                                  |
 | `backFillPatchName` | for back-fills | The `BackFillPatchConfig` name, e.g. `"ancestor-ids"`.       |
 | `appVersion`        | for patch-logics | Target `appVersion` for the `"patch-logics"` run.         |
-| `resetStatus`       | no       | When `true`, all status docs for this `patchType`/`backFillPatchName` are stamped to `"reset"` (clearing `error`/`count`/`lastPatchedId`) **before** the run, so a settled (`completed`/`error`) patch restarts from scratch. |
+| `resetStatus`       | no       | When `true` (boolean) or `"true"` (string), all status docs for this `patchType`/`backFillPatchName` are stamped to `"reset"` (clearing `error`/`count`/`lastPatchedId`) **before** the run, so a settled (`completed`/`error`) patch restarts from scratch. |
 
 > **Restarting a settled run (`resetStatus`)**: A `"completed"`/`"error"` patch is otherwise treated
 > as done and won't re-run. Setting `resetStatus: true` locates the matching status doc(s) via a
@@ -342,6 +342,12 @@ Progress is tracked independently per `patchType`/`backFillPatchName`, so differ
 running against the same collection never clobber each other's status. The status doc lives at
 `@emberflow/internal/group-patches/<collection>_back-fill_<backFillPatchName>` (or
 `..._patch-logics` for `"patch-logics"` runs).
+
+> **Wildcard/placeholder paths are not tracked.** A placeholder path (e.g.
+> `/users/{userId}/feeds`) never patches a document itself — it is only hydrated into concrete
+> collections, each of which gets its own status doc + in-flight guard. Therefore no status doc is
+> created for the placeholder path, and `getGroupPatchProgress` returns `undefined` for it. Query
+> progress on the concrete collection paths (e.g. `/users/user123/feeds`) instead.
 
 ### Collection Cleanup (`cleanupConfigs`, `CleanupConfig`)
 
