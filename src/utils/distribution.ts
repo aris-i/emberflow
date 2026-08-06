@@ -391,14 +391,14 @@ export interface QueueGroupPatchParams {
   appVersion?: string;
   lastPatchedId?: string;
   /**
-   * When true, ignore the collection's stored status and (re)run the patch from
-   * scratch, bypassing the "already queued/running/completed" guard.
+   * How many times this patch chain has rescheduled itself. Propagated into the
+   * queued message so the engine's circuit breaker can abort a runaway backfill.
    */
-  force?: boolean;
+  iteration?: number;
 }
 
 export const queueGroupPatch = async (params: QueueGroupPatchParams) => {
-  const {path, patchType, backFillPatchName, appVersion, lastPatchedId, force} = params;
+  const {path, patchType, backFillPatchName, appVersion, lastPatchedId, iteration} = params;
   const segments = path.split("/").filter((s) => s.length > 0);
   const collectionPath = segments.length % 2 === 0 ?
     "/" + segments.slice(0, -1).join("/") :
@@ -416,11 +416,28 @@ export const queueGroupPatch = async (params: QueueGroupPatchParams) => {
     try {
       const alreadyQueued = await db.runTransaction(async (txn) => {
         const doc = await txn.get(patchStatusRef);
-        if (doc.exists && !force) {
+        if (doc.exists) {
           const data = doc.data();
-          // Allow re-triggering if status is "error" or "reset".
-          // When `force` is set we always fall through and re-lock, ignoring status.
-          if (data?.status !== "error" && data?.status !== "reset") {
+          const status = data?.status;
+          // A patch that is already in flight is NEVER restarted here. Re-locking +
+          // re-publishing while a chain is still running would spawn a second,
+          // overlapping chain (a runaway backfill), so any trigger for the same
+          // collection is treated as ALREADY QUEUED and ignored until it settles.
+          const isInFlight = status === "queued" || status === "running" || status === "hydrating";
+          if (isInFlight) {
+            console.info(
+              `[backfill-patch-emberflow] queueGroupPatch: status doc already in-flight (status="${status}") for ${collectionPath} -> treating as ALREADY QUEUED, will NOT re-publish.`
+            );
+            return true;
+          }
+          // Not in flight (settled). Only "error"/"reset" may restart; any other
+          // settled status (e.g. "completed") is treated as already done. An
+          // operator restart is done by stamping the status doc(s) to "reset"
+          // (see onGroupPatchRequest), which falls through here to re-lock/re-run.
+          if (status !== "error" && status !== "reset") {
+            console.info(
+              `[backfill-patch-emberflow] queueGroupPatch: status doc already exists with status="${status}" -> treating as ALREADY QUEUED, will NOT re-publish for ${collectionPath}.`
+            );
             return true; // Already exists and not in a state that allows restart
           }
         }
@@ -449,7 +466,7 @@ export const queueGroupPatch = async (params: QueueGroupPatchParams) => {
   }
 
   try {
-    const message: GroupPatchMessage = {collectionPath, patchType, backFillPatchName, appVersion, lastPatchedId, force};
+    const message: GroupPatchMessage = {collectionPath, patchType, backFillPatchName, appVersion, lastPatchedId, iteration};
     await GROUP_PATCH_TOPIC.publishMessage({json: message});
   } catch (error: unknown) {
     console.error(`[GroupPatch] Received error while publishing to ${GROUP_PATCH_TOPIC_NAME}:`, error);
@@ -463,7 +480,7 @@ export async function onMessageGroupPatchQueue(event: CloudEvent<MessagePublishe
   }
 
   try {
-    const {collectionPath, patchType, backFillPatchName, appVersion, lastPatchedId, hydrationState, force} =
+    const {collectionPath, patchType, backFillPatchName, appVersion, lastPatchedId, hydrationState, iteration} =
       event.data.message.json as GroupPatchMessage;
 
     if (collectionPath.includes("{")) {
@@ -479,7 +496,6 @@ export async function onMessageGroupPatchQueue(event: CloudEvent<MessagePublishe
           backFillPatchName,
           appVersion,
           hydrationState: nextHydrationState,
-          force,
         };
         await GROUP_PATCH_TOPIC.publishMessage({json: message});
 
@@ -501,12 +517,12 @@ export async function onMessageGroupPatchQueue(event: CloudEvent<MessagePublishe
       for (const path of documentPaths) {
         // We trigger a patch for each hydrated path.
         // Note: These will go through the same queueGroupPatch logic,
-        // so they will be tracked/locked individually. Propagate `force` so each
-        // hydrated collection ignores its stored status too.
-        await queueGroupPatch({path, patchType, backFillPatchName, appVersion, force});
+        // so they will be tracked/locked individually. If the operator stamped
+        // the concrete status doc(s) to "reset", queueGroupPatch restarts them.
+        await queueGroupPatch({path, patchType, backFillPatchName, appVersion});
       }
     } else {
-      await patchGroupDocs({collectionPath, patchType, backFillPatchName, appVersion, lastPatchedId, force});
+      await patchGroupDocs({collectionPath, patchType, backFillPatchName, appVersion, lastPatchedId, iteration});
     }
     await pubsubUtils.trackProcessedIds(GROUP_PATCH_TOPIC_NAME, event.id);
   } catch (e) {

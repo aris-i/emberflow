@@ -2177,20 +2177,20 @@ describe("patchGroupDocs", () => {
     expect(queueGroupPatchSpy).not.toHaveBeenCalled();
   });
 
-  it("processes even when the status is completed if force is set", async () => {
-    docGetMock.mockResolvedValue({exists: true, data: () => ({status: "completed"})});
+  it("processes and commits when the status is reset", async () => {
+    docGetMock.mockResolvedValue({exists: true, data: () => ({status: "reset"})});
     const doc1 = makeDoc("feed1");
     colGetMock.mockResolvedValue({empty: false, docs: [doc1]});
 
-    await indexUtils.patchGroupDocs({collectionPath, patchType: "back-fill", backFillPatchName: "ancestor-ids", force: true});
+    await indexUtils.patchGroupDocs({collectionPath, patchType: "back-fill", backFillPatchName: "ancestor-ids"});
 
     expect(admin.firestore().collection).toHaveBeenCalled();
     expect(batchCommitMock).toHaveBeenCalledTimes(1);
     expect(queueGroupPatchSpy).toHaveBeenCalled();
   });
 
-  it("restarts from the first document and resets the count when force is set", async () => {
-    docGetMock.mockResolvedValue({exists: true, data: () => ({status: "running", count: 42, lastPatchedId: "feed3"})});
+  it("restarts from the first document and resets the count when the status is reset", async () => {
+    docGetMock.mockResolvedValue({exists: true, data: () => ({status: "reset", count: 42, lastPatchedId: "feed3"})});
     const doc1 = makeDoc("feed1");
     colGetMock.mockResolvedValue({empty: false, docs: [doc1]});
 
@@ -2199,7 +2199,6 @@ describe("patchGroupDocs", () => {
       patchType: "back-fill",
       backFillPatchName: "ancestor-ids",
       lastPatchedId: "feed3",
-      force: true,
     });
 
     // Cursor is ignored: no startAfter, so we scan from the very first document.
@@ -2230,6 +2229,7 @@ describe("patchGroupDocs", () => {
       backFillPatchName: "ancestor-ids",
       appVersion: undefined,
       lastPatchedId: "feed1",
+      iteration: 1,
     });
   });
 
@@ -2326,6 +2326,84 @@ describe("patchGroupDocs", () => {
     expect(docSetMock).toHaveBeenCalledWith(expect.objectContaining({status: "error"}), {merge: true});
     expect(queueGroupPatchSpy).not.toHaveBeenCalled();
   });
+
+  it("hard-stops (marks error, no reschedule) when the cursor does not advance", async () => {
+    jest.spyOn(console, "error").mockImplementation();
+    // The status doc allows the run to proceed with the incoming cursor.
+    docGetMock.mockResolvedValue({exists: true, data: () => ({status: "running", lastPatchedId: "feed5"})});
+    // The page ends on the very id we started after: a guaranteed runaway loop
+    // because rescheduling would re-query the exact same page forever.
+    colGetMock.mockResolvedValue({empty: false, docs: [makeDoc("feed5")]});
+
+    await indexUtils.patchGroupDocs({
+      collectionPath,
+      patchType: "back-fill",
+      backFillPatchName: "ancestor-ids",
+      lastPatchedId: "feed5",
+    });
+
+    expect(docSetMock).toHaveBeenCalledWith(
+      expect.objectContaining({status: "error", error: expect.stringContaining("Cursor did not advance")}),
+      {merge: true}
+    );
+    // Crucially, the loop is broken: no reschedule and no patch was applied.
+    expect(queueGroupPatchSpy).not.toHaveBeenCalled();
+    expect(batchCommitMock).not.toHaveBeenCalled();
+  });
+
+  it("circuit breaker aborts a single over-limit invocation without querying or rescheduling", async () => {
+    jest.spyOn(console, "error").mockImplementation();
+    jest.spyOn(indexUtils._mockable, "getMaxGroupPatchIterations").mockReturnValue(3);
+
+    await indexUtils.patchGroupDocs({
+      collectionPath,
+      patchType: "back-fill",
+      backFillPatchName: "ancestor-ids",
+      iteration: 3,
+    });
+
+    expect(docSetMock).toHaveBeenCalledWith(
+      expect.objectContaining({status: "error", error: expect.stringContaining("Circuit breaker")}),
+      {merge: true}
+    );
+    // Bailed out before touching the collection or rescheduling.
+    expect(admin.firestore().collection).not.toHaveBeenCalled();
+    expect(queueGroupPatchSpy).not.toHaveBeenCalled();
+  });
+
+  it("circuit breaker stops a runaway self-rescheduling loop that never completes", async () => {
+    jest.spyOn(console, "error").mockImplementation();
+    jest.spyOn(indexUtils._mockable, "getMaxGroupPatchIterations").mockReturnValue(5);
+    // Never "completed", so the chain is always allowed to proceed.
+    docGetMock.mockResolvedValue({exists: true, data: () => ({status: "running"})});
+    // Each page returns a fresh, always-advancing id and is never empty, so the
+    // patch would otherwise reschedule itself forever (a runaway backfill).
+    let n = 0;
+    colGetMock.mockImplementation(async () => ({empty: false, docs: [makeDoc(`feed${n++}`)]}));
+    // Simulate Pub/Sub redelivery: each reschedule re-invokes patchGroupDocs with
+    // the same params (including the incremented iteration counter).
+    queueGroupPatchSpy.mockImplementation(async (p: any) => {
+      await indexUtils.patchGroupDocs({
+        collectionPath: p.path,
+        patchType: p.patchType,
+        backFillPatchName: p.backFillPatchName,
+        appVersion: p.appVersion,
+        lastPatchedId: p.lastPatchedId,
+        iteration: p.iteration,
+      });
+    });
+
+    await indexUtils.patchGroupDocs({collectionPath, patchType: "back-fill", backFillPatchName: "ancestor-ids"});
+
+    // Without the circuit breaker this recursion would never terminate. It stops
+    // once the iteration cap is reached and the run is marked as an error.
+    expect(docSetMock).toHaveBeenCalledWith(
+      expect.objectContaining({status: "error", error: expect.stringContaining("Circuit breaker")}),
+      {merge: true}
+    );
+    // It rescheduled exactly maxIterations times (iterations 0..4) before aborting at 5.
+    expect(queueGroupPatchSpy).toHaveBeenCalledTimes(5);
+  });
 });
 
 describe("ancestorIdsPatchConfig", () => {
@@ -2411,7 +2489,6 @@ describe("onGroupPatchRequest", () => {
       patchType: "back-fill",
       backFillPatchName: "ancestor-ids",
       appVersion: undefined,
-      force: false,
     });
   });
 
@@ -2428,22 +2505,69 @@ describe("onGroupPatchRequest", () => {
       patchType: "patch-logics",
       backFillPatchName: undefined,
       appVersion: "1.2.0",
-      force: false,
     });
   });
 
-  it("forwards force from the request document", async () => {
+  it("resets matching status docs to \"reset\" when resetStatus is set, then queues without force", async () => {
+    const statusRef1 = {id: "s1"} as unknown as DocumentReference;
+    const statusRef2 = {id: "s2"} as unknown as DocumentReference;
+    const getMock = jest.fn().mockResolvedValue({
+      empty: false,
+      size: 2,
+      docs: [{ref: statusRef1}, {ref: statusRef2}],
+    });
+    const where2Mock = jest.fn().mockReturnValue({get: getMock});
+    const where1Mock = jest.fn().mockReturnValue({where: where2Mock});
+    jest.spyOn(admin.firestore(), "collection").mockReturnValue({
+      where: where1Mock,
+    } as unknown as CollectionReference);
+    const batchSetMock = jest.fn();
+    const batchCommitMock = jest.fn().mockResolvedValue({});
+    jest.spyOn(admin.firestore(), "batch").mockReturnValue({
+      set: batchSetMock,
+      commit: batchCommitMock,
+    } as unknown as firestore.WriteBatch);
+
     await indexUtils.onGroupPatchRequest(makeEvent({
       path: "/users/user123/feeds",
       patchType: "back-fill",
       backFillPatchName: "ancestor-ids",
-      force: true,
+      resetStatus: true,
     }));
 
-    expect(queueGroupPatchSpy).toHaveBeenCalledWith(expect.objectContaining({
+    // Located the matching status docs by field query (no doc-id parsing).
+    expect(admin.firestore().collection).toHaveBeenCalledWith("@emberflow/internal/group-patches");
+    expect(where1Mock).toHaveBeenCalledWith("patchType", "==", "back-fill");
+    expect(where2Mock).toHaveBeenCalledWith("backFillPatchName", "==", "ancestor-ids");
+    // Stamped each matching doc to "reset", clearing error/count/cursor.
+    expect(batchSetMock).toHaveBeenCalledTimes(2);
+    expect(batchSetMock).toHaveBeenCalledWith(statusRef1, expect.objectContaining({
+      status: "reset",
+      error: null,
+      count: 0,
+      lastPatchedId: null,
+    }), {merge: true});
+    expect(batchCommitMock).toHaveBeenCalledTimes(1);
+    // Then queued the normal (no-force) flow.
+    expect(queueGroupPatchSpy).toHaveBeenCalledWith({
       path: "/users/user123/feeds",
-      force: true,
+      patchType: "back-fill",
+      backFillPatchName: "ancestor-ids",
+      appVersion: undefined,
+    });
+  });
+
+  it("does not reset any status docs when resetStatus is not set", async () => {
+    const collectionSpy = jest.spyOn(admin.firestore(), "collection");
+
+    await indexUtils.onGroupPatchRequest(makeEvent({
+      path: "/users/user123/feeds",
+      patchType: "back-fill",
+      backFillPatchName: "ancestor-ids",
     }));
+
+    expect(collectionSpy).not.toHaveBeenCalled();
+    expect(queueGroupPatchSpy).toHaveBeenCalled();
   });
 
   it("does nothing when the event has no data", async () => {

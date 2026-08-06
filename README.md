@@ -296,6 +296,14 @@ with its fields (keeping the full locking / progress / path-hydration behaviour)
 | `patchType`         | yes      | `"back-fill"` or `"patch-logics"`.                                  |
 | `backFillPatchName` | for back-fills | The `BackFillPatchConfig` name, e.g. `"ancestor-ids"`.       |
 | `appVersion`        | for patch-logics | Target `appVersion` for the `"patch-logics"` run.         |
+| `resetStatus`       | no       | When `true`, all status docs for this `patchType`/`backFillPatchName` are stamped to `"reset"` (clearing `error`/`count`/`lastPatchedId`) **before** the run, so a settled (`completed`/`error`) patch restarts from scratch. |
+
+> **Restarting a settled run (`resetStatus`)**: A `"completed"`/`"error"` patch is otherwise treated
+> as done and won't re-run. Setting `resetStatus: true` locates the matching status doc(s) via a
+> field query on `patchType` + `backFillPatchName` and stamps them to `"reset"`, which the normal
+> queueing flow then restarts. All anti-runaway guards (circuit breaker, cursor hard-stop) stay in
+> place. A patch that is still **in flight** (`queued`/`running`/`hydrating`) is never restarted, so
+> a re-trigger cannot spawn an overlapping chain.
 
 For example, from the command line:
 

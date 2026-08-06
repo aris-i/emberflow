@@ -56,6 +56,15 @@ import FieldValue = firestore.FieldValue;
 import Timestamp = firestore.Timestamp;
 import Transaction = firestore.Transaction;
 
+/**
+ * Maximum number of times a single group-patch chain is allowed to reschedule
+ * itself before the circuit breaker aborts it. This is a defense-in-depth
+ * backstop against a runaway backfill: normal completion happens when a page
+ * comes back empty, and a non-advancing cursor is caught separately, so this
+ * cap only trips on genuinely pathological, never-completing loops.
+ */
+export const MAX_GROUP_PATCH_ITERATIONS = 100_000;
+
 export const _mockable = {
   getViewLogicConfigs: () => viewLogicConfigs,
   getPatchLogicConfigs: () => patchLogicConfigs,
@@ -63,6 +72,7 @@ export const _mockable = {
   createNowTimestamp: () => admin.firestore.Timestamp.now(),
   saveMetricExecution: saveMetricExecution,
   getBatchUtil: () => BatchUtil.create(),
+  getMaxGroupPatchIterations: () => MAX_GROUP_PATCH_ITERATIONS,
 };
 
 export async function distributeDoc(
@@ -539,6 +549,51 @@ export async function onDeleteFunction(event: FirestoreEvent<QueryDocumentSnapsh
   return deleteFunction(projectConfig.projectId, name);
 }
 
+/**
+ * The flat internal collection that stores one status doc per
+ * (collectionPath, patchType, backFillPatchName) group-patch run.
+ */
+export const GROUP_PATCHES_COLLECTION = "@emberflow/internal/group-patches";
+
+/**
+ * Operator-driven restart. Locates every group-patch status doc for the given
+ * `patchType` + `backFillPatchName` (via a field query -- no doc-id parsing) and
+ * stamps them to "reset", clearing the previous error/count/cursor. The normal
+ * (no-force) `queueGroupPatch` flow then restarts each matching collection from
+ * scratch, while every anti-runaway guard (circuit breaker, cursor hard-stop)
+ * stays intact. Returns the number of status docs that were reset.
+ */
+export async function resetGroupPatchStatuses(
+  patchType: GroupPatchType,
+  backFillPatchName?: string,
+): Promise<number> {
+  const snap = await db.collection(GROUP_PATCHES_COLLECTION)
+    .where("patchType", "==", patchType)
+    .where("backFillPatchName", "==", backFillPatchName ?? null)
+    .get();
+  if (snap.empty) {
+    console.info(
+      `[backfill-patch-emberflow] resetGroupPatchStatuses: no status docs found to reset for patchType="${patchType}", backFillPatchName="${backFillPatchName ?? null}".`
+    );
+    return 0;
+  }
+  const batch = db.batch();
+  for (const statusDoc of snap.docs) {
+    batch.set(statusDoc.ref, {
+      status: "reset",
+      error: null,
+      count: 0,
+      lastPatchedId: null,
+      updatedAt: admin.firestore.Timestamp.now(),
+    }, {merge: true});
+  }
+  await batch.commit();
+  console.info(
+    `[backfill-patch-emberflow] resetGroupPatchStatuses: stamped ${snap.size} status doc(s) to "reset" for patchType="${patchType}", backFillPatchName="${backFillPatchName ?? null}".`
+  );
+  return snap.size;
+}
+
 export async function onGroupPatchRequest(
   event: FirestoreEvent<QueryDocumentSnapshot | undefined, {requestId: string}>
 ) {
@@ -547,7 +602,7 @@ export async function onGroupPatchRequest(
     console.error("Data should not be null");
     return;
   }
-  const {path, patchType, backFillPatchName, appVersion, force} = data.data();
+  const {path, patchType, backFillPatchName, appVersion, resetStatus} = data.data();
   if (!path) {
     console.error("path should not be null");
     return;
@@ -557,12 +612,16 @@ export async function onGroupPatchRequest(
     return;
   }
   await data.ref.update({status: "received", receivedAt: admin.firestore.Timestamp.now()});
+  // Operator restart option: when requested, reset all status docs for this
+  // patch first so the (settled) run can start over from scratch.
+  if (resetStatus === true) {
+    await resetGroupPatchStatuses(patchType, backFillPatchName);
+  }
   return queueGroupPatch({
     path,
     patchType,
     backFillPatchName,
     appVersion,
-    force: force === true,
   });
 }
 
@@ -754,10 +813,11 @@ export interface PatchGroupDocsParams {
   appVersion?: string;
   lastPatchedId?: string;
   /**
-   * When true, ignore the stored status (including "completed") and patch the
-   * whole collection from the first document, resetting the cursor and count.
+   * How many times this patch chain has already rescheduled itself. The engine
+   * increments it on every reschedule and trips a circuit breaker once it
+   * reaches {@link MAX_GROUP_PATCH_ITERATIONS}, aborting a runaway backfill.
    */
-  force?: boolean;
+  iteration?: number;
 }
 
 /**
@@ -765,19 +825,40 @@ export interface PatchGroupDocsParams {
  * @param {PatchGroupDocsParams} params The collection path, patch type, and cursor.
  */
 export async function patchGroupDocs(params: PatchGroupDocsParams) {
-  const {collectionPath, patchType, backFillPatchName, appVersion, lastPatchedId, force} = params;
+  const {collectionPath, patchType, backFillPatchName, appVersion, lastPatchedId} = params;
+  const iteration = params.iteration ?? 0;
   const patchStatusPath = getGroupPatchStatusPath(collectionPath, patchType, backFillPatchName);
   const patchStatusRef = db.doc(patchStatusPath);
   const patchStatusDoc = await patchStatusRef.get();
   const patchStatusData = patchStatusDoc.data();
 
-  // When `force` is set, ignore the stored status entirely (even "completed").
-  if (!force && patchStatusData?.status === "completed") {
+  // Circuit breaker: a healthy backfill terminates when a page comes back empty.
+  // If a chain keeps rescheduling itself past this cap it is almost certainly a
+  // runaway, so we abort here (mark "error", no reschedule) instead of letting it
+  // keep invoking functions and rewriting docs indefinitely.
+  const maxIterations = _mockable.getMaxGroupPatchIterations();
+  if (iteration >= maxIterations) {
+    const breakerError = `Circuit breaker tripped for ${collectionPath}: reached max ${maxIterations} patch iterations without completing (possible runaway backfill).`;
+    console.error(`[backfill-patch-emberflow] patchGroupDocs: ${breakerError} Aborting (no reschedule).`);
+    await patchStatusRef.set({
+      status: "error",
+      patchType,
+      backFillPatchName: backFillPatchName ?? null,
+      error: breakerError,
+      updatedAt: admin.firestore.Timestamp.now(),
+    }, {merge: true});
     return;
   }
 
-  // Handle "reset" status (or a forced run) by starting from scratch
-  const restartFromScratch = force || patchStatusData?.status === "reset";
+  // A settled "completed" collection is never re-patched here. To restart it an
+  // operator stamps the status doc to "reset" (see onGroupPatchRequest), which is
+  // handled below.
+  if (patchStatusData?.status === "completed") {
+    return;
+  }
+
+  // Handle "reset" status by starting from scratch (cursor + count cleared).
+  const restartFromScratch = patchStatusData?.status === "reset";
   const effectiveLastId = restartFromScratch ? undefined : lastPatchedId;
 
   console.info(`[GroupPatch] Patching docs for collection: ${collectionPath}${effectiveLastId ? ` starting from ${effectiveLastId}` : ""}`);
@@ -801,6 +882,21 @@ export async function patchGroupDocs(params: PatchGroupDocsParams) {
   }
 
   const lastId = docsSnapshot.docs[docsSnapshot.docs.length - 1].id;
+  // Hard stop for a guaranteed runaway loop: if the cursor does not advance
+  // between batches (the page ends on the very id we started after), rescheduling
+  // would re-query the exact same page forever. Abort instead of re-processing it.
+  if (effectiveLastId && effectiveLastId === lastId) {
+    const cursorError = `Cursor did not advance past "${lastId}" for ${collectionPath}; aborting to prevent a runaway backfill.`;
+    console.error(`[backfill-patch-emberflow] patchGroupDocs: ${cursorError} (no reschedule).`);
+    await patchStatusRef.set({
+      status: "error",
+      patchType,
+      backFillPatchName: backFillPatchName ?? null,
+      error: cursorError,
+      updatedAt: admin.firestore.Timestamp.now(),
+    }, {merge: true});
+    return;
+  }
 
   try {
     if (patchType === "patch-logics") {
@@ -834,8 +930,13 @@ export async function patchGroupDocs(params: PatchGroupDocsParams) {
 
     console.info(`[GroupPatch] Batch Complete: Patched ${docsSnapshot.docs.length} docs for collection: ${collectionPath}. Total patched so far: ${totalPatched}. Rescheduling next batch...`);
 
-    // Reschedule for next batch
-    await queueGroupPatch({path: collectionPath, patchType, backFillPatchName, appVersion, lastPatchedId: lastId});
+    // Reschedule for next batch, carrying the incremented iteration counter so
+    // the circuit breaker can eventually stop a chain that never completes.
+    const nextIteration = iteration + 1;
+    console.info(
+      `[backfill-patch-emberflow] patchGroupDocs: RESCHEDULING next batch for ${collectionPath} with lastPatchedId=${lastId}, iteration=${nextIteration}.`
+    );
+    await queueGroupPatch({path: collectionPath, patchType, backFillPatchName, appVersion, lastPatchedId: lastId, iteration: nextIteration});
   } catch (error) {
     console.error(`[GroupPatch] Error in patchGroupDocs for ${collectionPath}:`, error);
     // On error, we set status to error and store the error message

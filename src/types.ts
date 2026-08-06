@@ -119,11 +119,11 @@ export interface GroupPatchMessage {
     lastPatchedId?: string;
     hydrationState?: HydrationState;
     /**
-     * When true, the patch runs even if the collection's status doc is in a
-     * state that would normally block a (re)trigger (e.g. "queued", "running"
-     * or "completed"), and the patch restarts from the first document.
+     * Safety counter tracking how many times this patch chain has rescheduled
+     * itself. Used by the circuit breaker to abort a runaway backfill that
+     * keeps re-queuing without ever completing.
      */
-    force?: boolean;
+    iteration?: number;
 }
 
 export type OneTimePatchFn = (

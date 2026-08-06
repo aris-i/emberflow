@@ -1,5 +1,14 @@
 {
-  "indexes": [],
+  "indexes": [
+    {
+      "collectionGroup": "group-patches",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "patchType", "order": "ASCENDING" },
+        { "fieldPath": "backFillPatchName", "order": "ASCENDING" }
+      ]
+    }
+  ],
   "fieldOverrides": [
     {
       "collectionGroup": "computations",

@@ -59,15 +59,15 @@ admin.initializeApp({
 });
 jest.spyOn(paths._mockable, "doesPathExists").mockResolvedValue(true);
 initializeEmberFlow({
-      projectConfig,
-      admin,
-      dbStructure,
-      Entity,
-      securityConfigs,
-      validatorConfigs,
-      logicConfigs: [],
-      patchLogicConfigs: [],
-    });
+  projectConfig,
+  admin,
+  dbStructure,
+  Entity,
+  securityConfigs,
+  validatorConfigs,
+  logicConfigs: [],
+  patchLogicConfigs: [],
+});
 
 describe("queueForDistributionLater", () => {
   let publishMessageSpy: jest.SpyInstance;
@@ -1110,46 +1110,91 @@ describe("queueGroupPatch", () => {
     expect(publishMessageSpy).toHaveBeenCalled();
   });
 
-  it("re-locks and publishes with force even when the previous status is running", async () => {
-    txnGetMock.mockResolvedValue({exists: true, data: () => ({status: "running"})});
+  // --- restart via "reset" status ----------------------------------------
+  //
+  // `force` has been removed. An operator restart is done by stamping the
+  // status doc(s) to "reset" (see resetGroupPatchStatuses / onGroupPatchRequest).
+  // A "reset" (like "error") is treated as SETTLED here, so it falls through and
+  // re-locks + re-publishes. A patch that is still IN FLIGHT (queued / running /
+  // hydrating) is always treated as ALREADY QUEUED and never restarted, so a
+  // re-trigger cannot spawn an overlapping chain (a runaway backfill).
 
-    await distribution.queueGroupPatch({
-      path: "/users/user1/feeds",
-      patchType: "back-fill",
-      backFillPatchName: "ancestor-ids",
-      force: true,
-    });
+  describe.each([
+    ["running"],
+    ["queued"],
+    ["hydrating"],
+  ])("an in-flight patch is never restarted (status=%s)", (status) => {
+    it("does NOT re-lock and does NOT re-publish", async () => {
+      txnGetMock.mockResolvedValue({exists: true, data: () => ({status})});
 
-    expect(txnSetMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      status: "queued",
-      collectionPath: "/users/user1/feeds",
-      count: 0,
-      lastPatchedId: null,
-    }), {merge: true});
-    expect(publishMessageSpy).toHaveBeenCalledWith({
-      json: {
-        collectionPath: "/users/user1/feeds",
+      await distribution.queueGroupPatch({
+        path: "/users/user1/feeds",
         patchType: "back-fill",
         backFillPatchName: "ancestor-ids",
-        appVersion: undefined,
-        lastPatchedId: undefined,
-        force: true,
-      },
+      });
+
+      // The in-flight run is left untouched: no re-lock and no second message.
+      expect(txnSetMock).not.toHaveBeenCalled();
+      expect(publishMessageSpy).not.toHaveBeenCalled();
     });
   });
 
-  it("re-locks and publishes with force even when the previous status is completed", async () => {
+  describe.each([
+    ["error"],
+    ["reset"],
+  ])("a settled patch is restarted (status=%s)", (status) => {
+    it("re-locks the status doc and publishes", async () => {
+      txnGetMock.mockResolvedValue({exists: true, data: () => ({status})});
+
+      await distribution.queueGroupPatch({
+        path: "/users/user1/feeds",
+        patchType: "back-fill",
+        backFillPatchName: "ancestor-ids",
+      });
+
+      expect(txnSetMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+        status: "queued",
+        collectionPath: "/users/user1/feeds",
+        count: 0,
+        lastPatchedId: null,
+      }), {merge: true});
+      expect(publishMessageSpy).toHaveBeenCalledWith({
+        json: {
+          collectionPath: "/users/user1/feeds",
+          patchType: "back-fill",
+          backFillPatchName: "ancestor-ids",
+          appVersion: undefined,
+          lastPatchedId: undefined,
+        },
+      });
+    });
+  });
+
+  it("does not re-lock or publish when already completed", async () => {
     txnGetMock.mockResolvedValue({exists: true, data: () => ({status: "completed"})});
 
     await distribution.queueGroupPatch({
       path: "/users/user1/feeds",
       patchType: "back-fill",
       backFillPatchName: "ancestor-ids",
-      force: true,
     });
 
-    expect(txnSetMock).toHaveBeenCalled();
-    expect(publishMessageSpy).toHaveBeenCalled();
+    expect(txnSetMock).not.toHaveBeenCalled();
+    expect(publishMessageSpy).not.toHaveBeenCalled();
+  });
+
+  it("skips the lock transaction entirely on a reschedule (lastPatchedId provided)", async () => {
+    // When a lastPatchedId is provided (a reschedule), the lock transaction is
+    // skipped entirely, so a re-trigger can never re-run the guard mid-chain.
+    await distribution.queueGroupPatch({
+      path: "/users/user1/feeds",
+      patchType: "back-fill",
+      backFillPatchName: "ancestor-ids",
+      lastPatchedId: "feed5",
+    });
+
+    expect(runTransactionSpy).not.toHaveBeenCalled();
+    expect(publishMessageSpy).toHaveBeenCalledTimes(1);
   });
 
   it("skips locking and publishes directly when lastPatchedId is provided", async () => {
@@ -1237,31 +1282,6 @@ describe("onMessageGroupPatchQueue", () => {
       lastPatchedId: "feed1",
     });
     expect(trackProcessedIdsMock).toHaveBeenCalledWith(GROUP_PATCH_TOPIC_NAME, event.id);
-  });
-
-  it("propagates force to patchGroupDocs", async () => {
-    const event = {
-      id: "test-event",
-      data: {
-        message: {
-          json: {
-            collectionPath: "/users/user1/feeds",
-            patchType: "back-fill",
-            backFillPatchName: "ancestor-ids",
-            force: true,
-          },
-        },
-      },
-    } as unknown as CloudEvent<MessagePublishedData>;
-
-    await distribution.onMessageGroupPatchQueue(event);
-
-    expect(patchGroupDocsSpy).toHaveBeenCalledWith(expect.objectContaining({
-      collectionPath: "/users/user1/feeds",
-      patchType: "back-fill",
-      backFillPatchName: "ancestor-ids",
-      force: true,
-    }));
   });
 
   it("dispatches to patchGroupDocs for patch-logics messages", async () => {
