@@ -1388,6 +1388,58 @@ describe("onMessageGroupPatchQueue", () => {
     // ...and the message is still marked processed.
     expect(trackProcessedIdsMock).toHaveBeenCalledWith(GROUP_PATCH_TOPIC_NAME, event.id);
   });
+
+  it("does NOT re-queue a hydrated path that still contains a placeholder (breaks the infinite loop)", async () => {
+    // Regression test for the backfill infinite loop: a templated path
+    // ("/topics/{topicId}/orders") is hydrated, but one of the returned paths
+    // still contains "{" because a real document id literally starts with "{"
+    // (bad data). Re-queueing that path would make onMessageGroupPatchQueue treat
+    // it as a template again (collectionPath.includes("{") === true) and hydrate
+    // it forever. The concrete path must still be re-queued as normal.
+    const hydratePathSpy = jest.spyOn(paths, "hydratePath").mockResolvedValue({
+      documentPaths: ["/topics/t1/orders", "/topics/{viewTopicId}/orders"],
+      hydrationState: undefined,
+    });
+    // queueGroupPatch (invoked per re-queued concrete path) locks + publishes.
+    jest.spyOn(admin.firestore(), "doc").mockReturnValue({
+      set: jest.fn(),
+    } as unknown as admin.firestore.DocumentReference);
+    jest.spyOn(admin.firestore(), "runTransaction")
+      .mockImplementation(async (fn: any) => fn({
+        get: jest.fn().mockResolvedValue({exists: false}),
+        set: jest.fn(),
+      }));
+    const publishMessageSpy = jest.spyOn(GROUP_PATCH_TOPIC, "publishMessage")
+      .mockImplementation(() => Promise.resolve("message-id"));
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation();
+    // This describe block does not reset spies between tests, and jest.spyOn
+    // reuses an already-installed spy, so clear any accumulated calls to keep the
+    // call-count assertions below accurate regardless of test ordering.
+    publishMessageSpy.mockClear();
+    warnSpy.mockClear();
+
+    const event = {
+      id: "test-event",
+      data: {message: {json: {collectionPath: "/topics/{topicId}/orders", patchType: "back-fill", backFillPatchName: "ancestor-ids"}}},
+    } as unknown as CloudEvent<MessagePublishedData>;
+
+    await distribution.onMessageGroupPatchQueue(event);
+
+    expect(hydratePathSpy).toHaveBeenCalled();
+    // Only the concrete path is re-queued; the "{" path is skipped, so exactly
+    // one message is published (for "/topics/t1/orders").
+    expect(publishMessageSpy).toHaveBeenCalledTimes(1);
+    expect(publishMessageSpy).toHaveBeenCalledWith({
+      json: expect.objectContaining({collectionPath: "/topics/t1/orders"}),
+    });
+    // The placeholder path is NEVER re-queued...
+    expect(publishMessageSpy).not.toHaveBeenCalledWith({
+      json: expect.objectContaining({collectionPath: expect.stringContaining("{")}),
+    });
+    // ...and a warning is emitted so the anomaly is visible instead of silent.
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("/topics/{viewTopicId}/orders"));
+    expect(trackProcessedIdsMock).toHaveBeenCalledWith(GROUP_PATCH_TOPIC_NAME, event.id);
+  });
 });
 
 describe("getGroupPatchProgress", () => {

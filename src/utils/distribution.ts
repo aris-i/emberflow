@@ -513,6 +513,19 @@ export async function onMessageGroupPatchQueue(event: CloudEvent<MessagePublishe
       console.log(`[GroupPatch] Hydrated ${documentPaths.length} paths for ${collectionPath}. Remaining batches: ${nextHydrationState ? "yes" : "no"}`);
 
       for (const path of documentPaths) {
+        // Guard against re-queueing a hydrated path that still contains a
+        // placeholder ("{"). Under normal template expansion, hydratePath only
+        // ever emits fully-resolved paths, so a "{" here means a real document
+        // id literally contains "{" (likely bad data written from an
+        // un-hydrated path). Re-queueing such a path would make it hydrate again
+        // (collectionPath.includes("{") is true), producing an infinite loop.
+        if (path.includes("{")) {
+          console.warn(
+            `[GroupPatch] Skipping re-queue of hydrated path that still contains a placeholder: ${path}. ` +
+            "This usually means a document id literally contains '{' (likely bad data written from an un-hydrated path)."
+          );
+          continue;
+        }
         // We trigger a patch for each hydrated path.
         // Note: These will go through the same queueGroupPatch logic,
         // so they will be tracked/locked individually. If the operator stamped
