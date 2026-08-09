@@ -1,4 +1,4 @@
-import {db, docPaths, docPathsRegex, VIEW_LOGICS_TOPIC, VIEW_LOGICS_TOPIC_NAME} from "../index";
+import {db, docPaths, docPathsRegex, viewDefinitions, VIEW_LOGICS_TOPIC, VIEW_LOGICS_TOPIC_NAME} from "../index";
 import * as admin from "firebase-admin";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
 import type {MessagePublishedData} from "firebase-functions/v2/pubsub";
@@ -26,6 +26,69 @@ import {
 } from "../utils/paths";
 import {versionCompare} from "./patch-logics";
 
+function formViewDocId(viewDstPath: string) {
+  let viewDocId = viewDstPath.replace(/[/#]/g, "+");
+  if (viewDocId.startsWith("+")) {
+    viewDocId = viewDocId.slice(1);
+  }
+  return viewDocId;
+}
+
+function formAtViewsPath(viewDstPath: string, srcPath: string) {
+  const viewDocId = formViewDocId(viewDstPath);
+  return `${srcPath}/@views/${viewDocId}`;
+}
+
+/*
+ * Builds the LogicResultDoc(s) that materialize an `@views` document linking a view
+ * destination (viewDstPath) back to its source document (srcPath), plus the array-map
+ * bookkeeping instruction when the destination is an array-map property.
+ *
+ * This is the single source of truth for the shape of a "view created" `@views` document and is
+ * shared between the automatic view-creation path (createViewLogicFn) and the manual
+ * back-fill utility (createViewDoc).
+ */
+function buildViewCreatedLogicDocs(
+  srcPath: string,
+  viewDstPath: string,
+  srcProps: string[],
+  destEntity: string,
+): LogicResultDoc[] {
+  const logicResultDocs: LogicResultDoc[] = [];
+
+  const srcAtViewsPath = formAtViewsPath(viewDstPath, srcPath);
+  const {
+    destProp: viewDestProp,
+    destPropId: viewDestPropId,
+    isArrayMap: viewIsArrayMap,
+    basePath: viewBasePath,
+  } = getDestPropAndDestPropId(viewDstPath);
+
+  logicResultDocs.push({
+    action: "merge",
+    dstPath: srcAtViewsPath,
+    doc: {
+      path: viewDstPath,
+      srcProps: [...srcProps].sort(),
+      destEntity,
+      ...(viewDestProp ? {destProp: viewDestProp} : {}),
+    },
+  });
+
+  if (viewDestProp && viewIsArrayMap) {
+    logicResultDocs.push({
+      action: "merge",
+      dstPath: viewBasePath,
+      instructions: {
+        [`@${viewDestProp}`]: `arr(+${viewDestPropId})`,
+      },
+      skipRunViewLogics: true,
+    });
+  }
+
+  return logicResultDocs;
+}
+
 export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[] {
   const {
     srcEntity: defSrcEntity,
@@ -38,52 +101,8 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
 
   const logicName = `${defDestEntity}${defDestProp ? `#${defDestProp.name}` : ""}`;
 
-  function formViewDocId(viewDstPath: string) {
-    let viewDocId = viewDstPath.replace(/[/#]/g, "+");
-    if (viewDocId.startsWith("+")) {
-      viewDocId = viewDocId.slice(1);
-    }
-    return viewDocId;
-  }
-
-  function formAtViewsPath(viewDstPath: string, srcPath: string) {
-    const viewDocId = formViewDocId(viewDstPath);
-    return `${srcPath}/@views/${viewDocId}`;
-  }
-
   function createLogicDocsWhenViewIsCreated(srcPath: string, viewDstPath: string) {
-    const logicResultDocs: LogicResultDoc[] = [];
-
-    const srcAtViewsPath = formAtViewsPath(viewDstPath, srcPath);
-    const {
-      destProp: viewDestProp,
-      destPropId: viewDestPropId,
-      isArrayMap: viewIsArrayMap,
-      basePath: viewBasePath,
-    } = getDestPropAndDestPropId(viewDstPath);
-    logicResultDocs.push({
-      action: "merge",
-      dstPath: srcAtViewsPath,
-      doc: {
-        path: viewDstPath,
-        srcProps: defSrcProps.sort(),
-        destEntity: defDestEntity,
-        ...(viewDestProp ? {destProp: viewDestProp} : {}),
-      },
-    });
-
-    if (viewDestProp && viewIsArrayMap) {
-      logicResultDocs.push({
-        action: "merge",
-        dstPath: viewBasePath,
-        instructions: {
-          [`@${viewDestProp}`]: `arr(+${viewDestPropId})`,
-        },
-        skipRunViewLogics: true,
-      });
-    }
-
-    return logicResultDocs;
+    return buildViewCreatedLogicDocs(srcPath, viewDstPath, defSrcProps, defDestEntity);
   }
 
   function createLogicDocsWhenViewIsDeleted(srcPath: string, viewDstPath: string) {
@@ -694,5 +713,60 @@ export const findMatchingViewLogics = (logicResultDoc: LogicResultDoc, targetVer
 
   return matchingLogics;
 };
+
+/**
+ * Builds the LogicResultDoc(s) required to create an `@views` document that manually links a
+ * view destination (`viewDstPath`) back to its source document (`srcPath`).
+ *
+ * This is intended for use inside back-fill patches that need to materialize an `@views` link
+ * by hand. Rather than trusting caller-supplied values, the `srcProps` and `destEntity` recorded
+ * in the produced `@views` document are derived from the registered {@link ViewDefinition}, so the
+ * resulting document is guaranteed to be consistent with the framework's view logic. When the view
+ * destination is an array-map property, an additional instruction is emitted to register the source
+ * id in the destination's `@`-prefixed array, mirroring the automatic view-creation path.
+ *
+ * The returned docs are meant to be distributed through the normal framework pipeline (e.g. via
+ * the same mechanism a patch uses to emit its LogicResultDocs), NOT written directly to Firestore.
+ *
+ * @param {string} srcPath The source document path (e.g. "users/1234").
+ * @param {string} viewDstPath The view destination path (e.g. "users/1/posts/9#followers[1234]" or "servers/123#createdBy").
+ * @return {LogicResultDoc[]} The merge (and, for array-map views, instruction) docs to distribute.
+ * @throws {Error} If the src/dst entities cannot be resolved or no matching ViewDefinition is registered.
+ */
+export function createViewDoc(srcPath: string, viewDstPath: string): LogicResultDoc[] {
+  const {entity: srcEntity} = findMatchingDocPathRegex(srcPath);
+  if (!srcEntity) {
+    throw new Error(`Cannot resolve src entity from srcPath: ${srcPath}`);
+  }
+
+  const {
+    basePath: viewBasePath,
+    destProp: viewDestProp,
+  } = getDestPropAndDestPropId(viewDstPath);
+
+  const {entity: destEntity} = findMatchingDocPathRegex(viewBasePath);
+  if (!destEntity) {
+    throw new Error(`Cannot resolve dest entity from viewDstPath: ${viewDstPath}`);
+  }
+
+  const matchingViewDefinitions = viewDefinitions.filter((viewDefinition) =>
+    viewDefinition.srcEntity === srcEntity &&
+    viewDefinition.destEntity === destEntity &&
+    (viewDefinition.destProp?.name || undefined) === (viewDestProp || undefined)
+  );
+  if (matchingViewDefinitions.length === 0) {
+    throw new Error(
+      `No matching ViewDefinition found for srcEntity="${srcEntity}", destEntity="${destEntity}"` +
+      `${viewDestProp ? `, destProp="${viewDestProp}"` : ""}`
+    );
+  }
+
+  // When multiple versions of a definition match, use the latest one.
+  const matchedViewDefinition = matchingViewDefinitions.reduce((latest, current) =>
+    versionCompare(current.version, latest.version) > 0 ? current : latest
+  );
+
+  return buildViewCreatedLogicDocs(srcPath, viewDstPath, matchedViewDefinition.srcProps, destEntity);
+}
 
 

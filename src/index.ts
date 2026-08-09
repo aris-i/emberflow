@@ -50,6 +50,7 @@ import {
 } from "./logics/patch-logics";
 import {initDbStructure} from "./init-db-structure";
 import {
+  createViewDoc,
   createViewLogicFn,
   findMatchingViewLogics,
   onMessageViewLogicsQueue,
@@ -82,7 +83,7 @@ import {debounce} from "./utils/functions";
 import {extractTransactionGetOnly} from "./utils/transaction";
 import Database = database.Database;
 
-export {queueGroupPatch, getGroupPatchProgress, ancestorIdsPatchConfig};
+export {queueGroupPatch, getGroupPatchProgress, ancestorIdsPatchConfig, createViewDoc};
 export let admin: FirebaseAdmin;
 export let db: Firestore;
 export let rtdb: Database;
@@ -99,6 +100,7 @@ export let docPaths: Record<string, string> = {};
 export let colPaths: Record<string, string> = {};
 export let docPathsRegex: Record<string, RegExp> = {};
 export let entityViewDefinitions: EntityViewDefinitions = {};
+export let viewDefinitions: ViewDefinition[] = [];
 export let viewLogicConfigs: ViewLogicConfig[] = [];
 export let projectConfig: ProjectConfig;
 export const functionsConfig: Record<string, any> = {};
@@ -193,6 +195,7 @@ export function initializeEmberFlow(
   colPaths = cp;
   docPathsRegex = dbr;
   entityViewDefinitions = evd;
+  viewDefinitions = vd;
 
   viewLogicConfigs = vd.map((viewDef: ViewDefinition): ViewLogicConfig[] => {
     const {destEntity, destProp} = viewDef;

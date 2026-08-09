@@ -56,15 +56,15 @@ admin.initializeApp({
 });
 jest.spyOn(pathsMockable, "doesPathExists").mockResolvedValue(true);
 initializeEmberFlow({
-      projectConfig,
-      admin,
-      dbStructure,
-      Entity,
-      securityConfigs,
-      validatorConfigs,
-      logicConfigs: [],
-      patchLogicConfigs: [],
-    });
+  projectConfig,
+  admin,
+  dbStructure,
+  Entity,
+  securityConfigs,
+  validatorConfigs,
+  logicConfigs: [],
+  patchLogicConfigs: [],
+});
 
 const vd1: ViewDefinition = {
   srcEntity: "user",
@@ -1791,5 +1791,105 @@ describe("findMatchingViewLogics", () => {
     // It should include the reverse view logic because merge is now a valid action
     // and dstPath correctly routes to the entity "user" with destProp "todosArray"
     expect(result?.has("user#todosArray Reverse ViewLogic")).toBe(true);
+  });
+});
+
+describe("createViewDoc", () => {
+  beforeEach(() => {
+    jest.restoreAllMocks();
+    jest.spyOn(pathsMockable, "doesPathExists").mockResolvedValue(true);
+    initializeEmberFlow({
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs,
+      validatorConfigs,
+      logicConfigs: [],
+      patchLogicConfigs: [],
+    });
+  });
+
+  it("should build a consistent @views doc for a map propView", () => {
+    const result = viewLogics.createViewDoc("users/1234", "topics/t1#createdBy");
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({
+      action: "merge",
+      dstPath: "users/1234/@views/topics+t1+createdBy",
+      doc: {
+        path: "topics/t1#createdBy",
+        srcProps: ["email", "name"],
+        destEntity: "topic",
+        destProp: "createdBy",
+      },
+    });
+  });
+
+  it("should build an @views doc plus array-map instruction for an array-map propView", () => {
+    const result = viewLogics.createViewDoc("users/1234", "servers/123#followers[1234]");
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual({
+      action: "merge",
+      dstPath: "users/1234/@views/servers+123+followers[1234]",
+      doc: {
+        path: "servers/123#followers[1234]",
+        srcProps: ["email", "name"],
+        destEntity: "server",
+        destProp: "followers",
+      },
+    });
+    expect(result[1]).toEqual({
+      action: "merge",
+      dstPath: "servers/123",
+      instructions: {
+        "@followers": "arr(+1234)",
+      },
+      skipRunViewLogics: true,
+    });
+  });
+
+  it("should build an @views doc without destProp for a full-document view", () => {
+    const result = viewLogics.createViewDoc("users/1234", "servers/123/members/m1");
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({
+      action: "merge",
+      dstPath: "users/1234/@views/servers+123+members+m1",
+      doc: {
+        path: "servers/123/members/m1",
+        srcProps: ["name"],
+        destEntity: "member",
+      },
+    });
+    expect(result[0].doc).not.toHaveProperty("destProp");
+  });
+
+  it("should use the srcProps of the latest matching view definition version", () => {
+    // todosCollection registers view(Topic, ["title"])@1.0.0 and view(Topic, ["title","name"])@2.0.0
+    const result = viewLogics.createViewDoc("topics/t1", "users/999/todosCollection/td1");
+
+    expect(result).toHaveLength(1);
+    expect(result[0].doc).toEqual({
+      path: "users/999/todosCollection/td1",
+      srcProps: ["name", "title"],
+      destEntity: "todos",
+    });
+  });
+
+  it("should throw when no matching view definition exists", () => {
+    expect(() => viewLogics.createViewDoc("users/1234", "servers/123#nonexistent"))
+      .toThrow(/No matching ViewDefinition/);
+  });
+
+  it("should throw when the src entity cannot be resolved", () => {
+    expect(() => viewLogics.createViewDoc("nonexistent/1", "servers/123#createdBy"))
+      .toThrow(/Cannot resolve src entity/);
+  });
+
+  it("should throw when the dest entity cannot be resolved", () => {
+    expect(() => viewLogics.createViewDoc("users/1234", "nonexistent/1#createdBy"))
+      .toThrow(/Cannot resolve dest entity/);
   });
 });
