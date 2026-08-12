@@ -8,6 +8,7 @@ Emberflow is a library for Firebase Functions that simplifies the process of set
 - **Validation**: Ensure your data is valid before it's saved to Firestore.
 - **Business Logics**: Define complex business rules that are automatically triggered by Firestore changes.
 - **View Logics**: Easily create and maintain denormalized data (views) across your database.
+- **Manual View Materialization**: Hand-create `@views` links with `createViewDoc` for back-fills, guaranteed consistent with your registered `ViewDefinition`s.
 - **Patch Logics**: Handle versioning and data migrations seamlessly.
 - **Group Patch Engine**: Run one-time back-fills or bulk patch-logics runs over an entire collection, with progress tracking.
 - **Pluggable Cleanup**: Automatically purge stale documents on a schedule using declarative, config-driven cleanup rules.
@@ -348,6 +349,48 @@ running against the same collection never clobber each other's status. The statu
 > collections, each of which gets its own status doc + in-flight guard. Therefore no status doc is
 > created for the placeholder path, and `getGroupPatchProgress` returns `undefined` for it. Query
 > progress on the concrete collection paths (e.g. `/users/user123/feeds`) instead.
+
+> **Placeholder-safe hydration.** When a placeholder path is hydrated into concrete document paths,
+> Emberflow skips re-queueing any hydrated path that *still* contains a `{`. A leftover `{` means a
+> real document id literally contains `{` (usually bad data written from an un-hydrated path);
+> re-queueing it would hydrate again and loop forever, so the path is skipped and a warning is
+> logged instead.
+
+### Creating View Docs Manually (`createViewDoc`)
+
+Emberflow normally keeps `@views` documents (the links that let a source document fan its changes
+out to denormalized views) in sync automatically through **View Logics**. When you need to
+materialize one of these links **by hand** — most commonly inside a
+[`BackFillPatchConfig`](#group-patch-engine-queuegrouppatch-getgrouppatchprogress-backfillpatchconfig)
+that back-fills views for documents created before a view existed — use the public `createViewDoc`
+helper:
+
+```typescript
+import { createViewDoc } from "emberflow";
+
+// Link the source document `users/1234` to a view destination.
+// - map/document view:            "servers/123#createdBy"
+// - array-map (collection) view:  "users/1/posts/9#followers[1234]"
+const logicResultDocs = createViewDoc("users/1234", "servers/123#createdBy");
+```
+
+`createViewDoc(srcPath, viewDstPath)` returns an array of `LogicResultDoc`s describing the `@views`
+document(s) to create:
+
+- It resolves the source and destination **entities** from the given paths and looks up the
+  matching registered `ViewDefinition` (using the latest version when several match). The
+  `srcProps` and `destEntity` stored in the resulting `@views` document are taken from that
+  `ViewDefinition` — **not** from caller-supplied values — so the link is guaranteed to be
+  consistent with the framework's own view logic.
+- For **array-map** view destinations (e.g. `...#followers[1234]`), it also emits an instruction
+  that registers the source id in the destination's `@`-prefixed array, mirroring the automatic
+  view-creation path.
+- It **throws** if the source/destination entity can't be resolved from the paths, or if no
+  matching `ViewDefinition` is registered.
+
+> The returned docs are meant to be **distributed through the normal Emberflow pipeline** (e.g.
+> returned as the `documents` of a patch/back-fill `LogicResult`), **not** written directly to
+> Firestore.
 
 ### Collection Cleanup (`cleanupConfigs`, `CleanupConfig`)
 
