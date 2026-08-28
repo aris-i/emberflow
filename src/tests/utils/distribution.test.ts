@@ -329,6 +329,48 @@ describe("convertInstructionsToDbValues", () => {
     });
   });
 
+  describe("Nested instructions", () => {
+    it("should handle nested instructions correctly", async () => {
+      const instructions = {
+        "user": {
+          "score": "++",
+          "counters": {
+            "games": "+5",
+            "wins": "--",
+          },
+        },
+      };
+      const result = await distribution.convertInstructionsToDbValues(transactionMock, instructions);
+
+      expect(result.updateData).toStrictEqual({
+        "user.score": FieldValue.increment(1),
+        "user.counters.games": FieldValue.increment(5),
+        "user.counters.wins": FieldValue.increment(-1),
+      });
+      expect(result.removeData).toStrictEqual({});
+    });
+
+    it("should handle mixed nested instructions and array operations", async () => {
+      const instructions = {
+        "tags": "arr(+tag1, -tag2)",
+        "meta": {
+          "items": "arr(+item1)",
+          "count": "++",
+        },
+      };
+      const result = await distribution.convertInstructionsToDbValues(transactionMock, instructions);
+
+      expect(result.updateData).toStrictEqual({
+        "tags": FieldValue.arrayUnion("tag1"),
+        "meta.items": FieldValue.arrayUnion("item1"),
+        "meta.count": FieldValue.increment(1),
+      });
+      expect(result.removeData).toStrictEqual({
+        "tags": FieldValue.arrayRemove("tag2"),
+      });
+    });
+  });
+
   it("should add parsed instructions to destProp if has destProp", async () => {
     const dstPath = "/users/test-user-id/documents/test-doc-id#counters";
     const {destProp, destPropId} = getDestPropAndDestPropId(dstPath);
@@ -968,6 +1010,55 @@ describe("mergeInstructions", () => {
     });
     distribution.mergeInstructions(existingInstructions, instructions2);
     expect(console.warn).toHaveBeenCalledWith("Property count has conflicting instructions ++ and arr(+value). Skipping..");
+  });
+
+  it("should merge nested object instructions correctly", () => {
+    const instructions1 = {
+      "user": {
+        "score": "++",
+        "counters": {
+          "games": "+5",
+        },
+      },
+    };
+    const instructions2 = {
+      "user": {
+        "score": "++",
+        "counters": {
+          "games": "-2",
+          "wins": "+1",
+        },
+      },
+    };
+    const existingInstructions: any = {
+      "user": {
+        "score": "+1",
+        "counters": {
+          "games": "+1",
+        },
+      },
+    };
+
+    distribution.mergeInstructions(existingInstructions, instructions1);
+    expect(existingInstructions).toStrictEqual({
+      "user": {
+        "score": "+2",
+        "counters": {
+          "games": "+6",
+        },
+      },
+    });
+
+    distribution.mergeInstructions(existingInstructions, instructions2);
+    expect(existingInstructions).toStrictEqual({
+      "user": {
+        "score": "+3",
+        "counters": {
+          "games": "+4",
+          "wins": "+1",
+        },
+      },
+    });
   });
 });
 

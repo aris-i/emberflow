@@ -1962,11 +1962,11 @@ describe("createMetricExecution", () => {
     expect(setMock).toHaveBeenNthCalledWith(1, {
       execDate: expect.any(Timestamp),
       execTime: logicResult1.execTime,
-    });
+    }, {merge: true});
     expect(setMock).toHaveBeenNthCalledWith(2, {
       execDate: expect.any(Timestamp),
       execTime: logicResult2.execTime,
-    });
+    }, {merge: true});
   });
 });
 
@@ -2088,7 +2088,7 @@ describe("createMetricComputation", () => {
       execCount,
       avgExecTime,
       jitterTime,
-    });
+    }, {merge: true});
   });
 });
 

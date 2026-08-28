@@ -104,7 +104,7 @@ export interface JournalEntry {
     recordEntry?: boolean;
 }
 
-export type Instructions = { [key: string]: string };
+export type Instructions = { [key: string]: string | Instructions };
 export interface InstructionsMessage{
     dstPath: string;
     instructions: Instructions;

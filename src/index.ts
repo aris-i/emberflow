@@ -561,7 +561,7 @@ export async function onFormSubmit(
         action.status = "processed";
       }
 
-      txn.set(actionRef, action);
+      txn.set(actionRef, action, {merge: true});
       async function saveLogicResults() {
         for (let i = 0; i < runBusinessLogicStatus.logicResults.length; i++) {
           const {documents, ...logicResult} = runBusinessLogicStatus.logicResults[i];
