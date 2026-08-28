@@ -567,11 +567,11 @@ export async function onFormSubmit(
           const {documents, ...logicResult} = runBusinessLogicStatus.logicResults[i];
           const logicResultsRef = actionRef.collection("logicResults")
             .doc(`${actionRef.id}-${i}`);
-          txn.set(logicResultsRef, logicResult);
+          txn.set(logicResultsRef, logicResult, {merge: true});
           const documentsRef = logicResultsRef.collection("documents");
           for (let j = 0; j < documents.length; j++) {
             const docRef = documentsRef.doc(`${logicResultsRef.id}-${j}`);
-            txn.set(docRef, documents[j]);
+            txn.set(docRef, documents[j], {merge: true});
           }
         }
       }
@@ -867,7 +867,7 @@ export const onUserRegister = async (user: UserRecord) => {
       "username": email || providerEmail,
       "email": email || providerEmail,
       "registeredAt": _mockable.createNowTimestamp(),
-    });
+    }, {merge: true});
 
 
     const customUserRegisterFn = userRegisterFn;
