@@ -594,7 +594,7 @@ describe("onFormSubmit", () => {
 
     // Test that the runBusinessLogics function was called with the correct parameters
     const actionRef = _mockable.initActionRef(event.params.formId);
-    expect(transactionSetMock).toHaveBeenNthCalledWith(1, actionRef, expectedAction);
+    expect(transactionSetMock).toHaveBeenNthCalledWith(1, actionRef, expectedAction, {merge: true});
 
     // form should still finish successfully
     expect(refMock.update).toHaveBeenCalledTimes(3);
@@ -609,7 +609,7 @@ describe("onFormSubmit", () => {
       message: errorMessage,
       name: "testLogic",
       timeFinished: expect.any(Timestamp),
-    });
+    }, {merge: true});
 
     validateFormMock.mockReset();
     getFormModifiedFieldsMock.mockReset();

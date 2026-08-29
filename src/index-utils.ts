@@ -668,7 +668,7 @@ export async function createMetricLogicDoc(logicName: string) {
     await metricsRef.set({
       totalExecTime: 0,
       totalExecCount: 0,
-    });
+    }, {merge: true});
   }
 }
 
@@ -702,7 +702,7 @@ async function saveMetricExecution(metricExecutions: MetricExecution[]) {
     await execRef.set({
       execDate: admin.firestore.Timestamp.now(),
       execTime,
-    });
+    }, {merge: true});
   }
 }
 
@@ -750,7 +750,7 @@ export async function createMetricComputation(_event: ScheduledEvent) {
       execCount,
       avgExecTime,
       jitterTime,
-    });
+    }, {merge: true});
   }
 }
 

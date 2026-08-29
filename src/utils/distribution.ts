@@ -1,5 +1,5 @@
 import {GroupPatchMessage, GroupPatchProgress, GroupPatchType, Instructions, InstructionsMessage, LogicResultDoc} from "../types";
-import {hydratePath} from "./paths";
+import {hydratePath, getDestPropAndDestPropId, findMatchingDocPathRegex} from "./paths";
 import {
   GROUP_PATCH_TOPIC,
   GROUP_PATCH_TOPIC_NAME,
@@ -18,13 +18,112 @@ import {pubsubUtils} from "./pubsub";
 import {reviveDateAndTimestamp} from "./misc";
 import FieldValue = firestore.FieldValue;
 import Transaction = firestore.Transaction;
-import {getDestPropAndDestPropId, findMatchingDocPathRegex} from "./paths";
 import {findMatchingViewLogics, queueRunViewLogics} from "../logics/view-logics";
 import {findMatchingPatchLogicsByEntity, queueRunPatchLogics} from "../logics/patch-logics";
+
+/**
+ * Converts a live Firestore {@link FieldValue} sentinel into its JSON-safe
+ * instruction-string equivalent. Sentinels cannot survive `JSON.stringify`
+ * (they collapse to `{}`), so any sentinel embedded in a `LogicResultDoc.doc`
+ * must be turned into an instruction before the doc is queued.
+ *
+ * Returns `undefined` for values that are not a supported sentinel.
+ *
+ * @param {any} value - The value to inspect, possibly a FieldValue sentinel.
+ * @return {string | undefined} The equivalent instruction string, or undefined.
+ */
+export function sentinelToInstruction(value: any): string | undefined {
+  if (!(value instanceof admin.firestore.FieldValue)) {
+    return undefined;
+  }
+
+  // `methodName` is exposed by every FieldTransform subclass and uniquely
+  // identifies the kind of sentinel.
+  const methodName = (value as any).methodName as string | undefined;
+
+  if (methodName === "FieldValue.delete") {
+    return "del";
+  }
+  if (methodName === "FieldValue.serverTimestamp") {
+    return "serverTimestamp";
+  }
+  if (methodName === "FieldValue.increment") {
+    const operand = (value as any).operand as number;
+    if (operand === 1) {
+      return "++";
+    }
+    if (operand === -1) {
+      return "--";
+    }
+    return operand >= 0 ? `+${operand}` : `${operand}`;
+  }
+  if (methodName === "FieldValue.arrayUnion") {
+    const elements = (value as any).elements as any[];
+    return `arr(${elements.map((element) => `+${element}`).join(",")})`;
+  }
+  if (methodName === "FieldValue.arrayRemove") {
+    const elements = (value as any).elements as any[];
+    return `arr(${elements.map((element) => `-${element}`).join(",")})`;
+  }
+
+  return undefined;
+}
+
+/**
+ * Walks `doc` and extracts every {@link FieldValue} sentinel into a matching
+ * (possibly nested) {@link Instructions} object, removing the extracted keys
+ * from `doc` so an empty/lossy value is not merged back on the queued path.
+ *
+ * Only plain object branches are traversed; arrays, Timestamps, Dates and other
+ * class instances are left untouched.
+ *
+ * @param {object} doc - The document to walk; extracted sentinel keys are removed in place.
+ * @return {Instructions} The extracted (possibly nested) instructions.
+ */
+export function extractSentinelsFromDoc(doc: { [key: string]: any }): Instructions {
+  const instructions: Instructions = {};
+  for (const key of Object.keys(doc)) {
+    const value = doc[key];
+
+    const instruction = sentinelToInstruction(value);
+    if (instruction !== undefined) {
+      instructions[key] = instruction;
+      delete doc[key];
+      continue;
+    }
+
+    // Unsupported sentinel: fail loudly instead of silently losing it to JSON.
+    if (value instanceof admin.firestore.FieldValue) {
+      console.warn(
+        `Unsupported FieldValue sentinel at property "${key}"; it will be lost during JSON serialization.`
+      );
+      continue;
+    }
+
+    // Recurse only into plain object branches (skip arrays, Timestamps, Dates, etc.).
+    if (value !== null && typeof value === "object" && value.constructor === Object) {
+      const nested = extractSentinelsFromDoc(value);
+      if (Object.keys(nested).length > 0) {
+        instructions[key] = nested;
+      }
+    }
+  }
+  return instructions;
+}
 
 export const queueForDistributionLater = async (appVersion: string, targetVersion: string, ...logicResultDocs: LogicResultDoc[]) => {
   try {
     for (const logicResultDoc of logicResultDocs) {
+      if (logicResultDoc.doc) {
+        const extractedInstructions = extractSentinelsFromDoc(logicResultDoc.doc);
+        if (Object.keys(extractedInstructions).length > 0) {
+          if (logicResultDoc.instructions) {
+            mergeInstructions(logicResultDoc.instructions, extractedInstructions);
+          } else {
+            logicResultDoc.instructions = extractedInstructions as Record<string, string>;
+          }
+        }
+      }
       const forDistributionMessageId = await FOR_DISTRIBUTION_TOPIC.publishMessage(
         {json: {doc: logicResultDoc, targetVersion, appVersion}}
       );
@@ -107,37 +206,57 @@ export async function convertInstructionsToDbValues(txn: Transaction, instructio
     actualRemoveData = removeData;
   }
 
+  await _convert(txn, instructions, updateData, removeData);
+
+  // Clean up to empty destProps to avoid overriding whole object
+  if (destProp && Object.keys(updateData).length == 0) {
+    actualUpdateData = {};
+  }
+  if (destProp && Object.keys(removeData).length == 0) {
+    actualRemoveData = {};
+  }
+
+  return {updateData: actualUpdateData, removeData: actualRemoveData};
+}
+
+async function _convert(txn: Transaction, instructions: Instructions, updateData: any, removeData: any, path = "") {
   for (const [property, instruction] of Object.entries(instructions)) {
+    const currentPath = path ? `${path}.${property}` : property;
+    if (typeof instruction === "object") {
+      await _convert(txn, instruction as Instructions, updateData, removeData, currentPath);
+      continue;
+    }
+
     if (instruction === "++") {
-      updateData[property] = admin.firestore.FieldValue.increment(1);
+      updateData[currentPath] = admin.firestore.FieldValue.increment(1);
     } else if (instruction === "--") {
-      updateData[property] = admin.firestore.FieldValue.increment(-1);
+      updateData[currentPath] = admin.firestore.FieldValue.increment(-1);
     } else if (instruction.startsWith("+")) {
       const incrementValue = parseFloat(instruction.slice(1));
       if (isNaN(incrementValue)) {
-        console.log(`Invalid increment value ${instruction} for property ${property}`);
+        console.log(`Invalid increment value ${instruction} for property ${currentPath}`);
       } else {
-        updateData[property] = admin.firestore.FieldValue.increment(incrementValue);
+        updateData[currentPath] = admin.firestore.FieldValue.increment(incrementValue);
       }
     } else if (instruction.startsWith("-")) {
       const decrementValue = parseFloat(instruction.slice(1));
       if (isNaN(decrementValue)) {
-        console.log(`Invalid decrement value ${instruction} for property ${property}`);
+        console.log(`Invalid decrement value ${instruction} for property ${currentPath}`);
       } else {
-        updateData[property] = admin.firestore.FieldValue.increment(-decrementValue);
+        updateData[currentPath] = admin.firestore.FieldValue.increment(-decrementValue);
       }
     } else if (instruction.startsWith("arr")) {
       const regex = /\((.*?)\)/;
       const match = instruction.match(regex);
 
       if (!match) {
-        console.log(`Invalid instruction ${instruction} for property ${property}`);
+        console.log(`Invalid instruction ${instruction} for property ${currentPath}`);
         continue;
       }
 
       const paramsStr = match[1];
       if (!paramsStr) {
-        console.log(`No values found in instruction ${instruction} for property ${property}`);
+        console.log(`No values found in instruction ${instruction} for property ${currentPath}`);
         continue;
       }
 
@@ -157,19 +276,21 @@ export async function convertInstructionsToDbValues(txn: Transaction, instructio
         valuesToAdd.push(value);
       }
       if (valuesToAdd.length > 0) {
-        updateData[property] = admin.firestore.FieldValue.arrayUnion(...valuesToAdd);
+        updateData[currentPath] = admin.firestore.FieldValue.arrayUnion(...valuesToAdd);
       }
       if (valuesToRemove.length > 0) {
-        removeData[property] = admin.firestore.FieldValue.arrayRemove(...valuesToRemove);
+        removeData[currentPath] = admin.firestore.FieldValue.arrayRemove(...valuesToRemove);
       }
     } else if (instruction === "del") {
-      updateData[property] = admin.firestore.FieldValue.delete();
+      updateData[currentPath] = admin.firestore.FieldValue.delete();
+    } else if (instruction === "serverTimestamp") {
+      updateData[currentPath] = admin.firestore.FieldValue.serverTimestamp();
     } else if (instruction.startsWith("globalCounter")) {
       const regex = /globalCounter\(([^,]+)(?:,\s*(\d+))?\)/;
       const match = instruction.match(regex);
 
       if (!match) {
-        console.log(`Invalid global instruction ${instruction} for property ${property}`);
+        console.log(`Invalid global instruction ${instruction} for property ${currentPath}`);
         continue;
       }
 
@@ -201,25 +322,14 @@ export async function convertInstructionsToDbValues(txn: Transaction, instructio
             "lastUpdatedAt": now,
           });
         }
-        updateData[property] = newCount;
+        updateData[currentPath] = newCount;
       } catch (error) {
         console.error(error);
       }
     } else {
-      console.log(`Invalid instruction ${instruction} for property ${property}`);
+      console.log(`Invalid instruction ${instruction} for property ${currentPath}`);
     }
   }
-
-  // Clean up to empty destProps to avoid overriding whole object
-  if (destProp && Object.keys(updateData).length == 0) {
-    actualUpdateData = {};
-  }
-
-  if (destProp && Object.keys(removeData).length == 0) {
-    actualRemoveData = {};
-  }
-
-  return {updateData: actualUpdateData, removeData: actualRemoveData};
 }
 
 export async function onMessageInstructionsQueue(event: CloudEvent<MessagePublishedData> | Map<string, Instructions>) {
@@ -302,8 +412,25 @@ export const mergeInstructions = (existingInstructions: Instructions, instructio
   for (const property of Object.keys(instructions)) {
     const existingInstruction = existingInstructions[property];
     const instruction = instructions[property];
+
+    if (typeof instruction === "object") {
+      if (typeof existingInstruction === "string") {
+        continue;
+      }
+      if (!existingInstruction) {
+        existingInstructions[property] = instruction;
+        continue;
+      }
+      mergeInstructions(existingInstruction as Instructions, instruction as Instructions);
+      continue;
+    }
+
     if (!existingInstruction) {
       existingInstructions[property] = instruction;
+      continue;
+    }
+
+    if (typeof existingInstruction === "object") {
       continue;
     }
 
@@ -347,6 +474,11 @@ export const mergeInstructions = (existingInstructions: Instructions, instructio
 
     if (instruction === "del") {
       existingInstructions[property] = "del";
+      continue;
+    }
+
+    // Identical non-arithmetic instructions (e.g. serverTimestamp) are idempotent; keep as-is.
+    if (existingInstruction === instruction) {
       continue;
     }
 

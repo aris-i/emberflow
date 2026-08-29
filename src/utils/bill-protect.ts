@@ -49,7 +49,7 @@ async function fetchAndInitFuncConfig(db: FirebaseFirestore.Firestore, funcName:
       pricePer1MInvocation: 0.40,
       enabled: true,
     };
-    await funcConfigRef.set(funcConfigData);
+    await funcConfigRef.set(funcConfigData, {merge: true});
   } else {
     funcConfigData = funcConfig.data() as FuncConfigData;
   }
@@ -67,7 +67,7 @@ async function fetchAndInitFuncUsage(db: FirebaseFirestore.Firestore, funcName: 
   let funcUsageData: FuncUsageData;
   if (!funcUsage.exists) {
     funcUsageData = {totalElapsedTimeInMs: 0, totalInvocations: 0};
-    await funcUsageRef.set(funcUsageData);
+    await funcUsageRef.set(funcUsageData, {merge: true});
   } else {
     funcUsageData = funcUsage.data() as FuncUsageData;
   }

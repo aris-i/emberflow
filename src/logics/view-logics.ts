@@ -616,11 +616,11 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
           message: message || null,
           srcLogicResultDoc,
           documentsCount: documents.length,
-        });
+        }, {merge: true});
 
         for (const doc of documents) {
           const docRef = execRef.collection("docs").doc();
-          batch.set(docRef, doc);
+          batch.set(docRef, doc, {merge: true});
         }
         await batch.commit();
       }
