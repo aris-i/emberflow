@@ -92,6 +92,130 @@ describe("queueForDistributionLater", () => {
 
     expect(publishMessageSpy).toHaveBeenCalledWith({json: {doc: doc1, targetVersion, appVersion}});
   });
+
+  it("should convert FieldValue sentinels inside doc to instructions before queueing", async () => {
+    const doc1: LogicResultDoc = {
+      action: "merge",
+      priority: "normal",
+      doc: {
+        name: "test-doc-name-updated",
+        count: FieldValue.increment(1),
+        score: FieldValue.increment(5),
+        losses: FieldValue.increment(-2),
+        tags: FieldValue.arrayUnion("a", "b"),
+        oldTags: FieldValue.arrayRemove("c"),
+        obsolete: FieldValue.delete(),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      dstPath: "/users/test-user-id/documents/doc1",
+    };
+    await distribution.queueForDistributionLater(appVersion, targetVersion, doc1);
+
+    // Sentinels are stripped from doc, only plain data remains
+    expect(doc1.doc).toEqual({name: "test-doc-name-updated"});
+    // Sentinels become instruction strings
+    expect(doc1.instructions).toEqual({
+      count: "++",
+      score: "+5",
+      losses: "-2",
+      tags: "arr(+a,+b)",
+      oldTags: "arr(-c)",
+      obsolete: "del",
+      updatedAt: "serverTimestamp",
+    });
+    expect(publishMessageSpy).toHaveBeenCalledWith({json: {doc: doc1, targetVersion, appVersion}});
+  });
+
+  it("should merge converted sentinels into existing instructions", async () => {
+    const doc1: LogicResultDoc = {
+      action: "merge",
+      priority: "normal",
+      doc: {
+        name: "test-doc-name-updated",
+        count: FieldValue.increment(1),
+      },
+      instructions: {
+        count: "++",
+        score: "+5",
+      },
+      dstPath: "/users/test-user-id/documents/doc1",
+    };
+    await distribution.queueForDistributionLater(appVersion, targetVersion, doc1);
+
+    expect(doc1.doc).toEqual({name: "test-doc-name-updated"});
+    // Existing "++" and converted "++" for count are summed to "+2"
+    expect(doc1.instructions).toEqual({
+      count: "+2",
+      score: "+5",
+    });
+  });
+
+  it("should convert nested FieldValue sentinels into nested instructions", async () => {
+    const doc1: LogicResultDoc = {
+      action: "merge",
+      priority: "normal",
+      doc: {
+        name: "test-doc-name-updated",
+        user: {
+          token: FieldValue.delete(),
+          counters: {
+            games: FieldValue.increment(1),
+          },
+        },
+      },
+      dstPath: "/users/test-user-id/documents/doc1",
+    };
+    await distribution.queueForDistributionLater(appVersion, targetVersion, doc1);
+
+    expect(doc1.doc).toEqual({
+      name: "test-doc-name-updated",
+      user: {counters: {}},
+    });
+    expect(doc1.instructions).toEqual({
+      user: {
+        token: "del",
+        counters: {
+          games: "++",
+        },
+      },
+    });
+  });
+});
+
+describe("sentinelToInstruction", () => {
+  it("should map every supported sentinel to its instruction string", () => {
+    expect(distribution.sentinelToInstruction(FieldValue.delete())).toBe("del");
+    expect(distribution.sentinelToInstruction(FieldValue.serverTimestamp())).toBe("serverTimestamp");
+    expect(distribution.sentinelToInstruction(FieldValue.increment(1))).toBe("++");
+    expect(distribution.sentinelToInstruction(FieldValue.increment(-1))).toBe("--");
+    expect(distribution.sentinelToInstruction(FieldValue.increment(5))).toBe("+5");
+    expect(distribution.sentinelToInstruction(FieldValue.increment(-3))).toBe("-3");
+    expect(distribution.sentinelToInstruction(FieldValue.arrayUnion("a", "b"))).toBe("arr(+a,+b)");
+    expect(distribution.sentinelToInstruction(FieldValue.arrayRemove("a", "b"))).toBe("arr(-a,-b)");
+  });
+
+  it("should return undefined for non-sentinel values", () => {
+    expect(distribution.sentinelToInstruction("plain")).toBeUndefined();
+    expect(distribution.sentinelToInstruction(123)).toBeUndefined();
+    expect(distribution.sentinelToInstruction({a: 1})).toBeUndefined();
+    expect(distribution.sentinelToInstruction(null)).toBeUndefined();
+  });
+});
+
+describe("extractSentinelsFromDoc", () => {
+  it("should leave arrays, Timestamps and plain values untouched", () => {
+    const now = admin.firestore.Timestamp.now();
+    const doc = {
+      name: "keep",
+      list: [1, 2, 3],
+      when: now,
+      count: FieldValue.increment(1),
+    };
+    const instructions = distribution.extractSentinelsFromDoc(doc);
+
+    expect(instructions).toEqual({count: "++"});
+    expect(doc).toEqual({name: "keep", list: [1, 2, 3], when: now});
+  });
 });
 
 describe("onMessageForDistributionQueue", () => {
@@ -369,6 +493,20 @@ describe("convertInstructionsToDbValues", () => {
         "tags": FieldValue.arrayRemove("tag2"),
       });
     });
+  });
+
+  it("should convert del and serverTimestamp instructions to their FieldValue sentinels", async () => {
+    const instructions = {
+      "obsolete": "del",
+      "updatedAt": "serverTimestamp",
+    };
+    const result = await distribution.convertInstructionsToDbValues(transactionMock, instructions);
+
+    expect(result.updateData).toEqual({
+      "obsolete": FieldValue.delete(),
+      "updatedAt": FieldValue.serverTimestamp(),
+    });
+    expect(result.removeData).toEqual({});
   });
 
   it("should add parsed instructions to destProp if has destProp", async () => {

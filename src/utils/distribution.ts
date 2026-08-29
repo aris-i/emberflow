@@ -21,9 +21,109 @@ import Transaction = firestore.Transaction;
 import {findMatchingViewLogics, queueRunViewLogics} from "../logics/view-logics";
 import {findMatchingPatchLogicsByEntity, queueRunPatchLogics} from "../logics/patch-logics";
 
+/**
+ * Converts a live Firestore {@link FieldValue} sentinel into its JSON-safe
+ * instruction-string equivalent. Sentinels cannot survive `JSON.stringify`
+ * (they collapse to `{}`), so any sentinel embedded in a `LogicResultDoc.doc`
+ * must be turned into an instruction before the doc is queued.
+ *
+ * Returns `undefined` for values that are not a supported sentinel.
+ *
+ * @param {any} value - The value to inspect, possibly a FieldValue sentinel.
+ * @return {string | undefined} The equivalent instruction string, or undefined.
+ */
+export function sentinelToInstruction(value: any): string | undefined {
+  if (!(value instanceof admin.firestore.FieldValue)) {
+    return undefined;
+  }
+
+  // `methodName` is exposed by every FieldTransform subclass and uniquely
+  // identifies the kind of sentinel.
+  const methodName = (value as any).methodName as string | undefined;
+
+  if (methodName === "FieldValue.delete") {
+    return "del";
+  }
+  if (methodName === "FieldValue.serverTimestamp") {
+    return "serverTimestamp";
+  }
+  if (methodName === "FieldValue.increment") {
+    const operand = (value as any).operand as number;
+    if (operand === 1) {
+      return "++";
+    }
+    if (operand === -1) {
+      return "--";
+    }
+    return operand >= 0 ? `+${operand}` : `${operand}`;
+  }
+  if (methodName === "FieldValue.arrayUnion") {
+    const elements = (value as any).elements as any[];
+    return `arr(${elements.map((element) => `+${element}`).join(",")})`;
+  }
+  if (methodName === "FieldValue.arrayRemove") {
+    const elements = (value as any).elements as any[];
+    return `arr(${elements.map((element) => `-${element}`).join(",")})`;
+  }
+
+  return undefined;
+}
+
+/**
+ * Walks `doc` and extracts every {@link FieldValue} sentinel into a matching
+ * (possibly nested) {@link Instructions} object, removing the extracted keys
+ * from `doc` so an empty/lossy value is not merged back on the queued path.
+ *
+ * Only plain object branches are traversed; arrays, Timestamps, Dates and other
+ * class instances are left untouched.
+ *
+ * @param {object} doc - The document to walk; extracted sentinel keys are removed in place.
+ * @return {Instructions} The extracted (possibly nested) instructions.
+ */
+export function extractSentinelsFromDoc(doc: { [key: string]: any }): Instructions {
+  const instructions: Instructions = {};
+  for (const key of Object.keys(doc)) {
+    const value = doc[key];
+
+    const instruction = sentinelToInstruction(value);
+    if (instruction !== undefined) {
+      instructions[key] = instruction;
+      delete doc[key];
+      continue;
+    }
+
+    // Unsupported sentinel: fail loudly instead of silently losing it to JSON.
+    if (value instanceof admin.firestore.FieldValue) {
+      console.warn(
+        `Unsupported FieldValue sentinel at property "${key}"; it will be lost during JSON serialization.`
+      );
+      continue;
+    }
+
+    // Recurse only into plain object branches (skip arrays, Timestamps, Dates, etc.).
+    if (value !== null && typeof value === "object" && value.constructor === Object) {
+      const nested = extractSentinelsFromDoc(value);
+      if (Object.keys(nested).length > 0) {
+        instructions[key] = nested;
+      }
+    }
+  }
+  return instructions;
+}
+
 export const queueForDistributionLater = async (appVersion: string, targetVersion: string, ...logicResultDocs: LogicResultDoc[]) => {
   try {
     for (const logicResultDoc of logicResultDocs) {
+      if (logicResultDoc.doc) {
+        const extractedInstructions = extractSentinelsFromDoc(logicResultDoc.doc);
+        if (Object.keys(extractedInstructions).length > 0) {
+          if (logicResultDoc.instructions) {
+            mergeInstructions(logicResultDoc.instructions, extractedInstructions);
+          } else {
+            logicResultDoc.instructions = extractedInstructions as Record<string, string>;
+          }
+        }
+      }
       const forDistributionMessageId = await FOR_DISTRIBUTION_TOPIC.publishMessage(
         {json: {doc: logicResultDoc, targetVersion, appVersion}}
       );
@@ -183,6 +283,8 @@ async function _convert(txn: Transaction, instructions: Instructions, updateData
       }
     } else if (instruction === "del") {
       updateData[currentPath] = admin.firestore.FieldValue.delete();
+    } else if (instruction === "serverTimestamp") {
+      updateData[currentPath] = admin.firestore.FieldValue.serverTimestamp();
     } else if (instruction.startsWith("globalCounter")) {
       const regex = /globalCounter\(([^,]+)(?:,\s*(\d+))?\)/;
       const match = instruction.match(regex);
@@ -372,6 +474,11 @@ export const mergeInstructions = (existingInstructions: Instructions, instructio
 
     if (instruction === "del") {
       existingInstructions[property] = "del";
+      continue;
+    }
+
+    // Identical non-arithmetic instructions (e.g. serverTimestamp) are idempotent; keep as-is.
+    if (existingInstruction === instruction) {
       continue;
     }
 
