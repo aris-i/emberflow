@@ -467,9 +467,13 @@ describe("convertInstructionsToDbValues", () => {
       const result = await distribution.convertInstructionsToDbValues(transactionMock, instructions);
 
       expect(result.updateData).toStrictEqual({
-        "user.score": FieldValue.increment(1),
-        "user.counters.games": FieldValue.increment(5),
-        "user.counters.wins": FieldValue.increment(-1),
+        "user": {
+          "score": FieldValue.increment(1),
+          "counters": {
+            "games": FieldValue.increment(5),
+            "wins": FieldValue.increment(-1),
+          },
+        },
       });
       expect(result.removeData).toStrictEqual({});
     });
@@ -486,8 +490,10 @@ describe("convertInstructionsToDbValues", () => {
 
       expect(result.updateData).toStrictEqual({
         "tags": FieldValue.arrayUnion("tag1"),
-        "meta.items": FieldValue.arrayUnion("item1"),
-        "meta.count": FieldValue.increment(1),
+        "meta": {
+          "items": FieldValue.arrayUnion("item1"),
+          "count": FieldValue.increment(1),
+        },
       });
       expect(result.removeData).toStrictEqual({
         "tags": FieldValue.arrayRemove("tag2"),
