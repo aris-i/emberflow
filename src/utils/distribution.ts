@@ -190,8 +190,8 @@ export const queueInstructions = async (dstPath: string, instructions: { [p: str
 export async function convertInstructionsToDbValues(txn: Transaction, instructions: Instructions, destProp?: string, destPropId?: string) {
   let actualUpdateData: { [key: string ]: object | FieldValue | number} = {};
   let actualRemoveData: { [key: string]: object | FieldValue | number } = {};
-  const updateData: { [key: string ]: FieldValue | number } = {};
-  const removeData: { [key: string]: FieldValue } = {};
+  const updateData: { [key: string ]: object | FieldValue | number } = {};
+  const removeData: { [key: string]: object | FieldValue } = {};
 
   if (destProp) {
     if (destPropId) {
@@ -219,31 +219,44 @@ export async function convertInstructionsToDbValues(txn: Transaction, instructio
   return {updateData: actualUpdateData, removeData: actualRemoveData};
 }
 
-async function _convert(txn: Transaction, instructions: Instructions, updateData: any, removeData: any, path = "") {
+function setNestedValue(data: any, path: string[], value: any) {
+  let current = data;
+  for (let i = 0; i < path.length - 1; i++) {
+    const key = path[i];
+    if (typeof current[key] !== "object" || current[key] === null) {
+      current[key] = {};
+    }
+    current = current[key];
+  }
+  current[path[path.length - 1]] = value;
+}
+
+async function _convert(txn: Transaction, instructions: Instructions, updateData: any, removeData: any, path: string[] = []) {
   for (const [property, instruction] of Object.entries(instructions)) {
-    const currentPath = path ? `${path}.${property}` : property;
+    const currentPathArr = [...path, property];
+    const currentPath = currentPathArr.join(".");
     if (typeof instruction === "object") {
-      await _convert(txn, instruction as Instructions, updateData, removeData, currentPath);
+      await _convert(txn, instruction as Instructions, updateData, removeData, currentPathArr);
       continue;
     }
 
     if (instruction === "++") {
-      updateData[currentPath] = admin.firestore.FieldValue.increment(1);
+      setNestedValue(updateData, currentPathArr, admin.firestore.FieldValue.increment(1));
     } else if (instruction === "--") {
-      updateData[currentPath] = admin.firestore.FieldValue.increment(-1);
+      setNestedValue(updateData, currentPathArr, admin.firestore.FieldValue.increment(-1));
     } else if (instruction.startsWith("+")) {
       const incrementValue = parseFloat(instruction.slice(1));
       if (isNaN(incrementValue)) {
         console.log(`Invalid increment value ${instruction} for property ${currentPath}`);
       } else {
-        updateData[currentPath] = admin.firestore.FieldValue.increment(incrementValue);
+        setNestedValue(updateData, currentPathArr, admin.firestore.FieldValue.increment(incrementValue));
       }
     } else if (instruction.startsWith("-")) {
       const decrementValue = parseFloat(instruction.slice(1));
       if (isNaN(decrementValue)) {
         console.log(`Invalid decrement value ${instruction} for property ${currentPath}`);
       } else {
-        updateData[currentPath] = admin.firestore.FieldValue.increment(-decrementValue);
+        setNestedValue(updateData, currentPathArr, admin.firestore.FieldValue.increment(-decrementValue));
       }
     } else if (instruction.startsWith("arr")) {
       const regex = /\((.*?)\)/;
@@ -276,15 +289,15 @@ async function _convert(txn: Transaction, instructions: Instructions, updateData
         valuesToAdd.push(value);
       }
       if (valuesToAdd.length > 0) {
-        updateData[currentPath] = admin.firestore.FieldValue.arrayUnion(...valuesToAdd);
+        setNestedValue(updateData, currentPathArr, admin.firestore.FieldValue.arrayUnion(...valuesToAdd));
       }
       if (valuesToRemove.length > 0) {
-        removeData[currentPath] = admin.firestore.FieldValue.arrayRemove(...valuesToRemove);
+        setNestedValue(removeData, currentPathArr, admin.firestore.FieldValue.arrayRemove(...valuesToRemove));
       }
     } else if (instruction === "del") {
-      updateData[currentPath] = admin.firestore.FieldValue.delete();
+      setNestedValue(updateData, currentPathArr, admin.firestore.FieldValue.delete());
     } else if (instruction === "serverTimestamp") {
-      updateData[currentPath] = admin.firestore.FieldValue.serverTimestamp();
+      setNestedValue(updateData, currentPathArr, admin.firestore.FieldValue.serverTimestamp());
     } else if (instruction.startsWith("globalCounter")) {
       const regex = /globalCounter\(([^,]+)(?:,\s*(\d+))?\)/;
       const match = instruction.match(regex);
@@ -322,7 +335,7 @@ async function _convert(txn: Transaction, instructions: Instructions, updateData
             "lastUpdatedAt": now,
           });
         }
-        updateData[currentPath] = newCount;
+        setNestedValue(updateData, currentPathArr, newCount);
       } catch (error) {
         console.error(error);
       }

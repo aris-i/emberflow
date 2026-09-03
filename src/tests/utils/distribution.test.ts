@@ -467,9 +467,13 @@ describe("convertInstructionsToDbValues", () => {
       const result = await distribution.convertInstructionsToDbValues(transactionMock, instructions);
 
       expect(result.updateData).toStrictEqual({
-        "user.score": FieldValue.increment(1),
-        "user.counters.games": FieldValue.increment(5),
-        "user.counters.wins": FieldValue.increment(-1),
+        "user": {
+          "score": FieldValue.increment(1),
+          "counters": {
+            "games": FieldValue.increment(5),
+            "wins": FieldValue.increment(-1),
+          },
+        },
       });
       expect(result.removeData).toStrictEqual({});
     });
@@ -486,11 +490,130 @@ describe("convertInstructionsToDbValues", () => {
 
       expect(result.updateData).toStrictEqual({
         "tags": FieldValue.arrayUnion("tag1"),
-        "meta.items": FieldValue.arrayUnion("item1"),
-        "meta.count": FieldValue.increment(1),
+        "meta": {
+          "items": FieldValue.arrayUnion("item1"),
+          "count": FieldValue.increment(1),
+        },
       });
       expect(result.removeData).toStrictEqual({
         "tags": FieldValue.arrayRemove("tag2"),
+      });
+    });
+
+    it("should nest del and serverTimestamp under object paths", async () => {
+      const instructions = {
+        "profile": {
+          "obsolete": "del",
+          "updatedAt": "serverTimestamp",
+        },
+      };
+      const result = await distribution.convertInstructionsToDbValues(transactionMock, instructions);
+
+      expect(result.updateData).toStrictEqual({
+        "profile": {
+          "obsolete": FieldValue.delete(),
+          "updatedAt": FieldValue.serverTimestamp(),
+        },
+      });
+      expect(result.removeData).toStrictEqual({});
+    });
+
+    it("should wrap nested instructions under destProp", async () => {
+      const dstPath = "/users/test-user-id/documents/test-doc-id#stats";
+      const {destProp, destPropId} = getDestPropAndDestPropId(dstPath);
+      const instructions = {
+        "user": {
+          "score": "++",
+          "tags": "arr(+vip, -guest)",
+        },
+      };
+      const result = await distribution.convertInstructionsToDbValues(
+        transactionMock,
+        instructions,
+        destProp,
+        destPropId
+      );
+
+      expect(result.updateData).toStrictEqual({
+        "stats": {
+          "user": {
+            "score": FieldValue.increment(1),
+            "tags": FieldValue.arrayUnion("vip"),
+          },
+        },
+      });
+      expect(result.removeData).toStrictEqual({
+        "stats": {
+          "user": {
+            "tags": FieldValue.arrayRemove("guest"),
+          },
+        },
+      });
+    });
+
+    it("should wrap nested instructions under destProp and destPropId", async () => {
+      const dstPath = "/users/test-user-id/documents/test-doc-id#stats[weekly]";
+      const {destProp, destPropId} = getDestPropAndDestPropId(dstPath);
+      const instructions = {
+        "user": {
+          "score": "+3",
+          "counters": {
+            "games": "--",
+          },
+        },
+        "tags": "arr(-old, +new)",
+      };
+      const result = await distribution.convertInstructionsToDbValues(
+        transactionMock,
+        instructions,
+        destProp,
+        destPropId
+      );
+
+      expect(result.updateData).toStrictEqual({
+        "stats": {
+          "weekly": {
+            "user": {
+              "score": FieldValue.increment(3),
+              "counters": {
+                "games": FieldValue.increment(-1),
+              },
+            },
+            "tags": FieldValue.arrayUnion("new"),
+          },
+        },
+      });
+      expect(result.removeData).toStrictEqual({
+        "stats": {
+          "weekly": {
+            "tags": FieldValue.arrayRemove("old"),
+          },
+        },
+      });
+    });
+
+    it("should keep empty destProp wrappers empty when nested instructions only remove", async () => {
+      const dstPath = "/users/test-user-id/documents/test-doc-id#stats";
+      const {destProp, destPropId} = getDestPropAndDestPropId(dstPath);
+      const instructions = {
+        "user": {
+          "tags": "arr(-stale)",
+        },
+      };
+      const result = await distribution.convertInstructionsToDbValues(
+        transactionMock,
+        instructions,
+        destProp,
+        destPropId
+      );
+
+      expect(result.updateData).toStrictEqual({});
+      expect(result.removeData).toStrictEqual({
+        "stats": {
+          "user": {
+            "tags": FieldValue.arrayRemove("stale"),
+          },
+        },
       });
     });
   });
@@ -957,6 +1080,102 @@ describe("onMessageInstructionsQueue", () => {
     expect(transactionSetMock).toHaveBeenCalledWith(dstDocRef, expectedData, {merge: true});
     expect(transactionSetMock).toHaveBeenCalledWith(dstDocRef, expectedRemoveData, {merge: true});
     expect(trackProcessedIdsMock).toHaveBeenCalledWith(INSTRUCTIONS_TOPIC_NAME, event.id);
+  });
+
+  it("should process nested instructions as nested maps with set merge", async () => {
+    transactionSetMock.mockReset();
+    isProcessedMock.mockResolvedValueOnce(false);
+    const expectedData = {
+      "user": {
+        "score": admin.firestore.FieldValue.increment(1),
+        "counters": {
+          "games": admin.firestore.FieldValue.increment(5),
+        },
+        "tags": admin.firestore.FieldValue.arrayUnion("active"),
+      },
+    };
+    const expectedRemoveData = {
+      "user": {
+        "tags": admin.firestore.FieldValue.arrayRemove("inactive"),
+      },
+    };
+    const event = {
+      id: "test-event",
+      data: {
+        message: {
+          json: {
+            dstPath: "/users/test-user-id/documents/test-doc-id",
+            instructions: {
+              "user": {
+                "score": "++",
+                "counters": {
+                  "games": "+5",
+                },
+                "tags": "arr(+active, -inactive)",
+              },
+            },
+          },
+        },
+      },
+    } as CloudEvent<MessagePublishedData>;
+    await distribution.onMessageInstructionsQueue(event);
+
+    const dstDocRef = db.doc("/users/test-user-id/documents/test-doc-id");
+    expect(transactionSetMock).toHaveBeenCalledTimes(2);
+    expect(transactionSetMock).toHaveBeenCalledWith(dstDocRef, expectedData, {merge: true});
+    expect(transactionSetMock).toHaveBeenCalledWith(dstDocRef, expectedRemoveData, {merge: true});
+    // Ensure dotted keys are not written for nested instruction paths.
+    expect(transactionSetMock).not.toHaveBeenCalledWith(
+      dstDocRef,
+      expect.objectContaining({"user.score": expect.anything()}),
+      expect.anything()
+    );
+  });
+
+  it("should process nested instructions with destprop and destpropid as nested maps", async () => {
+    transactionSetMock.mockReset();
+    isProcessedMock.mockResolvedValueOnce(false);
+    const expectedData = {
+      "hello": {
+        "world": {
+          "user": {
+            "score": admin.firestore.FieldValue.increment(2),
+            "tags": admin.firestore.FieldValue.arrayUnion("vip"),
+          },
+        },
+      },
+    };
+    const expectedRemoveData = {
+      "hello": {
+        "world": {
+          "user": {
+            "tags": admin.firestore.FieldValue.arrayRemove("guest"),
+          },
+        },
+      },
+    };
+    const event = {
+      id: "test-event",
+      data: {
+        message: {
+          json: {
+            dstPath: "/users/test-user-id/documents/test-doc-id#hello[world]",
+            instructions: {
+              "user": {
+                "score": "+2",
+                "tags": "arr(+vip, -guest)",
+              },
+            },
+          },
+        },
+      },
+    } as CloudEvent<MessagePublishedData>;
+    await distribution.onMessageInstructionsQueue(event);
+
+    const dstDocRef = db.doc("/users/test-user-id/documents/test-doc-id");
+    expect(transactionSetMock).toHaveBeenCalledTimes(2);
+    expect(transactionSetMock).toHaveBeenCalledWith(dstDocRef, expectedData, {merge: true});
+    expect(transactionSetMock).toHaveBeenCalledWith(dstDocRef, expectedRemoveData, {merge: true});
   });
 
   it("should process event instructions correctly with destprop only", async () => {
