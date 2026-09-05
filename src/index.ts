@@ -78,6 +78,7 @@ import {
 import {cleanupCollections} from "./utils/cleanup";
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import {onDocumentCreated} from "firebase-functions/v2/firestore";
+import {onInit} from "firebase-functions/v2";
 import {UserRecord} from "firebase-admin/lib/auth";
 import {debounce} from "./utils/functions";
 import {extractTransactionGetOnly} from "./utils/transaction";
@@ -159,6 +160,13 @@ export function initializeEmberFlow(
   db = admin.firestore();
   rtdb = admin.database();
   pubsub = new PubSub();
+  initClient(admin.app(), "service", "0.0.0");
+  SUBMIT_FORM_TOPIC = pubsub.topic(SUBMIT_FORM_TOPIC_NAME);
+  VIEW_LOGICS_TOPIC = pubsub.topic(VIEW_LOGICS_TOPIC_NAME);
+  PATCH_LOGICS_TOPIC = pubsub.topic(PATCH_LOGICS_TOPIC_NAME);
+  FOR_DISTRIBUTION_TOPIC = pubsub.topic(FOR_DISTRIBUTION_TOPIC_NAME);
+  INSTRUCTIONS_TOPIC = pubsub.topic(INSTRUCTIONS_TOPIC_NAME);
+  GROUP_PATCH_TOPIC = pubsub.topic(GROUP_PATCH_TOPIC_NAME);
   dbStructure = {...options.dbStructure, ...internalDbStructure};
   Entity = {...options.Entity, ...InternalEntity};
   securityConfigs = [...options.securityConfigs];
@@ -175,14 +183,6 @@ export function initializeEmberFlow(
     backFillPatchNames.add(backFillPatchConfig.name);
   }
   userRegisterFn = options.userRegisterFn;
-  initClient(admin.app(), "service", "0.0.0");
-  initDbStructure(dbStructure, Entity);
-  SUBMIT_FORM_TOPIC = pubsub.topic(SUBMIT_FORM_TOPIC_NAME);
-  VIEW_LOGICS_TOPIC = pubsub.topic(VIEW_LOGICS_TOPIC_NAME);
-  PATCH_LOGICS_TOPIC = pubsub.topic(PATCH_LOGICS_TOPIC_NAME);
-  FOR_DISTRIBUTION_TOPIC = pubsub.topic(FOR_DISTRIBUTION_TOPIC_NAME);
-  INSTRUCTIONS_TOPIC = pubsub.topic(INSTRUCTIONS_TOPIC_NAME);
-  GROUP_PATCH_TOPIC = pubsub.topic(GROUP_PATCH_TOPIC_NAME);
 
   const {
     docPaths: dp,
@@ -224,9 +224,6 @@ export function initializeEmberFlow(
   const logicNames = logicConfigs.map((config) => config.name);
   const viewLogicNames = viewLogicConfigs.map((config) => config.name);
   const allLogicNames = [...logicNames, ...viewLogicNames];
-  if (process.env.NODE_ENV !== "test" || process.env.EMBERFLOW_FORCE_DB) {
-    allLogicNames.forEach(createMetricLogicDoc);
-  }
 
   functionsConfig["onFormSubmit"] = onValueCreated(
     {
@@ -354,6 +351,12 @@ export function initializeEmberFlow(
       secrets: secrets || [],
       ...restConfig,
     }).auth.user().onCreate(onUserRegister);
+
+  onInit(() => {
+    if (process.env.NODE_ENV !== "test" || process.env.EMBERFLOW_FORCE_DB) {
+      allLogicNames.forEach(createMetricLogicDoc);
+    }
+  });
 
   return {docPaths, colPaths, docPathsRegex, entityViewDefinitions, functionsConfig};
 }
