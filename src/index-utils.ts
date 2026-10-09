@@ -25,6 +25,7 @@ import {
   securityConfigs,
   validatorConfigs,
   viewLogicConfigs,
+  transformLogicResultDocIfNeeded,
 } from "./index";
 import {
   _mockable as _pathMockable,
@@ -46,7 +47,16 @@ import {
 } from "./utils/distribution";
 import type {FirestoreEvent} from "firebase-functions/v2/firestore";
 import type {ScheduledEvent} from "firebase-functions/v2/scheduler";
-import {runPatchLogics, versionCompare} from "./logics/patch-logics";
+import {
+  findMatchingPatchLogicsByEntity,
+  queueRunPatchLogics,
+  runPatchLogics,
+  versionCompare,
+} from "./logics/patch-logics";
+import {
+  findMatchingViewLogics,
+  queueRunViewLogics,
+} from "./logics/view-logics";
 import {FormData} from "emberflow-admin-client/lib/types";
 import QueryDocumentSnapshot = firestore.QueryDocumentSnapshot;
 import DocumentReference = FirebaseFirestore.DocumentReference;
@@ -73,6 +83,11 @@ export const _mockable = {
   saveMetricExecution: saveMetricExecution,
   getBatchUtil: () => BatchUtil.create(),
   getMaxGroupPatchIterations: () => MAX_GROUP_PATCH_ITERATIONS,
+  distributeDoc: (logicResultDoc: LogicResultDoc, appVersion: string, batch?: BatchUtil, txn?: Transaction) => distributeDoc(logicResultDoc, appVersion, batch, txn),
+  distributeFnNonTransactional: (docsByDstPath: Map<string, LogicResultDoc[]>, appVersion: string, isViewLogic?: boolean) => distributeFnNonTransactional(docsByDstPath, appVersion, isViewLogic),
+  expandConsolidateAndGroupByDstPath: (logicDocs: LogicResultDoc[]) => expandConsolidateAndGroupByDstPath(logicDocs),
+  queueRunViewLogics: (appVersion: string, targetVersion: string, docs: LogicResultDoc[]) => queueRunViewLogics(appVersion, targetVersion, docs),
+  queueRunPatchLogics: (appVersion: string, ...dstPaths: string[]) => queueRunPatchLogics(appVersion, ...dstPaths),
 };
 
 export async function distributeDoc(
@@ -341,6 +356,39 @@ function getMatchingLogics(actionType: ActionType, modifiedFields: DocumentData,
   }, [] as LogicConfig[]);
 }
 
+export async function executeLogicWithMetrics(
+  name: string,
+  fn: () => Promise<LogicResult>,
+  version?: string,
+): Promise<LogicResult> {
+  const start = performance.now();
+  try {
+    const result = await fn();
+    const end = performance.now();
+    const execTime = end - start;
+    return {
+      ...result,
+      name: result.name || name,
+      execTime,
+      ...(version ? {version} : {}),
+      timeFinished: admin.firestore.Timestamp.now(),
+    };
+  } catch (e) {
+    console.error(`Error in logic "${name}":`, e);
+    const end = performance.now();
+    const execTime = end - start;
+    return {
+      name,
+      status: "error" as const,
+      documents: [],
+      execTime,
+      ...(version ? {version} : {}),
+      message: (e as Error).message,
+      timeFinished: admin.firestore.Timestamp.now(),
+    };
+  }
+}
+
 export const runBusinessLogics = async (
   txnGet: TxnGet,
   action: Action,
@@ -360,37 +408,78 @@ export const runBusinessLogics = async (
 
   const logicResults: LogicResult[] = [];
   for (let i = 0; i < matchingLogics.length; i++) {
-    const start = performance.now();
     const logic = matchingLogics[i];
-    try {
-      const result = await logic.logicFn(txnGet, action, sharedMap );
-      const end = performance.now();
-      const execTime = end - start;
-      logicResults.push({
-        ...result,
-        name: logic.name,
-        execTime,
-        version: logic.version,
-        timeFinished: admin.firestore.Timestamp.now(),
-      });
-    } catch (e) {
-      console.error(`Error in logicFn "${logic.name}":`, e);
-      const end = performance.now();
-      const execTime = end - start;
-      logicResults.push({
-        name: logic.name,
-        status: "error" as const,
-        documents: [],
-        execTime,
-        version: logic.version,
-        message: (e as Error).message,
-        timeFinished: admin.firestore.Timestamp.now(),
-      });
-    }
+    const result = await executeLogicWithMetrics(
+      logic.name,
+      () => logic.logicFn(txnGet, action, sharedMap),
+      logic.version,
+    );
+    logicResults.push(result);
   }
 
   return {status: "done", logicResults};
 };
+
+export function resolveViewAndPatchLogicTriggers(
+  docs: LogicResultDoc[],
+  targetVersion: string,
+): { docsForViewLogics: LogicResultDoc[]; pathsForPatchLogics: Set<string> } {
+  const docsForViewLogics: LogicResultDoc[] = [];
+  const pathsForPatchLogics: Set<string> = new Set();
+
+  for (let doc of docs) {
+    doc = transformLogicResultDocIfNeeded(doc);
+    if (findMatchingViewLogics(doc, targetVersion)?.size) {
+      docsForViewLogics.push(doc);
+    }
+
+    const {basePath} = getDestPropAndDestPropId(doc.dstPath);
+    const {entity} = findMatchingDocPathRegex(basePath);
+    if (entity && findMatchingPatchLogicsByEntity(entity, targetVersion).length > 0) {
+      pathsForPatchLogics.add(doc.dstPath);
+    }
+  }
+
+  return {docsForViewLogics, pathsForPatchLogics};
+}
+
+export async function distributeAndCascadeLogicResultDocs(
+  docs: LogicResultDoc[],
+  appVersion: string,
+  targetVersion: string,
+): Promise<{ distributedDocs: LogicResultDoc[]; docsForViewLogics: LogicResultDoc[]; pathsForPatchLogics: Set<string> }> {
+  if (!docs || docs.length === 0) {
+    return {distributedDocs: [], docsForViewLogics: [], pathsForPatchLogics: new Set()};
+  }
+
+  const submitFormLogicDocs = docs.filter((doc) => doc.action === "submit-form");
+  for (const doc of submitFormLogicDocs) {
+    await _mockable.distributeDoc(doc, appVersion);
+  }
+
+  const otherDocs = docs.filter((doc) => doc.action !== "submit-form");
+  let distributedDocs: LogicResultDoc[] = [];
+  let docsForViewLogics: LogicResultDoc[] = [];
+  let pathsForPatchLogics: Set<string> = new Set();
+
+  if (otherDocs.length > 0) {
+    const dstPathLogicDocsMap = await _mockable.expandConsolidateAndGroupByDstPath(otherDocs);
+    distributedDocs = await _mockable.distributeFnNonTransactional(dstPathLogicDocsMap, appVersion);
+
+    const triggers = resolveViewAndPatchLogicTriggers(distributedDocs, targetVersion);
+    docsForViewLogics = triggers.docsForViewLogics;
+    pathsForPatchLogics = triggers.pathsForPatchLogics;
+
+    if (docsForViewLogics.length > 0) {
+      await _mockable.queueRunViewLogics(appVersion, targetVersion, docsForViewLogics);
+    }
+    for (const path of pathsForPatchLogics) {
+      await _mockable.queueRunPatchLogics(targetVersion, path);
+    }
+  }
+
+  return {distributedDocs, docsForViewLogics, pathsForPatchLogics};
+}
 
 export function groupDocsByTargetDocPath(docsByDstPath: Map<string, LogicResultDoc[]>, docPath: string) {
   const docsByDocPath = new Map<string, LogicResultDoc[]>();

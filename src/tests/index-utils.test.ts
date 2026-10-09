@@ -2635,3 +2635,131 @@ describe("onGroupPatchRequest", () => {
     expect(queueGroupPatchSpy).not.toHaveBeenCalled();
   });
 });
+
+describe("executeLogicWithMetrics", () => {
+  it("should record execution time, name, and timestamp on success", async () => {
+    const fn = jest.fn().mockResolvedValue({
+      name: "CustomName",
+      status: "finished",
+      documents: [],
+    } as LogicResult);
+
+    const result = await indexUtils.executeLogicWithMetrics("DefaultName", fn, "1.0.0");
+
+    expect(result.name).toBe("CustomName");
+    expect(result.status).toBe("finished");
+    expect(result.version).toBe("1.0.0");
+    expect(result.execTime).toBeDefined();
+    expect(result.timeFinished).toBeDefined();
+  });
+
+  it("should catch errors, record execution time and set status error", async () => {
+    const fn = jest.fn().mockRejectedValue(new Error("Boom"));
+
+    const result = await indexUtils.executeLogicWithMetrics("FailingLogic", fn);
+
+    expect(result.name).toBe("FailingLogic");
+    expect(result.status).toBe("error");
+    expect(result.message).toBe("Boom");
+    expect(result.documents).toEqual([]);
+    expect(result.execTime).toBeDefined();
+    expect(result.timeFinished).toBeDefined();
+  });
+});
+
+describe("resolveViewAndPatchLogicTriggers", () => {
+  beforeEach(() => {
+    initializeEmberFlow({
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs,
+      validatorConfigs,
+      logicConfigs: [],
+      patchLogicConfigs,
+    });
+  });
+
+  it("should identify view logics and patch logics matching the documents", () => {
+    const doc1: LogicResultDoc = {
+      action: "merge",
+      dstPath: "users/user1",
+      doc: {name: "Alice"},
+    };
+
+    const triggers = indexUtils.resolveViewAndPatchLogicTriggers([doc1], "2.0.0");
+    expect(triggers.docsForViewLogics).toBeDefined();
+    expect(triggers.pathsForPatchLogics).toBeDefined();
+    expect(triggers.pathsForPatchLogics.has("users/user1")).toBe(true);
+  });
+});
+
+describe("distributeAndCascadeLogicResultDocs", () => {
+  let distributeDocSpy: jest.SpyInstance;
+  let expandConsolidateSpy: jest.SpyInstance;
+  let distributeFnNonTransactionalSpy: jest.SpyInstance;
+  let queueRunViewLogicsSpy: jest.SpyInstance;
+  let queueRunPatchLogicsSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    initializeEmberFlow({
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs,
+      validatorConfigs,
+      logicConfigs: [],
+      patchLogicConfigs,
+    });
+
+    distributeDocSpy = jest.spyOn(indexUtils._mockable, "distributeDoc").mockResolvedValue({} as any);
+    expandConsolidateSpy = jest.spyOn(indexUtils._mockable, "expandConsolidateAndGroupByDstPath").mockResolvedValue(new Map());
+    distributeFnNonTransactionalSpy = jest.spyOn(indexUtils._mockable, "distributeFnNonTransactional").mockResolvedValue([]);
+    queueRunViewLogicsSpy = jest.spyOn(indexUtils._mockable, "queueRunViewLogics").mockResolvedValue();
+    queueRunPatchLogicsSpy = jest.spyOn(indexUtils._mockable, "queueRunPatchLogics").mockResolvedValue();
+  });
+
+  afterEach(() => {
+    distributeDocSpy.mockRestore();
+    expandConsolidateSpy.mockRestore();
+    distributeFnNonTransactionalSpy.mockRestore();
+    queueRunViewLogicsSpy.mockRestore();
+    queueRunPatchLogicsSpy.mockRestore();
+  });
+
+  it("should return empty arrays when docs is empty", async () => {
+    const result = await indexUtils.distributeAndCascadeLogicResultDocs([], "1.0.0", "1.0.0");
+    expect(result.distributedDocs).toEqual([]);
+    expect(result.docsForViewLogics).toEqual([]);
+    expect(result.pathsForPatchLogics.size).toBe(0);
+  });
+
+  it("should distribute submit-form directly and consolidate other docs", async () => {
+    const submitFormDoc: LogicResultDoc = {
+      action: "submit-form",
+      dstPath: "forms/form1",
+      doc: {formData: "{}"},
+    };
+    const userDoc: LogicResultDoc = {
+      action: "merge",
+      dstPath: "users/user1",
+      doc: {name: "Test"},
+    };
+
+    distributeFnNonTransactionalSpy.mockResolvedValue([userDoc]);
+
+    const result = await indexUtils.distributeAndCascadeLogicResultDocs(
+      [submitFormDoc, userDoc],
+      "2.0.0",
+      "2.0.0",
+    );
+
+    expect(distributeDocSpy).toHaveBeenCalledWith(submitFormDoc, "2.0.0");
+    expect(expandConsolidateSpy).toHaveBeenCalledWith([userDoc]);
+    expect(distributeFnNonTransactionalSpy).toHaveBeenCalled();
+    expect(result.distributedDocs).toEqual([userDoc]);
+    expect(queueRunPatchLogicsSpy).toHaveBeenCalledWith("2.0.0", "users/user1");
+  });
+});

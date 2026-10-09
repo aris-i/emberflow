@@ -2,6 +2,7 @@ import * as admin from "firebase-admin";
 import {firestore} from "firebase-admin";
 import {MemoryOption} from "firebase-functions/v2/options";
 import {SecretParam} from "firebase-functions/params";
+import {ScheduledEvent} from "firebase-functions/v2/scheduler";
 import Timestamp = firestore.Timestamp;
 import DocumentData = firestore.DocumentData;
 import {FormData} from "emberflow-admin-client/lib/types";
@@ -46,6 +47,7 @@ export interface ProjectConfig {
         cleanViewLogicExecutions?: FunctionConfig;
         cleanupCollections?: FunctionConfig;
         createMetricComputation?: FunctionConfig;
+        hourlyBusinessLogics?: FunctionConfig;
         onDeleteFunctions?: FunctionConfig;
         onGroupPatchRequests?: FunctionConfig;
         onUserRegister?: FunctionConfig;
@@ -225,6 +227,12 @@ export interface PatchLogicConfig{
     patchLogicFn: PatchLogicFn;
     addtlFilterFn?: PatchConfigFilterFn;
     version: string; // i.e. "xx.yy.zz"
+}
+
+export type HourlyLogicFn = (event: ScheduledEvent) => Promise<LogicResult>;
+export interface HourlyLogicConfig {
+    name: string;
+    hourlyLogicFn: HourlyLogicFn;
 }
 
 export type SecurityStatus = "allowed" | "rejected"

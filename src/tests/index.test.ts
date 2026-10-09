@@ -1,4 +1,4 @@
-import {_mockable, db, initializeEmberFlow, onFormSubmit, onUserRegister} from "../index";
+import {_mockable, db, hourlyLogicConfigs, initializeEmberFlow, onFormSubmit, onUserRegister} from "../index";
 import * as indexutils from "../index-utils";
 import * as transactionutils from "../utils/transaction";
 import * as admin from "firebase-admin";
@@ -1070,5 +1070,29 @@ describe("onUserRegister", () => {
       {name: "onUserRegister", execTime: expect.any(Number)},
       {name: "customUserRegisterLogic", execTime: expect.any(Number)},
     ]);
+  });
+});
+
+describe("initializeEmberFlow with hourlyLogicConfigs", () => {
+  it("should register hourlyBusinessLogics in functionsConfig and populate hourlyLogicConfigs", () => {
+    const mockHourlyLogic = {
+      name: "TestHourlyLogic",
+      hourlyLogicFn: jest.fn(),
+    };
+
+    const {functionsConfig} = initializeEmberFlow({
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs: [],
+      validatorConfigs: [],
+      logicConfigs: [],
+      patchLogicConfigs: [],
+      hourlyLogicConfigs: [mockHourlyLogic],
+    });
+
+    expect(functionsConfig.hourlyBusinessLogics).toBeDefined();
+    expect(hourlyLogicConfigs).toEqual([mockHourlyLogic]);
   });
 });

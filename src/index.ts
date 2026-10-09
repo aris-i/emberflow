@@ -12,6 +12,8 @@ import {
   MetricExecution,
   BackFillPatchConfig,
   CleanupConfig,
+  HourlyLogicConfig,
+  HourlyLogicFn,
   PatchLogicConfig,
   ProjectConfig,
   RunBusinessLogicStatus,
@@ -33,17 +35,19 @@ import {
   distributeFnNonTransactional,
   distributeFnTransactional,
   distributeLater,
+  executeLogicWithMetrics,
   expandConsolidateAndGroupByDstPath,
   getFormModifiedFields,
   getSecurityFn,
   groupDocsByTargetDocPath,
   onDeleteFunction,
   onGroupPatchRequest,
+  resolveViewAndPatchLogicTriggers,
+  distributeAndCascadeLogicResultDocs,
   runBusinessLogics,
   validateForm,
 } from "./index-utils";
 import {
-  findMatchingPatchLogicsByEntity,
   onMessageRunPatchLogicsQueue,
   queueRunPatchLogics,
   versionCompare,
@@ -52,7 +56,6 @@ import {initDbStructure} from "./init-db-structure";
 import {
   createViewDoc,
   createViewLogicFn,
-  findMatchingViewLogics,
   onMessageViewLogicsQueue,
   queueRunViewLogics,
 } from "./logics/view-logics";
@@ -76,6 +79,7 @@ import {
   queueGroupPatch,
 } from "./utils/distribution";
 import {cleanupCollections} from "./utils/cleanup";
+import {hourlyBusinessLogics, runHourlyBusinessLogics} from "./logics/hourly-logics";
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import {onDocumentCreated} from "firebase-functions/v2/firestore";
 import {onInit} from "firebase-functions/v2";
@@ -84,7 +88,18 @@ import {debounce} from "./utils/functions";
 import {extractTransactionGetOnly} from "./utils/transaction";
 import Database = database.Database;
 
-export {queueGroupPatch, getGroupPatchProgress, ancestorIdsPatchConfig, createViewDoc};
+export {
+  queueGroupPatch,
+  getGroupPatchProgress,
+  ancestorIdsPatchConfig,
+  createViewDoc,
+  hourlyBusinessLogics,
+  runHourlyBusinessLogics,
+  executeLogicWithMetrics,
+  resolveViewAndPatchLogicTriggers,
+  distributeAndCascadeLogicResultDocs,
+};
+export type {HourlyLogicConfig, HourlyLogicFn};
 export let admin: FirebaseAdmin;
 export let db: Firestore;
 export let rtdb: Database;
@@ -97,6 +112,7 @@ export let logicConfigs: LogicConfig[] = [];
 export let patchLogicConfigs: PatchLogicConfig[] = [];
 export let cleanupConfigs: CleanupConfig[] = [];
 export let backFillPatchConfigs: BackFillPatchConfig[] = [];
+export let hourlyLogicConfigs: HourlyLogicConfig[] = [];
 export let docPaths: Record<string, string> = {};
 export let colPaths: Record<string, string> = {};
 export let docPathsRegex: Record<string, RegExp> = {};
@@ -144,6 +160,7 @@ export interface InitializeEmberFlowOptions {
   cleanupConfigs?: CleanupConfig[];
   backFillPatchConfigs?: BackFillPatchConfig[];
   userRegisterFn?: UserRegisterFn;
+  hourlyLogicConfigs?: HourlyLogicConfig[];
 }
 
 export function initializeEmberFlow(
@@ -174,6 +191,7 @@ export function initializeEmberFlow(
   logicConfigs = [...options.logicConfigs];
   patchLogicConfigs = [...options.patchLogicConfigs];
   cleanupConfigs = [...(options.cleanupConfigs ?? [])];
+  hourlyLogicConfigs = [...(options.hourlyLogicConfigs ?? [])];
   backFillPatchConfigs = [ancestorIdsPatchConfig, ...(options.backFillPatchConfigs ?? [])];
   const backFillPatchNames = new Set<string>();
   for (const backFillPatchConfig of backFillPatchConfigs) {
@@ -223,7 +241,8 @@ export function initializeEmberFlow(
 
   const logicNames = logicConfigs.map((config) => config.name);
   const viewLogicNames = viewLogicConfigs.map((config) => config.name);
-  const allLogicNames = [...logicNames, ...viewLogicNames];
+  const hourlyLogicNames = hourlyLogicConfigs.map((config) => config.name);
+  const allLogicNames = [...logicNames, ...viewLogicNames, ...hourlyLogicNames];
 
   functionsConfig["onFormSubmit"] = onValueCreated(
     {
@@ -322,6 +341,13 @@ export function initializeEmberFlow(
     timeoutSeconds: 540,
     ...projectConfig.functionsConfig?.createMetricComputation as any,
   }, createMetricComputation);
+  functionsConfig["hourlyBusinessLogics"] = onSchedule({
+    schedule: "0 * * * *",
+    region: projectConfig.region,
+    memory: "512MiB",
+    timeoutSeconds: 540,
+    ...projectConfig.functionsConfig?.hourlyBusinessLogics as any,
+  }, hourlyBusinessLogics);
   functionsConfig["onDeleteFunctions"] = onDocumentCreated({
     document: "@server/delete/functions/{deleteFuncId}",
     ...projectConfig.functionsConfig?.onDeleteFunctions as any,
@@ -584,17 +610,10 @@ export async function onFormSubmit(
       const distributeTransactionalLogicResultsStart = performance.now();
       transactionalLogicResultDocs =
         await distributeFnTransactional(txn, runBusinessLogicStatus.logicResults, appVersion);
-      for (let doc of transactionalLogicResultDocs) {
-        doc = transformLogicResultDocIfNeeded(doc);
-        if (findMatchingViewLogics(doc, targetVersion)?.size) {
-          docsForViewLogics.push(doc);
-        }
-
-        const {basePath} = getDestPropAndDestPropId(doc.dstPath);
-        const {entity} = findMatchingDocPathRegex(basePath);
-        if (entity && findMatchingPatchLogicsByEntity(entity, targetVersion).length > 0) {
-          pathsForPatchLogics.add(doc.dstPath);
-        }
+      const transactionalTriggers = resolveViewAndPatchLogicTriggers(transactionalLogicResultDocs, targetVersion);
+      docsForViewLogics.push(...transactionalTriggers.docsForViewLogics);
+      for (const path of transactionalTriggers.pathsForPatchLogics) {
+        pathsForPatchLogics.add(path);
       }
       const distributeTransactionalLogicResultsEnd = performance.now();
       const distributeTransactionalLogicResults: LogicResult = {
@@ -756,17 +775,10 @@ async function distributeNonTransactionalLogicResults(
     ...await distributeFnNonTransactional(highPriorityDocsByDocPath, appVersion),
     ...await distributeFnNonTransactional(highPriorityOtherDocsByDocPath, appVersion),
   ];
-  for (let doc of distributedHighPriorityDocs) {
-    doc = transformLogicResultDocIfNeeded(doc);
-    if (findMatchingViewLogics(doc, targetVersion)?.size) {
-      docsForViewLogics.push(doc);
-    }
-
-    const {basePath} = getDestPropAndDestPropId(doc.dstPath);
-    const {entity} = findMatchingDocPathRegex(basePath);
-    if (entity && findMatchingPatchLogicsByEntity(entity, targetVersion).length > 0) {
-      pathsForPatchLogics.add(doc.dstPath);
-    }
+  const highPriorityTriggers = resolveViewAndPatchLogicTriggers(distributedHighPriorityDocs, targetVersion);
+  docsForViewLogics.push(...highPriorityTriggers.docsForViewLogics);
+  for (const path of highPriorityTriggers.pathsForPatchLogics) {
+    pathsForPatchLogics.add(path);
   }
 
   // Clear highPriorityDocs to free up memory
@@ -785,17 +797,10 @@ async function distributeNonTransactionalLogicResults(
 
   const distributedNormalPriorityDocs =
     await distributeFnNonTransactional(normalPriorityDocsByDocPath, appVersion);
-  for (let doc of distributedNormalPriorityDocs) {
-    doc = transformLogicResultDocIfNeeded(doc);
-    if (findMatchingViewLogics(doc, targetVersion)?.size) {
-      docsForViewLogics.push(doc);
-    }
-
-    const {basePath} = getDestPropAndDestPropId(doc.dstPath);
-    const {entity} = findMatchingDocPathRegex(basePath);
-    if (entity && findMatchingPatchLogicsByEntity(entity, targetVersion).length > 0) {
-      pathsForPatchLogics.add(doc.dstPath);
-    }
+  const normalPriorityTriggers = resolveViewAndPatchLogicTriggers(distributedNormalPriorityDocs, targetVersion);
+  docsForViewLogics.push(...normalPriorityTriggers.docsForViewLogics);
+  for (const path of normalPriorityTriggers.pathsForPatchLogics) {
+    pathsForPatchLogics.add(path);
   }
 
   await distributeLater(normalPriorityOtherDocsByDocPath, appVersion, targetVersion);

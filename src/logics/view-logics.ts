@@ -4,7 +4,10 @@ import {CloudEvent} from "firebase-functions/lib/v2/core";
 import type {MessagePublishedData} from "firebase-functions/v2/pubsub";
 import {
   _mockable,
-  convertLogicResultsToMetricExecutions, distributeFnNonTransactional, expandConsolidateAndGroupByDstPath,
+  convertLogicResultsToMetricExecutions,
+  distributeFnNonTransactional,
+  executeLogicWithMetrics,
+  expandConsolidateAndGroupByDstPath,
 } from "../index-utils";
 import {pubsubUtils} from "../utils/pubsub";
 import {queueInstructions} from "../utils/distribution";
@@ -551,30 +554,11 @@ export async function runViewLogics(
 
   const logicResults = [];
   for (const logic of matchingLogics.values()) {
-    const start = performance.now();
-    try {
-      const viewLogicResult = await logic.viewLogicFn(logicResultDoc, targetVersion, appVersion, lastProcessedId);
-      const end = performance.now();
-      const execTime = end - start;
-      logicResults.push({
-        ...viewLogicResult,
-        name: logic.name,
-        execTime,
-        timeFinished: admin.firestore.Timestamp.now(),
-      });
-    } catch (e) {
-      console.error(`Error in viewLogicFn "${logic.name}":`, e);
-      const end = performance.now();
-      const execTime = end - start;
-      logicResults.push({
-        name: logic.name,
-        status: "error" as const,
-        documents: [],
-        execTime,
-        message: (e as Error).message,
-        timeFinished: admin.firestore.Timestamp.now(),
-      });
-    }
+    const result = await executeLogicWithMetrics(
+      logic.name,
+      () => logic.viewLogicFn(logicResultDoc, targetVersion, appVersion, lastProcessedId),
+    );
+    logicResults.push(result);
   }
   return logicResults;
 }

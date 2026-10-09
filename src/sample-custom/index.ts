@@ -5,6 +5,7 @@ import {dbStructure, Entity} from "./db-structure";
 import {securityConfigs} from "./security";
 import {validatorConfigs} from "./validators";
 import {logics} from "./business-logics";
+import {hourlyLogicConfigs} from "./hourly-logics";
 import {patchLogicConfigs} from "./patch-logics";
 import {backFillPatchConfigs} from "./one-time-patches";
 import {cleanupConfigs} from "./cleanup-configs";
@@ -19,6 +20,7 @@ const {functionsConfig} = initializeEmberFlow({
   securityConfigs,
   validatorConfigs,
   logicConfigs: logics,
+  hourlyLogicConfigs,
   patchLogicConfigs,
   cleanupConfigs,
   backFillPatchConfigs,

@@ -7,6 +7,7 @@ Emberflow is a library for Firebase Functions that simplifies the process of set
 - **Centralized Security**: Define security rules for your entities in one place.
 - **Validation**: Ensure your data is valid before it's saved to Firestore.
 - **Business Logics**: Define complex business rules that are automatically triggered by Firestore changes.
+- **Hourly Business Logics**: Run scheduled business logic every hour to perform routine tasks and automatically distribute documents.
 - **View Logics**: Easily create and maintain denormalized data (views) across your database.
 - **Manual View Materialization**: Hand-create `@views` links with `createViewDoc` for back-fills, guaranteed consistent with your registered `ViewDefinition`s.
 - **Patch Logics**: Handle versioning and data migrations seamlessly.
@@ -38,6 +39,7 @@ import { dbStructure, Entity } from "./db-structure";
 import { securityConfigs } from "./security";
 import { validatorConfigs } from "./validators";
 import { logics } from "./business-logics";
+import { hourlyLogicConfigs } from "./hourly-logics";
 import { patchLogicConfigs } from "./patch-logics";
 import { cleanupConfigs } from "./cleanup-configs";
 import { backFillPatchConfigs } from "./one-time-patches";
@@ -52,6 +54,7 @@ const { functionsConfig } = initializeEmberFlow({
   securityConfigs,
   validatorConfigs,
   logicConfigs: logics,
+  hourlyLogicConfigs, // optional, see "Hourly Business Logics" below
   patchLogicConfigs,
   cleanupConfigs, // optional, see "Collection Cleanup" below
   backFillPatchConfigs, // optional, see "Group Patch Engine" below
@@ -63,7 +66,7 @@ Object.entries(functionsConfig).forEach(([key, value]) => {
 });
 ```
 
-`initializeEmberFlow` takes a single options object (`InitializeEmberFlowOptions`). `projectConfig`, `admin`, `dbStructure`, `Entity`, `securityConfigs`, `validatorConfigs`, `logicConfigs`, and `patchLogicConfigs` are required; `cleanupConfigs`, `backFillPatchConfigs`, and `userRegisterFn` are optional.
+`initializeEmberFlow` takes a single options object (`InitializeEmberFlowOptions`). `projectConfig`, `admin`, `dbStructure`, `Entity`, `securityConfigs`, `validatorConfigs`, `logicConfigs`, and `patchLogicConfigs` are required; `hourlyLogicConfigs`, `cleanupConfigs`, `backFillPatchConfigs`, and `userRegisterFn` are optional.
 
 ## Configuration
 
@@ -147,6 +150,42 @@ export const logics: LogicConfig[] = [
   },
 ];
 ```
+
+### Hourly Business Logics (`hourlyLogicConfigs`)
+
+Defines business rules that execute on a scheduled hourly basis under a single `hourlyBusinessLogics` Cloud Function (`0 * * * *`).
+
+```typescript
+import { HourlyLogicConfig, HourlyLogicFn } from "emberflow";
+import * as admin from "firebase-admin";
+
+const syncHourlyStatus: HourlyLogicFn = async (event) => {
+  // Your hourly logic here
+  return {
+    name: "SyncHourlyStatus",
+    status: "finished",
+    documents: [
+      {
+        action: "merge",
+        dstPath: "system/hourly-status",
+        doc: {
+          lastRunAt: admin.firestore.Timestamp.now(),
+          scheduleTime: event.scheduleTime,
+        },
+      },
+    ],
+  };
+};
+
+export const hourlyLogicConfigs: HourlyLogicConfig[] = [
+  {
+    name: "SyncHourlyStatus",
+    hourlyLogicFn: syncHourlyStatus,
+  },
+];
+```
+
+Pass `hourlyLogicConfigs` to `initializeEmberFlow`. Returned documents are automatically consolidated, distributed to Firestore, and cascade to matching view logics and patch logics. Function resources (region, memory, timeout) can be configured via `projectConfig.functionsConfig.hourlyBusinessLogics`.
 
 ### Patch Logics (`patchLogicConfigs`)
 
