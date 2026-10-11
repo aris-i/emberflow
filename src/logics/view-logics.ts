@@ -514,16 +514,18 @@ export async function queueRunViewLogics(
       const dstDocRef = db.doc(basePath);
       if (!skipRunViewLogics && ["create", "merge", "delete"].includes(action)) {
         if (action === "delete") {
-          const data = (await dstDocRef.get()).data() || {};
-          const {destProp, destPropId} = getDestPropAndDestPropId(dstPath);
-          if (destProp) {
-            if (destPropId) {
-              logicResultDoc.doc = data[destProp]?.[destPropId] || {};
+          if (!logicResultDoc.doc || Object.keys(logicResultDoc.doc).length === 0) {
+            const data = (await dstDocRef.get()).data() || {};
+            const {destProp, destPropId} = getDestPropAndDestPropId(dstPath);
+            if (destProp) {
+              if (destPropId) {
+                logicResultDoc.doc = data[destProp]?.[destPropId] || {};
+              } else {
+                logicResultDoc.doc = data[destProp] || {};
+              }
             } else {
-              logicResultDoc.doc = data[destProp] || {};
+              logicResultDoc.doc = data;
             }
-          } else {
-            logicResultDoc.doc = data;
           }
         }
         await VIEW_LOGICS_TOPIC.publishMessage({json: {

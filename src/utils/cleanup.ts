@@ -2,7 +2,8 @@ import type {ScheduledEvent} from "firebase-functions/v2/scheduler";
 import {firestore} from "firebase-admin";
 import {cleanupConfigs, db, rtdb} from "../index";
 import {deleteCollection, deleteCollectionRecursive} from "./misc";
-import {CleanupConfig, CleanupTimeUnit} from "../types";
+import {CleanupConfig, CleanupTimeUnit, LogicResultDoc} from "../types";
+import {queueRunViewLogics} from "../logics/view-logics";
 
 export function computeCutoffDate(value: number, unit: CleanupTimeUnit): Date {
   const now = new Date();
@@ -81,13 +82,42 @@ export async function cleanupCollections(_event: ScheduledEvent) {
       }
 
       let deleted = 0;
-      const del = cfg.recursive === false ? deleteCollection : deleteCollectionRecursive;
-      await del(query, async (snapshot) => {
-        deleted += snapshot.size;
-        if (cfg.onBatchDeleted) {
-          await cfg.onBatchDeleted(snapshot);
-        }
-      });
+      if (cfg.recursive === false) {
+        await deleteCollection(query, async (snapshot) => {
+          deleted += snapshot.size;
+          if (cfg.syncViews) {
+            const logicResultDocs: LogicResultDoc[] = snapshot.docs.map((doc) => ({
+              action: "delete",
+              dstPath: doc.ref.path,
+              doc: doc.data(),
+            }));
+            const targetVersion = cfg.targetVersion || "1.0.0";
+            const appVersion = cfg.appVersion || "1.0.0";
+            await queueRunViewLogics(targetVersion, appVersion, logicResultDocs);
+          }
+          if (cfg.onBatchDeleted) {
+            await cfg.onBatchDeleted(snapshot);
+          }
+        }, !cfg.syncViews);
+      } else {
+        const skipSubcollections = cfg.syncViews ? (id: string) => id === "@views" : undefined;
+        await deleteCollectionRecursive(query, async (snapshot) => {
+          deleted += snapshot.size;
+          if (cfg.syncViews) {
+            const logicResultDocs: LogicResultDoc[] = snapshot.docs.map((doc) => ({
+              action: "delete",
+              dstPath: doc.ref.path,
+              doc: doc.data(),
+            }));
+            const targetVersion = cfg.targetVersion || "1.0.0";
+            const appVersion = cfg.appVersion || "1.0.0";
+            await queueRunViewLogics(targetVersion, appVersion, logicResultDocs);
+          }
+          if (cfg.onBatchDeleted) {
+            await cfg.onBatchDeleted(snapshot);
+          }
+        }, skipSubcollections);
+      }
       console.info(`cleanupCollections: deleted ${deleted} from ${cfg.collectionPath}`);
     } catch (e) {
       console.error(`cleanupCollections failed for ${cfg.collectionPath}`, e);

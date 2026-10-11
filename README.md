@@ -471,6 +471,13 @@ export const cleanupConfigs: CleanupConfig[] = [
     // recursive defaults to true: each matched doc is deleted with its whole
     // subtree. Set to false to delete only the matched documents.
     recursive: true,
+    // syncViews defaults to false: set to true to automatically queue view logics
+    // deletion events via queueRunViewLogics for all purged documents, keeping
+    // denormalized views in other collections and reverse @views links in sync.
+    syncViews: true,
+    // Optional targetVersion / appVersion for view-logic execution (defaults to "1.0.0").
+    targetVersion: "1.0.0",
+    appVersion: "1.0.0",
   },
 ];
 ```
@@ -489,6 +496,10 @@ Then pass `cleanupConfigs` to `initializeEmberFlow` (see step 2 in **Usage** abo
 - **Deletion mode (`recursive`)**: Defaults to `true`, deleting each matched document together
   with its entire subtree. Set `recursive: false` to delete only the matched documents (leaving
   any subcollections untouched).
+- **View Synchronization (`syncViews`)**: When `syncViews: true`, Emberflow automatically dispatches
+  deletion events to `queueRunViewLogics` for all purged documents. It preserves `@views` metadata
+  during batch deletion so view logics can propagate deletions to all target collections and purge
+  reverse `@views` links, preventing orphaned denormalized data.
 - **Isolation**: Each config is executed independently inside its own `try/catch`, so a failure
   in one rule (e.g. a missing index) won't stop the others; failures are logged and the number of
   deleted documents per collection is reported to the logs.

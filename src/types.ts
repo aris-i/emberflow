@@ -318,6 +318,20 @@ export interface CleanupConfig {
     /** If true (default), each matched doc is deleted with its whole subtree. */
     recursive?: boolean;
     /**
+     * If true, automatically queues view logics deletion events via queueRunViewLogics
+     * for all deleted documents so denormalized views and reverse @views links
+     * are automatically purged across target collections.
+     */
+    syncViews?: boolean;
+    /**
+     * Optional targetVersion used when syncViews is enabled. Defaults to "1.0.0".
+     */
+    targetVersion?: string;
+    /**
+     * Optional appVersion used when syncViews is enabled. Defaults to "1.0.0".
+     */
+    appVersion?: string;
+    /**
      * Internal-only side-effect hook run per deleted batch (e.g. RTDB forms
      * cleanup). Set only by built-in framework entries; project configs omit it.
      */

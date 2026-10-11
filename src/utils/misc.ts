@@ -137,8 +137,16 @@ export class LimitedSet<T> {
 }
 
 
-export async function deleteCollection(query: Query, callback?: (snapshot: firestore.QuerySnapshot) => void): Promise<void> {
-  query = query.limit(100).select();
+export async function deleteCollection(
+  query: Query,
+  callback?: (snapshot: firestore.QuerySnapshot) => void,
+  keysOnly = true
+): Promise<void> {
+  if (keysOnly) {
+    query = query.limit(100).select();
+  } else {
+    query = query.limit(100);
+  }
   return new Promise((resolve, reject) => {
     deleteQueryBatch(query, resolve, callback).catch(reject);
   });
@@ -170,20 +178,22 @@ async function deleteQueryBatch(query: Query, resolve: () => void, callback?: (s
 
 export async function deleteCollectionRecursive(
   query: Query,
-  callback?: (snapshot: firestore.QuerySnapshot) => void
+  callback?: (snapshot: firestore.QuerySnapshot) => void,
+  skipSubcollections?: (subcollectionId: string) => boolean
 ): Promise<void> {
   // Note: no keys-only .select() here so that field data (e.g. eventContext)
   // stays available for callbacks that need it.
   query = query.limit(100);
   return new Promise((resolve, reject) => {
-    deleteQueryBatchRecursive(query, resolve, callback).catch(reject);
+    deleteQueryBatchRecursive(query, resolve, callback, skipSubcollections).catch(reject);
   });
 }
 
 async function deleteQueryBatchRecursive(
   query: Query,
   resolve: () => void,
-  callback?: (snapshot: firestore.QuerySnapshot) => void
+  callback?: (snapshot: firestore.QuerySnapshot) => void,
+  skipSubcollections?: (subcollectionId: string) => boolean
 ): Promise<void> {
   const snapshot = await query.get();
 
@@ -196,7 +206,10 @@ async function deleteQueryBatchRecursive(
   for (const doc of snapshot.docs) {
     const subcollections = await doc.ref.listCollections();
     for (const subcollection of subcollections) {
-      await deleteCollectionRecursive(subcollection);
+      if (skipSubcollections && skipSubcollections(subcollection.id)) {
+        continue;
+      }
+      await deleteCollectionRecursive(subcollection, undefined, skipSubcollections);
     }
     await batch.deleteDoc(doc.ref);
   }
@@ -208,7 +221,7 @@ async function deleteQueryBatchRecursive(
   }
 
   process.nextTick(() => {
-    deleteQueryBatchRecursive(query, resolve, callback);
+    deleteQueryBatchRecursive(query, resolve, callback, skipSubcollections);
   });
 }
 

@@ -6,6 +6,7 @@ import {securityConfigs} from "../../sample-custom/security";
 import {validatorConfigs} from "../../sample-custom/validators";
 import {patchLogicConfigs} from "../../sample-custom/patch-logics";
 import * as misc from "../../utils/misc";
+import * as viewLogics from "../../logics/view-logics";
 import type {ScheduledEvent} from "firebase-functions/v2/scheduler";
 import {
   cleanupCollections,
@@ -256,5 +257,49 @@ describe("cleanupCollections", () => {
 
     expect(collectionGroupMock).not.toHaveBeenCalledWith("askJaris");
     expect(collectionMock).toHaveBeenCalledWith("@actions");
+  });
+
+  it("queues view logics deletion when syncViews is true", async () => {
+    const queueRunViewLogicsSpy = jest.spyOn(viewLogics, "queueRunViewLogics").mockResolvedValue();
+    const syncViewsConfig: CleanupConfig[] = [
+      {
+        collectionPath: "temporaryPosts",
+        timestampField: "createdAt",
+        olderThan: {value: 30, unit: "days"},
+        syncViews: true,
+        targetVersion: "2.0.0",
+        appVersion: "2.1.0",
+      },
+    ];
+    const testSnapshot = {
+      size: 1,
+      docs: [
+        {
+          ref: {path: "temporaryPosts/p1"},
+          data: () => ({title: "Temporary Post"}),
+        },
+      ],
+    } as unknown as FirebaseFirestore.QuerySnapshot;
+
+    deleteCollectionRecursiveSpy.mockImplementation(async (q, callback, skipSubcollections) => {
+      if (skipSubcollections) {
+        expect(skipSubcollections("@views")).toBe(true);
+        expect(skipSubcollections("otherSubcollection")).toBe(false);
+      }
+      if (callback) {
+        await callback(testSnapshot);
+      }
+    });
+
+    initWithCleanupConfigs(syncViewsConfig);
+    await cleanupCollections({} as ScheduledEvent);
+
+    expect(queueRunViewLogicsSpy).toHaveBeenCalledWith("2.0.0", "2.1.0", [
+      {
+        action: "delete",
+        dstPath: "temporaryPosts/p1",
+        doc: {title: "Temporary Post"},
+      },
+    ]);
   });
 });
