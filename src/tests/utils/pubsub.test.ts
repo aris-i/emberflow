@@ -22,15 +22,15 @@ admin.initializeApp({
   databaseURL: "https://test-project.firebaseio.com",
 });
 initializeEmberFlow({
-      projectConfig,
-      admin,
-      dbStructure,
-      Entity,
-      securityConfigs,
-      validatorConfigs,
-      logicConfigs: [],
-      patchLogicConfigs: [],
-    });
+  projectConfig,
+  admin,
+  dbStructure,
+  Entity,
+  securityConfigs,
+  validatorConfigs,
+  logicConfigs: [],
+  patchLogicConfigs: [],
+});
 
 describe("pubsubUtils", () => {
   let docSetMock: jest.Mock;

@@ -13,6 +13,11 @@
     "firestore.indexes.json"
   ],
   "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint --ext .js,.ts .",
+    "test": "jest",
+    "check": "npm run typecheck && npm run lint && npm test",
     "prepublishOnly": "tsc"
   },
   "repository": {

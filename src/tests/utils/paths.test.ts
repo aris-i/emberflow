@@ -29,15 +29,15 @@ admin.initializeApp({
   databaseURL: `https://${projectConfig.rtdbName}.${projectConfig.region}.firebasedatabase.app/`,
 });
 initializeEmberFlow({
-      projectConfig,
-      admin,
-      dbStructure,
-      Entity,
-      securityConfigs: [],
-      validatorConfigs: [],
-      logicConfigs: [],
-      patchLogicConfigs: [],
-    });
+  projectConfig,
+  admin,
+  dbStructure,
+  Entity,
+  securityConfigs: [],
+  validatorConfigs: [],
+  logicConfigs: [],
+  patchLogicConfigs: [],
+});
 
 // Mock fetchIds function
 jest.mock("../../utils/query", () => ({

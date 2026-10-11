@@ -3,7 +3,7 @@ import {
   mapDocPaths,
   mapEntityViewDefinitions,
   mapViewDefinitions,
-  traverseBFS
+  traverseBFS,
 } from "../init-db-structure";
 
 describe("traverseBFS", () => {
@@ -251,7 +251,7 @@ describe("mapEntityViewDefinitions", () => {
         srcProps: ["prop"],
         srcEntity: "source",
         version: "0.0.1",
-      }
+      },
     ];
 
     const expectedOutput = {

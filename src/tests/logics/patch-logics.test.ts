@@ -36,15 +36,15 @@ admin.initializeApp({
 });
 
 initializeEmberFlow({
-      projectConfig,
-      admin,
-      dbStructure,
-      Entity,
-      securityConfigs,
-      validatorConfigs,
-      logicConfigs: [],
-      patchLogicConfigs: [],
-    });
+  projectConfig,
+  admin,
+  dbStructure,
+  Entity,
+  securityConfigs,
+  validatorConfigs,
+  logicConfigs: [],
+  patchLogicConfigs: [],
+});
 
 describe("queueRunPatchLogics", () => {
   const messageId = "test-message-id";
