@@ -1250,6 +1250,106 @@ describe("createViewLogicFn", () => {
     expect(result.documents[1].instructions).toEqual({"@followers": "arr(-user456)"});
   });
 
+  it("should cleanup @views entry in src when deleting a document with a map propView", async () => {
+    const vd: ViewDefinition = {
+      srcEntity: "user",
+      srcProps: ["name", "email"],
+      destEntity: "server",
+      destProp: {
+        name: "createdBy",
+        type: "map",
+      },
+      version: "1.0.0",
+    };
+    const logicFn = viewLogics.createViewLogicFn(vd);
+
+    const deleteDoc: LogicResultDoc = {
+      action: "delete",
+      dstPath: "servers/server1",
+      doc: {
+        name: "Server 1",
+        createdBy: {
+          "@id": "user123",
+          "name": "User 123",
+        },
+      },
+    };
+
+    const result = await logicFn[1](deleteDoc, "1.0.0", "1.0.0");
+    expect(result.status).toBe("finished");
+    expect(result.documents.length).toBe(1);
+    expect(result.documents[0]).toEqual({
+      action: "delete",
+      dstPath: "users/user123/@views/servers+server1+createdBy",
+    });
+  });
+
+  it("should cleanup all @views entries in src when deleting a document with an array-map propView", async () => {
+    const vd: ViewDefinition = {
+      srcEntity: "user",
+      srcProps: ["name"],
+      destEntity: "server",
+      destProp: {
+        name: "followers",
+        type: "array-map",
+      },
+      version: "1.0.0",
+    };
+    const logicFn = viewLogics.createViewLogicFn(vd);
+
+    const deleteDoc: LogicResultDoc = {
+      action: "delete",
+      dstPath: "servers/server1",
+      doc: {
+        name: "Server 1",
+        followers: {
+          "userA": {"@id": "userA", "name": "Alice"},
+          "userB": {"@id": "userB", "name": "Bob"},
+        },
+      },
+    };
+
+    const result = await logicFn[1](deleteDoc, "1.0.0", "1.0.0");
+    expect(result.status).toBe("finished");
+    expect(result.documents.length).toBe(2);
+    expect(result.documents).toEqual([
+      {
+        action: "delete",
+        dstPath: "users/userA/@views/servers+server1+followers[userA]",
+      },
+      {
+        action: "delete",
+        dstPath: "users/userB/@views/servers+server1+followers[userB]",
+      },
+    ]);
+  });
+
+  it("should return empty documents when deleting a document that does not contain the propView", async () => {
+    const vd: ViewDefinition = {
+      srcEntity: "user",
+      srcProps: ["name"],
+      destEntity: "server",
+      destProp: {
+        name: "followers",
+        type: "array-map",
+      },
+      version: "1.0.0",
+    };
+    const logicFn = viewLogics.createViewLogicFn(vd);
+
+    const deleteDoc: LogicResultDoc = {
+      action: "delete",
+      dstPath: "servers/server1",
+      doc: {
+        name: "Server 1",
+      },
+    };
+
+    const result = await logicFn[1](deleteDoc, "1.0.0", "1.0.0");
+    expect(result.status).toBe("finished");
+    expect(result.documents.length).toBe(0);
+  });
+
   describe("dstToSrcLogicFn edge cases", () => {
     it("should handle multiple placeholders in srcPath resolved from dstPath", async () => {
       // srcEntity: recipeIngredient, srcPath: topics/{topicId}/ingredients/{recipeIngredientId}
@@ -1760,7 +1860,7 @@ describe("findMatchingViewLogics", () => {
     expect(result?.has("user#todosArray ViewLogic")).toBe(true);
   });
 
-  it("should return matching reverse view logics without destProp when destProp is undefined", () => {
+  it("should return matching reverse view logics without destProp when destProp is undefined and action is create", () => {
     const createDoc: LogicResultDoc = {
       action: "create",
       dstPath: "users/userId",
@@ -1772,6 +1872,25 @@ describe("findMatchingViewLogics", () => {
     // because dstPath does not have a #destProp
     expect(result?.has("user#todosArray Reverse ViewLogic")).toBe(false);
     expect(result?.has("user#mainTopic Reverse ViewLogic")).toBe(false);
+  });
+
+  it("should return matching reverse view logics for propViews when deleting a document without destProp", () => {
+    // Override the mock to return "user" entity for the base path
+    jest.spyOn(paths, "findMatchingDocPathRegex").mockReturnValue({
+      entity: "user",
+      regex: /users/,
+    });
+
+    const deleteDoc: LogicResultDoc = {
+      action: "delete",
+      dstPath: "users/userId",
+      doc: {name: "Alice"},
+    };
+    const result = findMatchingViewLogics(deleteDoc, "5.0.0");
+
+    // When deleting a document, it should include reverse view logics for embedded propViews
+    expect(result?.has("user#todosArray Reverse ViewLogic")).toBe(true);
+    expect(result?.has("user#mainTopic Reverse ViewLogic")).toBe(true);
   });
 
   it("should return matching reverse view logics for array-map merge actions", () => {

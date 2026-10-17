@@ -390,23 +390,21 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       doc: viewDoc,
     } = logicResultDoc;
 
-    const {destPropId} = getDestPropAndDestPropId(viewDstPath);
-    const srcDocId = viewDoc?.["@id"] || destPropId || viewDstPath.split("/").pop();
+    const {destProp: pathDestProp, destPropId} = getDestPropAndDestPropId(viewDstPath);
 
-    if (!srcDocId) {
-      console.error("Document does not have an @id attribute and srcDocId could not be determined from dstPath");
-      logicResult.status = "error";
-      logicResult.message = "Document does not have an @id attribute and srcDocId could not be determined from dstPath";
-      return logicResult;
-    }
+    // Resolves the Firestore source document path from destination document data and path placeholders.
+    // Accepts optional custom source doc ID, item document data, and view destination path for embedded propViews.
+    function formSrcPath(customSrcDocId?: string, itemDoc?: any, customViewDstPath?: string) {
+      const targetSrcDocId = customSrcDocId || srcDocId;
+      const targetViewDstPath = customViewDstPath || viewDstPath;
+      const targetItemDoc = itemDoc || viewDoc;
 
-    function formSrcPath() {
       const srcDocPath = docPaths[defSrcEntity];
       let srcPathParent = srcDocPath.split("/").slice(0, -1).join("/");
 
       const destDocPath = docPaths[defDestEntity];
       const destDocPathRegex = docPathsRegex[defDestEntity];
-      const destDocPathMatches = viewDstPath.split("#")[0].match(destDocPathRegex);
+      const destDocPathMatches = targetViewDstPath.split("#")[0].match(destDocPathRegex);
 
       // let's create a map of the placeholders with their matching values from dstPath
       const dstPathKeyValuesMap: Record<string, string> = {};
@@ -424,16 +422,70 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       if (srcDocPathKeys) {
         for (const srcDocPathKey of srcDocPathKeys) {
           const key = srcDocPathKey.replace(/[{}]/g, "");
-          const value = viewDoc?.[key] || dstPathKeyValuesMap[key];
+          const value = targetItemDoc?.[key] || viewDoc?.[key] || dstPathKeyValuesMap[key];
           if (value) {
             srcPathParent = srcPathParent.replace(srcDocPathKey, value);
           }
         }
       }
-      return `${srcPathParent}/${srcDocId}`;
+      return `${srcPathParent}/${targetSrcDocId}`;
     }
 
-    const srcPath = formSrcPath();
+    // Handle document-level deletion when the entity has embedded propView definitions.
+    // If the whole document is deleted (action === "delete" and no specific #destProp is in viewDstPath),
+    // extract each embedded propView entry to clean up its corresponding @views record in the source doc.
+    if (viewAction === "delete" && defDestProp && !pathDestProp) {
+      const propVal = viewDoc?.[defDestProp.name] as Record<string, any> | undefined;
+      if (!propVal || typeof propVal !== "object") {
+        return logicResult;
+      }
+
+      // Single map propView (e.g., createdBy: { @id: "user123", name: "Alice" })
+      if (defDestProp.type === "map") {
+        const propSrcDocId = propVal["@id"] || propVal["id"];
+        if (propSrcDocId) {
+          const propViewDstPath = `${viewDstPath}#${defDestProp.name}`;
+          const srcPath = formSrcPath(propSrcDocId, propVal, propViewDstPath);
+          if (!srcPath.includes("{")) {
+            const srcAtViewsPath = formAtViewsPath(propViewDstPath, srcPath);
+            logicResult.documents.push({
+              action: "delete",
+              dstPath: srcAtViewsPath,
+            });
+          }
+        }
+      } else if (defDestProp.type === "array-map") {
+        // Multi-entry array-map propView (e.g., followers: { userA: { @id: "userA" }, userB: { @id: "userB" } })
+        for (const [key, itemVal] of Object.entries(propVal)) {
+          const itemDoc = (typeof itemVal === "object" && itemVal !== null) ? itemVal as Record<string, any> : {};
+          const propSrcDocId = itemDoc["@id"] || itemDoc["id"] || key;
+          if (propSrcDocId) {
+            const propViewDstPath = `${viewDstPath}#${defDestProp.name}[${key}]`;
+            const srcPath = formSrcPath(propSrcDocId, itemDoc, propViewDstPath);
+            if (!srcPath.includes("{")) {
+              const srcAtViewsPath = formAtViewsPath(propViewDstPath, srcPath);
+              logicResult.documents.push({
+                action: "delete",
+                dstPath: srcAtViewsPath,
+              });
+            }
+          }
+        }
+      }
+
+      return logicResult;
+    }
+
+    const srcDocId = viewDoc?.["@id"] || destPropId || viewDstPath.split("/").pop();
+
+    if (!srcDocId) {
+      console.error("Document does not have an @id attribute and srcDocId could not be determined from dstPath");
+      logicResult.status = "error";
+      logicResult.message = "Document does not have an @id attribute and srcDocId could not be determined from dstPath";
+      return logicResult;
+    }
+
+    const srcPath = formSrcPath(srcDocId, viewDoc, viewDstPath);
     if (srcPath.includes("{")) {
       console.error("srcPath should not have a placeholder");
       logicResult.status = "error";
@@ -671,8 +723,10 @@ export const findMatchingViewLogics = (logicResultDoc: LogicResultDoc, targetVer
     const isWithinTargetVersion = versionCompare(viewLogicConfig.version, targetVersion) <= 0;
 
     if (action === "delete") {
+      // When deleting a document (destProp is undefined), match all reverse view logics
+      // for this entity (including embedded propViews) so their source @views records get cleaned up.
       return viewLogicConfig.entity === entity &&
-                (destProp ? viewLogicConfig.destProp === destProp : !viewLogicConfig.destProp) &&
+                (destProp ? viewLogicConfig.destProp === destProp : true) &&
                 isWithinTargetVersion;
     }
 

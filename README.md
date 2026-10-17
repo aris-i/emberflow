@@ -80,6 +80,14 @@ Defines the hierarchy of your Firestore collections and how data is denormalized
 import { propView, view } from "emberflow/utils/db-structure";
 
 export const dbStructure = {
+  servers: {
+    [Entity.Server]: {
+      // Embedded map propView
+      createdBy: propView("map", Entity.User, ["name", "email"]),
+      // Embedded array-map propView
+      followers: [propView("array-map", Entity.User, ["name", "email"])],
+    },
+  },
   users: {
     [Entity.User]: {
       feeds: {
@@ -91,6 +99,17 @@ export const dbStructure = {
   },
 };
 ```
+
+#### View Types & Denormalization
+- **Document Views (`view`)**: Denormalizes an entire document into a destination collection or document.
+- **Property Views (`propView`)**: Embeds denormalized source entity properties inside a destination document:
+  - `"map"`: Embeds a single source document as a map (e.g., `createdBy: { @id: "user123", name: "Alice", email: "alice@example.com" }`).
+  - `"array-map"`: Embeds multiple source documents as a map of maps (e.g., `followers: { userA: { @id: "userA", name: "Alice" }, userB: { @id: "userB", name: "Bob" } }`).
+
+#### Automatic View Lifecycle & `@views` Cleanup
+- **Link Registration**: When destination documents or embedded `propView` properties are created or updated, Emberflow automatically creates reverse tracking documents in the source entity's `@views` subcollection (e.g., `users/user123/@views/servers+server1+createdBy`).
+- **Fan-Out Synchronization**: When a source document is updated, Emberflow reads its `@views` subcollection and propagates the selected `srcProps` to all destination documents.
+- **Automatic Deletion Cleanup**: When a destination document containing embedded `propView`s (`map` or `array-map`) is deleted, Emberflow automatically runs reverse view logics to delete all corresponding `@views` records from the source documents. This prevents orphaned `@views` records from lingering in Firestore, minimizing storage overhead and avoiding wasteful read/write operations during future source updates.
 
 ### Security Configs (`securityConfigs`)
 
