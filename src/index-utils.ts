@@ -356,10 +356,17 @@ function getMatchingLogics(actionType: ActionType, modifiedFields: DocumentData,
   }, [] as LogicConfig[]);
 }
 
+export const isTransactionContentionError = (error: unknown): boolean => {
+  const {code, message} = (error || {}) as {code?: number | string, message?: string};
+  return code === 10 || code === "10" || code === "aborted" ||
+    /10 ABORTED|Too much contention|cross-transaction contention/i.test(message || "");
+};
+
 export async function executeLogicWithMetrics(
   name: string,
   fn: () => Promise<LogicResult>,
   version?: string,
+  shouldRethrow?: (error: unknown) => boolean,
 ): Promise<LogicResult> {
   const start = performance.now();
   try {
@@ -374,6 +381,9 @@ export async function executeLogicWithMetrics(
       timeFinished: admin.firestore.Timestamp.now(),
     };
   } catch (e) {
+    if (shouldRethrow?.(e)) {
+      throw e;
+    }
     console.error(`Error in logic "${name}":`, e);
     const end = performance.now();
     const execTime = end - start;
@@ -406,14 +416,40 @@ export const runBusinessLogics = async (
 
   const sharedMap = new Map<string, any>();
 
+  // When a transactional read is aborted due to contention the transaction can
+  // no longer commit. Rethrow so Firestore retries the whole transaction right
+  // away, instead of logging an error for an attempt that will be discarded and
+  // running the remaining logics for nothing.
+  let txnReadAbortError: unknown;
+  const trackedTxnGet = {
+    ...txnGet,
+    get: async (ref: unknown) => {
+      try {
+        return await (txnGet.get as (r: unknown) => Promise<unknown>)(ref);
+      } catch (e) {
+        if (isTransactionContentionError(e)) {
+          txnReadAbortError = txnReadAbortError ?? e;
+        }
+        throw e;
+      }
+    },
+  } as unknown as TxnGet;
+  const isTxnReadAbort = (e: unknown) =>
+    txnReadAbortError !== undefined && isTransactionContentionError(e);
+
   const logicResults: LogicResult[] = [];
   for (let i = 0; i < matchingLogics.length; i++) {
     const logic = matchingLogics[i];
     const result = await executeLogicWithMetrics(
       logic.name,
-      () => logic.logicFn(txnGet, action, sharedMap),
+      () => logic.logicFn(trackedTxnGet, action, sharedMap),
       logic.version,
+      isTxnReadAbort,
     );
+    if (txnReadAbortError !== undefined) {
+      // The logic swallowed the aborted read; the transaction is still dead.
+      throw txnReadAbortError;
+    }
     logicResults.push(result);
   }
 

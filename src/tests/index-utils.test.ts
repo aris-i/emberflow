@@ -1032,6 +1032,8 @@ describe("runBusinessLogics", () => {
   let logicFn5: jest.Mock;
   let logicFn6: jest.Mock;
   let logicFn7: jest.Mock;
+  // Logics receive a wrapper that tracks aborted transactional reads.
+  const trackedTxnGet = expect.objectContaining({get: expect.any(Function)});
 
   let dbSpy: jest.SpyInstance;
   let actionRef: DocumentReference;
@@ -1221,8 +1223,8 @@ describe("runBusinessLogics", () => {
     });
     const runStatus = await indexUtils.runBusinessLogics(txnGet, action, "2");
 
-    expect(logicFn1).toHaveBeenCalledWith(txnGet, action, new Map());
-    expect(logicFn2).toHaveBeenCalledWith(txnGet, action, new Map());
+    expect(logicFn1).toHaveBeenCalledWith(trackedTxnGet, action, new Map());
+    expect(logicFn2).toHaveBeenCalledWith(trackedTxnGet, action, new Map());
     expect(logicFn3).not.toHaveBeenCalled();
     expect(runStatus).toEqual({
       status: "done",
@@ -1308,7 +1310,7 @@ describe("runBusinessLogics", () => {
     };
     const runStatus = await indexUtils.runBusinessLogics(txnGet, newAction, "1");
 
-    expect(logicFn4).toHaveBeenCalledWith(txnGet, newAction, new Map());
+    expect(logicFn4).toHaveBeenCalledWith(trackedTxnGet, newAction, new Map());
     expect(logicFn5).not.toHaveBeenCalled();
     expect(logicFn6).not.toHaveBeenCalled();
     expect(logicFn7).not.toHaveBeenCalled();
@@ -1432,13 +1434,13 @@ describe("runBusinessLogics", () => {
     const runStatus = await indexUtils.runBusinessLogics(txnGet, newAction, targetVersion);
 
     expect(logicFn1).not.toHaveBeenCalled(); // old logic
-    expect(logicFn1V2).toHaveBeenCalledWith(txnGet, newAction, new Map());
+    expect(logicFn1V2).toHaveBeenCalledWith(trackedTxnGet, newAction, new Map());
     expect(logicFn1V3).not.toHaveBeenCalled(); // ahead the target version
     expect(logicFn2).not.toHaveBeenCalled(); // old logic
-    expect(logicFn2V2).toHaveBeenCalledWith(txnGet, newAction, new Map());
+    expect(logicFn2V2).toHaveBeenCalledWith(trackedTxnGet, newAction, new Map());
     expect(logicFn3).not.toHaveBeenCalled(); // unmatched modifiedFields
     expect(logicFn3V2).not.toHaveBeenCalled(); // unmatched modifiedFields
-    expect(logicFn4V2).toHaveBeenCalledWith(txnGet, newAction, new Map());
+    expect(logicFn4V2).toHaveBeenCalledWith(trackedTxnGet, newAction, new Map());
     expect(logicFn5V2).not.toHaveBeenCalled(); // target version passed the obsoleteAfterVersion
     expect(runStatus).toEqual({
       status: "done",
@@ -1569,9 +1571,9 @@ describe("runBusinessLogics", () => {
     });
     const runStatus = await indexUtils.runBusinessLogics(txnGet, action, "1");
 
-    expect(logicFn1).toHaveBeenCalledWith(txnGet, action, expectedSharedMap);
-    expect(logicFn2).toHaveBeenCalledWith(txnGet, action, expectedSharedMap);
-    expect(logicFn3).toHaveBeenCalledWith(txnGet, action, expectedSharedMap);
+    expect(logicFn1).toHaveBeenCalledWith(trackedTxnGet, action, expectedSharedMap);
+    expect(logicFn2).toHaveBeenCalledWith(trackedTxnGet, action, expectedSharedMap);
+    expect(logicFn3).toHaveBeenCalledWith(trackedTxnGet, action, expectedSharedMap);
 
     expect(runStatus.status).toEqual("done");
 
@@ -2664,6 +2666,128 @@ describe("executeLogicWithMetrics", () => {
     expect(result.documents).toEqual([]);
     expect(result.execTime).toBeDefined();
     expect(result.timeFinished).toBeDefined();
+  });
+
+  it("should rethrow without logging when shouldRethrow returns true", async () => {
+    const error = new Error("10 ABORTED: Too much contention on these documents.");
+    const fn = jest.fn().mockRejectedValue(error);
+    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(indexUtils.executeLogicWithMetrics("Logic", fn, "1.0.0", () => true))
+      .rejects.toBe(error);
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+});
+
+describe("transactional read contention", () => {
+  const contentionError = Object.assign(
+    new Error("10 ABORTED: Aborted due to cross-transaction contention."),
+    {code: 10},
+  );
+  const action = {
+    eventContext: {
+      id: "1", uid: "u", docId: "d", formId: "f", docPath: "users/u", entity: "user",
+    },
+    actionType: "create",
+    document: {},
+    status: "processing",
+    timeCreated: firestore.Timestamp.now(),
+    modifiedFields: {field1: "value"},
+    user: {},
+    metadata: {},
+    appVersion: "1.0.0",
+  } as unknown as Action;
+
+  let errorSpy: jest.SpyInstance;
+
+  const init = (logicFns: LogicConfig["logicFn"][]) => {
+    initializeEmberFlow({
+      projectConfig,
+      admin,
+      dbStructure,
+      Entity,
+      securityConfigs,
+      validatorConfigs,
+      logicConfigs: logicFns.map((logicFn, i) => ({
+        name: `logic${i}`,
+        actionTypes: ["create"],
+        modifiedFields: "all",
+        entities: "all",
+        logicFn,
+        version: "1",
+      })),
+      patchLogicConfigs: [],
+    });
+  };
+
+  beforeEach(() => {
+    errorSpy = jest.spyOn(console, "error").mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    errorSpy.mockRestore();
+  });
+
+  it("detects contention errors", () => {
+    expect(indexUtils.isTransactionContentionError(contentionError)).toBe(true);
+    expect(indexUtils.isTransactionContentionError(new Error("10 ABORTED: Too much contention"))).toBe(true);
+    expect(indexUtils.isTransactionContentionError(new Error("boom"))).toBe(false);
+    expect(indexUtils.isTransactionContentionError(undefined)).toBe(false);
+  });
+
+  it("rethrows an aborted txnGet read without logging and skips remaining logics", async () => {
+    const txnGet = {get: jest.fn().mockRejectedValue(contentionError)} as unknown as TxnGet;
+    const logic1 = jest.fn(async (txn: TxnGet) => {
+      await txn.get({} as any);
+      return {name: "logic0", status: "finished" as const, documents: []};
+    });
+    const logic2 = jest.fn();
+    init([logic1, logic2]);
+
+    await expect(indexUtils.runBusinessLogics(txnGet, action, "1")).rejects.toBe(contentionError);
+    expect(logic2).not.toHaveBeenCalled();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it("rethrows even when the logic swallowed the aborted txnGet read", async () => {
+    const txnGet = {get: jest.fn().mockRejectedValue(contentionError)} as unknown as TxnGet;
+    const logic1 = jest.fn(async (txn: TxnGet) => {
+      await txn.get({} as any).catch(() => undefined);
+      return {name: "logic0", status: "finished" as const, documents: []};
+    });
+    const logic2 = jest.fn();
+    init([logic1, logic2]);
+
+    await expect(indexUtils.runBusinessLogics(txnGet, action, "1")).rejects.toBe(contentionError);
+    expect(logic2).not.toHaveBeenCalled();
+  });
+
+  it("still records contention errors from non-transactional reads as logic errors", async () => {
+    const txnGet = {get: jest.fn()} as unknown as TxnGet;
+    const logic1 = jest.fn().mockRejectedValue(contentionError);
+    const logic2 = jest.fn().mockResolvedValue({name: "logic1", status: "finished", documents: []});
+    init([logic1, logic2]);
+
+    const {logicResults} = await indexUtils.runBusinessLogics(txnGet, action, "1");
+
+    expect(logicResults.map((r) => r.status)).toEqual(["error", "finished"]);
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes successful txnGet reads through unchanged", async () => {
+    const snapshot = {data: () => ({a: 1})};
+    const txnGet = {get: jest.fn().mockResolvedValue(snapshot)} as unknown as TxnGet;
+    const logic1 = jest.fn(async (txn: TxnGet) => {
+      const snap = await txn.get({} as any) as any;
+      return {name: "logic0", status: "finished" as const, documents: [], message: String(snap.data().a)};
+    });
+    init([logic1]);
+
+    const {logicResults} = await indexUtils.runBusinessLogics(txnGet, action, "1");
+
+    expect(logicResults[0].message).toBe("1");
+    expect(txnGet.get).toHaveBeenCalledTimes(1);
   });
 });
 
