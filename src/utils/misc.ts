@@ -1,6 +1,5 @@
+import {GeoPoint, Timestamp} from "firebase-admin/firestore";
 import {firestore} from "firebase-admin";
-import Timestamp = firestore.Timestamp;
-import GeoPoint = firestore.GeoPoint;
 import Query = firestore.Query;
 import {BatchUtil} from "./batch";
 import sizeof from "object-sizeof/index";

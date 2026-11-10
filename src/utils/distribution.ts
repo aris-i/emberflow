@@ -7,16 +7,15 @@ import {
   FOR_DISTRIBUTION_TOPIC_NAME,
   INSTRUCTIONS_TOPIC,
   INSTRUCTIONS_TOPIC_NAME,
-  admin,
   db,
 } from "../index";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
 import type {MessagePublishedData} from "firebase-functions/v2/pubsub";
 import {distributeDoc, patchGroupDocs} from "../index-utils";
 import {firestore} from "firebase-admin";
+import {FieldValue, Timestamp} from "firebase-admin/firestore";
 import {pubsubUtils} from "./pubsub";
 import {reviveDateAndTimestamp} from "./misc";
-import FieldValue = firestore.FieldValue;
 import Transaction = firestore.Transaction;
 import {findMatchingViewLogics, queueRunViewLogics} from "../logics/view-logics";
 import {findMatchingPatchLogicsByEntity, queueRunPatchLogics} from "../logics/patch-logics";
@@ -33,7 +32,7 @@ import {findMatchingPatchLogicsByEntity, queueRunPatchLogics} from "../logics/pa
  * @return {string | undefined} The equivalent instruction string, or undefined.
  */
 export function sentinelToInstruction(value: any): string | undefined {
-  if (!(value instanceof admin.firestore.FieldValue)) {
+  if (!(value instanceof FieldValue)) {
     return undefined;
   }
 
@@ -93,7 +92,7 @@ export function extractSentinelsFromDoc(doc: { [key: string]: any }): Instructio
     }
 
     // Unsupported sentinel: fail loudly instead of silently losing it to JSON.
-    if (value instanceof admin.firestore.FieldValue) {
+    if (value instanceof FieldValue) {
       console.warn(
         `Unsupported FieldValue sentinel at property "${key}"; it will be lost during JSON serialization.`
       );
@@ -241,22 +240,22 @@ async function _convert(txn: Transaction, instructions: Instructions, updateData
     }
 
     if (instruction === "++") {
-      setNestedValue(updateData, currentPathArr, admin.firestore.FieldValue.increment(1));
+      setNestedValue(updateData, currentPathArr, FieldValue.increment(1));
     } else if (instruction === "--") {
-      setNestedValue(updateData, currentPathArr, admin.firestore.FieldValue.increment(-1));
+      setNestedValue(updateData, currentPathArr, FieldValue.increment(-1));
     } else if (instruction.startsWith("+")) {
       const incrementValue = parseFloat(instruction.slice(1));
       if (isNaN(incrementValue)) {
         console.log(`Invalid increment value ${instruction} for property ${currentPath}`);
       } else {
-        setNestedValue(updateData, currentPathArr, admin.firestore.FieldValue.increment(incrementValue));
+        setNestedValue(updateData, currentPathArr, FieldValue.increment(incrementValue));
       }
     } else if (instruction.startsWith("-")) {
       const decrementValue = parseFloat(instruction.slice(1));
       if (isNaN(decrementValue)) {
         console.log(`Invalid decrement value ${instruction} for property ${currentPath}`);
       } else {
-        setNestedValue(updateData, currentPathArr, admin.firestore.FieldValue.increment(-decrementValue));
+        setNestedValue(updateData, currentPathArr, FieldValue.increment(-decrementValue));
       }
     } else if (instruction.startsWith("arr")) {
       const regex = /\((.*?)\)/;
@@ -289,15 +288,15 @@ async function _convert(txn: Transaction, instructions: Instructions, updateData
         valuesToAdd.push(value);
       }
       if (valuesToAdd.length > 0) {
-        setNestedValue(updateData, currentPathArr, admin.firestore.FieldValue.arrayUnion(...valuesToAdd));
+        setNestedValue(updateData, currentPathArr, FieldValue.arrayUnion(...valuesToAdd));
       }
       if (valuesToRemove.length > 0) {
-        setNestedValue(removeData, currentPathArr, admin.firestore.FieldValue.arrayRemove(...valuesToRemove));
+        setNestedValue(removeData, currentPathArr, FieldValue.arrayRemove(...valuesToRemove));
       }
     } else if (instruction === "del") {
-      setNestedValue(updateData, currentPathArr, admin.firestore.FieldValue.delete());
+      setNestedValue(updateData, currentPathArr, FieldValue.delete());
     } else if (instruction === "serverTimestamp") {
-      setNestedValue(updateData, currentPathArr, admin.firestore.FieldValue.serverTimestamp());
+      setNestedValue(updateData, currentPathArr, FieldValue.serverTimestamp());
     } else if (instruction.startsWith("globalCounter")) {
       const regex = /globalCounter\(([^,]+)(?:,\s*(\d+))?\)/;
       const match = instruction.match(regex);
@@ -309,7 +308,7 @@ async function _convert(txn: Transaction, instructions: Instructions, updateData
 
       const counterName = match[1];
       const maxValue = parseInt(match[2], 10);
-      const now = admin.firestore.Timestamp.now();
+      const now = Timestamp.now();
 
       try {
         let newCount: number;
@@ -599,8 +598,8 @@ export const queueGroupPatch = async (params: QueueGroupPatchParams) => {
           collectionPath,
           count: 0,
           lastPatchedId: null, // Reset cursor if restarting
-          createdAt: admin.firestore.Timestamp.now(),
-          updatedAt: admin.firestore.Timestamp.now(),
+          createdAt: Timestamp.now(),
+          updatedAt: Timestamp.now(),
         }, {merge: true});
         return false;
       });

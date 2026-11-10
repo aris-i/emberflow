@@ -176,7 +176,7 @@ Defines business rules that execute on a scheduled hourly basis under a single `
 
 ```typescript
 import { HourlyLogicConfig, HourlyLogicFn } from "emberflow";
-import * as admin from "firebase-admin";
+import { Timestamp } from "firebase-admin/firestore";
 
 const syncHourlyStatus: HourlyLogicFn = async (event) => {
   // Your hourly logic here
@@ -188,7 +188,7 @@ const syncHourlyStatus: HourlyLogicFn = async (event) => {
         action: "merge",
         dstPath: "system/hourly-status",
         doc: {
-          lastRunAt: admin.firestore.Timestamp.now(),
+          lastRunAt: Timestamp.now(),
           scheduleTime: event.scheduleTime,
         },
       },

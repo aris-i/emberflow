@@ -10,6 +10,26 @@ import {
 import {db} from "../../index";
 import type {DatabaseEvent, DataSnapshot} from "firebase-functions/v2/database";
 import * as paths from "../../utils/paths";
+import * as admin from "firebase-admin";
+import {FieldValue} from "firebase-admin/firestore";
+
+// firebase-tools 12.9.1–15.35.0 Proxied.getOriginal binds admin.firestore, which
+// drops FieldValue/Timestamp/FieldPath. The modular entry point is not wrapped.
+jest.mock("firebase-admin", () => {
+  const actual = jest.requireActual("firebase-admin");
+  const firestore = actual.firestore.bind(actual);
+  return new Proxy(actual, {
+    get(target, prop, receiver) {
+      if (prop === "__esModule") {
+        return true;
+      }
+      if (prop === "firestore") {
+        return firestore;
+      }
+      return Reflect.get(target, prop, receiver);
+    },
+  });
+});
 
 const funcName = "onFormSubmittedForUser";
 jest.mock("../../index", () => ({
@@ -318,5 +338,35 @@ describe("stopBillingIfBudgetExceeded", () => {
     expect(console.log).toHaveBeenCalledWith("Billing already disabled");
     expect(_mockable.isBillingEnabled).toHaveBeenCalledWith("projects/test-project");
     expect(_mockable.disableBillingForProject).not.toHaveBeenCalled();
+  });
+});
+
+describe("usage increments", () => {
+  beforeEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("increments totalInvocations with FieldValue from firebase-admin/firestore", async () => {
+    expect(admin.firestore.FieldValue).toBeUndefined();
+
+    const update = jest.fn().mockResolvedValue(undefined);
+    await _mockable.incrementTotalInvocations({update} as never);
+
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(update).toHaveBeenCalledWith({
+      totalInvocations: FieldValue.increment(1),
+    });
+    expect(update.mock.calls[0][0].totalInvocations).toBeInstanceOf(FieldValue);
+  });
+
+  it("increments totalElapsedTimeInMs with FieldValue from firebase-admin/firestore", async () => {
+    const update = jest.fn().mockResolvedValue(undefined);
+    await _mockable.incrementTotalElapsedTimeInMs({update} as never, 200);
+
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(update).toHaveBeenCalledWith({
+      totalElapsedTimeInMs: FieldValue.increment(200),
+    });
+    expect(update.mock.calls[0][0].totalElapsedTimeInMs).toBeInstanceOf(FieldValue);
   });
 });

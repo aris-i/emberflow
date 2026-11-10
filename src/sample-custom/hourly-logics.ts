@@ -1,4 +1,4 @@
-import * as admin from "firebase-admin";
+import {Timestamp} from "firebase-admin/firestore";
 import {HourlyLogicConfig, HourlyLogicFn} from "../types";
 
 const sampleHourlySyncLogic: HourlyLogicFn = async (event) => {
@@ -12,7 +12,7 @@ const sampleHourlySyncLogic: HourlyLogicFn = async (event) => {
         action: "merge",
         dstPath: "system/hourly-status",
         doc: {
-          lastRunAt: admin.firestore.Timestamp.now(),
+          lastRunAt: Timestamp.now(),
           scheduleTime: event.scheduleTime,
         },
       },

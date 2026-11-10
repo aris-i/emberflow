@@ -1,11 +1,11 @@
 import {LogicResult, PatchLogicConfig} from "../types";
 import {findMatchingDocPathRegex, getDestPropAndDestPropId} from "../utils/paths";
 import {
-  admin,
   db,
   PATCH_LOGICS_TOPIC,
   PATCH_LOGICS_TOPIC_NAME,
 } from "../index";
+import {Timestamp} from "firebase-admin/firestore";
 import {CloudEvent} from "firebase-functions/core";
 import {MessagePublishedData} from "firebase-functions/pubsub";
 import {pubsubUtils} from "../utils/pubsub";
@@ -167,7 +167,7 @@ export const runPatchLogics = async (appVersion: string, dstPath: string): Promi
             documents: [],
             execTime,
             message: (e as Error).message,
-            timeFinished: admin.firestore.Timestamp.now(),
+            timeFinished: Timestamp.now(),
           });
         }
       }
@@ -209,7 +209,7 @@ export const runPatchLogics = async (appVersion: string, dstPath: string): Promi
       console.info(`Finished Patch Logic for version ${patchVersion}`);
       return logicResults.map((result) => ({
         ...result,
-        timeFinished: admin.firestore.Timestamp.now(),
+        timeFinished: Timestamp.now(),
       }));
     });
 

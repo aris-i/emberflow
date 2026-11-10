@@ -1,4 +1,5 @@
 import {db} from "../index";
+import {FieldPath} from "firebase-admin/firestore";
 import {firestore} from "firebase-admin";
 import {ChunkableWhereFilterOp, QueryCondition} from "../types";
 import DocumentData = firestore.DocumentData;
@@ -6,7 +7,7 @@ import Query = firestore.Query;
 
 export async function fetchIds(collectionPath: string, condition?: QueryCondition) {
   const ids: string[] = [];
-  const baseQuery = db.collection(collectionPath).select(firestore.FieldPath.documentId());
+  const baseQuery = db.collection(collectionPath).select(FieldPath.documentId());
 
   async function executeQuery(query: Query<DocumentData>) {
     const querySnapshot = await query.get();

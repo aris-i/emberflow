@@ -17,16 +17,14 @@ import {
 } from "../types";
 import * as functions from "firebase-functions";
 import {dbStructure, Entity} from "../sample-custom/db-structure";
-import {Firestore} from "firebase-admin/firestore";
+import {FieldPath, FieldValue, Firestore, Timestamp} from "firebase-admin/firestore";
 import type {DatabaseEvent, DataSnapshot} from "firebase-functions/v2/database";
 import * as paths from "../utils/paths";
 import * as adminClient from "emberflow-admin-client/lib";
 import DocumentReference = firestore.DocumentReference;
 import CollectionReference = firestore.CollectionReference;
-import Timestamp = firestore.Timestamp;
 import Database = database.Database;
 import {expandConsolidateAndGroupByDstPath, groupDocsByTargetDocPath} from "../index-utils";
-import FieldValue = firestore.FieldValue;
 import * as distribution from "../utils/distribution";
 import {UserRecord} from "firebase-admin/lib/auth";
 import Transaction = firestore.Transaction;
@@ -78,7 +76,7 @@ const transactionMock = {
   delete: jest.fn(),
 } as any;
 
-jest.spyOn(admin, "firestore")
+const firestoreSpy = jest.spyOn(admin, "firestore")
   .mockImplementation(() => {
     return {
       Timestamp: {now: jest.fn(() => Timestamp.now())},
@@ -87,6 +85,9 @@ jest.spyOn(admin, "firestore")
       runTransaction: jest.fn((fn) => fn(transactionMock)),
     } as unknown as Firestore;
   });
+// jest.spyOn replaces admin.firestore and drops FieldValue/Timestamp/FieldPath,
+// the same way the Functions emulator bind does. Reattach the modular exports.
+Object.assign(firestoreSpy, {FieldValue, Timestamp, FieldPath});
 
 jest.spyOn(admin, "database")
   .mockImplementation(() => {

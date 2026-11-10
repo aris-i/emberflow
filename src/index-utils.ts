@@ -15,8 +15,8 @@ import {
   ValidateFormResult,
 } from "./types";
 import {database, firestore} from "firebase-admin";
+import {FieldPath, FieldValue, Timestamp} from "firebase-admin/firestore";
 import {
-  admin,
   db,
   logicConfigs,
   backFillPatchConfigs,
@@ -62,8 +62,6 @@ import QueryDocumentSnapshot = firestore.QueryDocumentSnapshot;
 import DocumentReference = FirebaseFirestore.DocumentReference;
 import DocumentData = FirebaseFirestore.DocumentData;
 import Reference = database.Reference;
-import FieldValue = firestore.FieldValue;
-import Timestamp = firestore.Timestamp;
 import Transaction = firestore.Transaction;
 
 /**
@@ -79,7 +77,7 @@ export const _mockable = {
   getViewLogicConfigs: () => viewLogicConfigs,
   getPatchLogicConfigs: () => patchLogicConfigs,
   getOneTimePatchConfigs: () => backFillPatchConfigs,
-  createNowTimestamp: () => admin.firestore.Timestamp.now(),
+  createNowTimestamp: () => Timestamp.now(),
   saveMetricExecution: saveMetricExecution,
   getBatchUtil: () => BatchUtil.create(),
   getMaxGroupPatchIterations: () => MAX_GROUP_PATCH_ITERATIONS,
@@ -378,7 +376,7 @@ export async function executeLogicWithMetrics(
       name: result.name || name,
       execTime,
       ...(version ? {version} : {}),
-      timeFinished: admin.firestore.Timestamp.now(),
+      timeFinished: Timestamp.now(),
     };
   } catch (e) {
     if (shouldRethrow?.(e)) {
@@ -394,7 +392,7 @@ export async function executeLogicWithMetrics(
       execTime,
       ...(version ? {version} : {}),
       message: (e as Error).message,
-      timeFinished: admin.firestore.Timestamp.now(),
+      timeFinished: Timestamp.now(),
     };
   }
 }
@@ -713,7 +711,7 @@ export async function resetGroupPatchStatuses(
       error: null,
       count: 0,
       lastPatchedId: null,
-      updatedAt: admin.firestore.Timestamp.now(),
+      updatedAt: Timestamp.now(),
     }, {merge: true});
   }
   await batch.commit();
@@ -740,7 +738,7 @@ export async function onGroupPatchRequest(
     console.error(`Invalid patchType "${patchType}". Must be "back-fill" or "patch-logics"`);
     return;
   }
-  await data.ref.update({status: "received", receivedAt: admin.firestore.Timestamp.now()});
+  await data.ref.update({status: "received", receivedAt: Timestamp.now()});
   // Operator restart option: when requested, reset all status docs for this
   // patch first so the (settled) run can start over from scratch. The request
   // doc may carry the flag as a real boolean (true) or as the string "true"
@@ -825,7 +823,7 @@ async function saveMetricExecution(metricExecutions: MetricExecution[]) {
 
     const execRef = logicRef.collection("executions").doc();
     await execRef.set({
-      execDate: admin.firestore.Timestamp.now(),
+      execDate: Timestamp.now(),
       execTime,
     }, {merge: true});
   }
@@ -868,7 +866,7 @@ export async function createMetricComputation(_event: ScheduledEvent) {
 
     const execRef = metricDoc.ref.collection("computations").doc();
     await execRef.set({
-      createdAt: admin.firestore.Timestamp.now(),
+      createdAt: Timestamp.now(),
       maxExecTime,
       minExecTime,
       totalExecTime,
@@ -977,7 +975,7 @@ export async function patchGroupDocs(params: PatchGroupDocsParams) {
       patchType,
       backFillPatchName: backFillPatchName ?? null,
       error: breakerError,
-      updatedAt: admin.firestore.Timestamp.now(),
+      updatedAt: Timestamp.now(),
     }, {merge: true});
     return;
   }
@@ -995,7 +993,7 @@ export async function patchGroupDocs(params: PatchGroupDocsParams) {
 
   console.info(`[GroupPatch] Patching docs for collection: ${collectionPath}${effectiveLastId ? ` starting from ${effectiveLastId}` : ""}`);
 
-  let query = db.collection(collectionPath).orderBy(admin.firestore.FieldPath.documentId());
+  let query = db.collection(collectionPath).orderBy(FieldPath.documentId());
   if (effectiveLastId) {
     query = query.startAfter(effectiveLastId);
   }
@@ -1006,7 +1004,7 @@ export async function patchGroupDocs(params: PatchGroupDocsParams) {
       status: "completed",
       patchType,
       backFillPatchName: backFillPatchName ?? null,
-      patchedAt: admin.firestore.Timestamp.now(),
+      patchedAt: Timestamp.now(),
       collectionPath,
     }, {merge: true});
     console.info(`[GroupPatch] Completed patching for collection: ${collectionPath}`);
@@ -1025,7 +1023,7 @@ export async function patchGroupDocs(params: PatchGroupDocsParams) {
       patchType,
       backFillPatchName: backFillPatchName ?? null,
       error: cursorError,
-      updatedAt: admin.firestore.Timestamp.now(),
+      updatedAt: Timestamp.now(),
     }, {merge: true});
     return;
   }
@@ -1057,7 +1055,7 @@ export async function patchGroupDocs(params: PatchGroupDocsParams) {
       lastPatchedId: lastId,
       collectionPath,
       count: totalPatched,
-      updatedAt: admin.firestore.Timestamp.now(),
+      updatedAt: Timestamp.now(),
     }, {merge: true});
 
     console.info(`[GroupPatch] Batch Complete: Patched ${docsSnapshot.docs.length} docs for collection: ${collectionPath}. Total patched so far: ${totalPatched}. Rescheduling next batch...`);
@@ -1077,7 +1075,7 @@ export async function patchGroupDocs(params: PatchGroupDocsParams) {
       patchType,
       backFillPatchName: backFillPatchName ?? null,
       error: error instanceof Error ? error.message : String(error),
-      updatedAt: admin.firestore.Timestamp.now(),
+      updatedAt: Timestamp.now(),
     }, {merge: true});
 
     // We can also retry by re-queuing the same batch after a delay if needed,

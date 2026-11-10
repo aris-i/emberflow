@@ -1,6 +1,6 @@
 import {Entity} from "./db-structure";
 import {PatchLogicConfig, PatchLogicFn} from "../types";
-import * as admin from "firebase-admin";
+import {Timestamp} from "firebase-admin/firestore";
 
 const samplePatchLogic: PatchLogicFn = async (dstPath, data) => {
   console.log(`Executing patch logic on document at ${dstPath}...`);
@@ -13,7 +13,7 @@ const samplePatchLogic: PatchLogicFn = async (dstPath, data) => {
     name: "samplePatchLogic",
     status: "finished",
     execTime: Date.now(),
-    timeFinished: admin.firestore.Timestamp.now(),
+    timeFinished: Timestamp.now(),
     documents: [
       {
         action: "merge",

@@ -1,10 +1,9 @@
 import * as admin from "firebase-admin";
 import {firestore} from "firebase-admin";
+import type {DocumentData, Timestamp} from "firebase-admin/firestore";
 import {MemoryOption} from "firebase-functions/v2/options";
 import {SecretParam} from "firebase-functions/params";
 import {ScheduledEvent} from "firebase-functions/v2/scheduler";
-import Timestamp = firestore.Timestamp;
-import DocumentData = firestore.DocumentData;
 import {FormData} from "emberflow-admin-client/lib/types";
 import {UserRecord} from "firebase-admin/auth";
 

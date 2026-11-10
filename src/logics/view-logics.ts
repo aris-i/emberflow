@@ -1,5 +1,5 @@
 import {db, docPaths, docPathsRegex, viewDefinitions, VIEW_LOGICS_TOPIC, VIEW_LOGICS_TOPIC_NAME} from "../index";
-import * as admin from "firebase-admin";
+import {Timestamp, type Query, type QueryDocumentSnapshot} from "firebase-admin/firestore";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
 import type {MessagePublishedData} from "firebase-functions/v2/pubsub";
 import {
@@ -162,7 +162,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
     }
 
     async function syncMergeToViewsDstPath() {
-      const now = admin.firestore.Timestamp.now();
+      const now = Timestamp.now();
       const viewDoc: Record<string, any> = {
         "@updatedByViewDefinitionAt": now,
       };
@@ -333,7 +333,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
       return syncCreateToDstPaths();
     }
 
-    const atViewsDocs: admin.firestore.QueryDocumentSnapshot[] = [];
+    const atViewsDocs: QueryDocumentSnapshot[] = [];
     const limitPerBatch = 50;
 
     let baseQuery = db.doc(srcPath)
@@ -345,7 +345,7 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
 
     const lastDocSnap = lastProcessedId ? await db.doc(`${srcPath}/@views/${lastProcessedId}`).get() : null;
 
-    async function getDocs(query: admin.firestore.Query) {
+    async function getDocs(query: Query) {
       let q = query.limit(limitPerBatch);
       if (lastDocSnap?.exists) {
         q = q.startAfter(lastDocSnap);
@@ -648,7 +648,7 @@ export async function onMessageViewLogicsQueue(event: CloudEvent<MessagePublishe
         const execRef = db.collection("@emberflow").doc("internal").collection("viewLogicExecutions").doc();
         batch.set(execRef, {
           name,
-          execDate: timeFinished || admin.firestore.Timestamp.now(),
+          execDate: timeFinished || Timestamp.now(),
           execTime: execTime || 0,
           status,
           message: message || null,

@@ -60,7 +60,7 @@ import {
   queueRunViewLogics,
 } from "./logics/view-logics";
 import {resetUsageStats, stopBillingIfBudgetExceeded, useBillProtect} from "./utils/bill-protect";
-import {Firestore} from "firebase-admin/firestore";
+import {Firestore, Timestamp} from "firebase-admin/firestore";
 import {DatabaseEvent, DataSnapshot, onValueCreated} from "firebase-functions/v2/database";
 import {findMatchingDocPathRegex, parseEntity, getDestPropAndDestPropId} from "./utils/paths";
 import {database} from "firebase-admin";
@@ -144,7 +144,7 @@ export let GROUP_PATCH_TOPIC: Topic;
 let userRegisterFn: UserRegisterFn | undefined;
 
 export const _mockable = {
-  createNowTimestamp: () => admin.firestore.Timestamp.now(),
+  createNowTimestamp: () => Timestamp.now(),
   initActionRef,
 };
 

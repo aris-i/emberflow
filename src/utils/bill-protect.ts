@@ -1,6 +1,6 @@
-import {admin, db, onFormSubmit, projectConfig} from "../index";
+import {db, onFormSubmit, projectConfig} from "../index";
 import {CloudBillingClient} from "@google-cloud/billing";
-import {firestore} from "firebase-admin";
+import {FieldPath, FieldValue} from "firebase-admin/firestore";
 import {findMatchingDocPathRegex, getDestPropAndDestPropId} from "./paths";
 import {BatchUtil} from "../utils/batch";
 import {Message} from "firebase-functions/v1/pubsub";
@@ -89,13 +89,13 @@ export function computeElapseTime(startTime: [number, number], endTime: [number,
 
 async function incrementTotalInvocations(funcUsageRef: FirebaseFirestore.DocumentReference<FirebaseFirestore.DocumentData>) {
   await funcUsageRef.update({
-    totalInvocations: admin.firestore.FieldValue.increment(1),
+    totalInvocations: FieldValue.increment(1),
   });
 }
 
 async function incrementTotalElapsedTimeInMs(funcUsageRef: FirebaseFirestore.DocumentReference<FirebaseFirestore.DocumentData>, totalElapsedTimeInMs: number) {
   await funcUsageRef.update({
-    totalElapsedTimeInMs: admin.firestore.FieldValue.increment(totalElapsedTimeInMs),
+    totalElapsedTimeInMs: FieldValue.increment(totalElapsedTimeInMs),
   });
 }
 
@@ -235,7 +235,7 @@ async function disableBillingForProject(projectName: string): Promise<string> {
 export async function resetUsageStats(_event: ScheduledEvent) {
   const usageCollectionPath = "@server/usage/functions";
   const collectionRef = db.collection(usageCollectionPath);
-  const querySnapshot = await collectionRef.select(firestore.FieldPath.documentId()).get();
+  const querySnapshot = await collectionRef.select(FieldPath.documentId()).get();
   const batch = BatchUtil.create();
   querySnapshot.forEach((doc) => {
     return batch.set(doc.ref, {

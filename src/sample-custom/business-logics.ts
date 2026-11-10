@@ -1,4 +1,4 @@
-import * as admin from "firebase-admin";
+import {Timestamp} from "firebase-admin/firestore";
 // You should import from the path to the ember-flow package in your project
 import {LogicConfig, LogicFn} from "../types";
 
@@ -11,7 +11,7 @@ const echoLogic: LogicFn = async (txnGet, action, sharedMap) => {
     name: "EchoLogic",
     status: "finished",
     execTime: Date.now() - timeCreated.toMillis(),
-    timeFinished: admin.firestore.Timestamp.now(),
+    timeFinished: Timestamp.now(),
     documents: [
       {
         action: "merge",
