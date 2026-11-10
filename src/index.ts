@@ -85,6 +85,7 @@ import {onDocumentCreated} from "firebase-functions/v2/firestore";
 import {onInit} from "firebase-functions/v2";
 import {UserRecord} from "firebase-admin/lib/auth";
 import {debounce} from "./utils/functions";
+import {warnIfSplitFirestoreAdmin} from "./utils/firestore-admin";
 import {extractTransactionGetOnly} from "./utils/transaction";
 import Database = database.Database;
 
@@ -174,6 +175,7 @@ export function initializeEmberFlow(
   } {
   projectConfig = options.projectConfig;
   admin = options.admin;
+  warnIfSplitFirestoreAdmin(admin);
   db = admin.firestore();
   rtdb = admin.database();
   pubsub = new PubSub();

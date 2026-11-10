@@ -6,12 +6,14 @@ import {
   _mockable,
   computeTotalCost,
   computeElapseTime,
+  resetUsageStats,
 } from "../../utils/bill-protect";
 import {db} from "../../index";
 import type {DatabaseEvent, DataSnapshot} from "firebase-functions/v2/database";
 import * as paths from "../../utils/paths";
 import * as admin from "firebase-admin";
-import {FieldValue} from "firebase-admin/firestore";
+import {FieldPath, FieldValue} from "firebase-admin/firestore";
+import {BatchUtil} from "../../utils/batch";
 
 // firebase-tools 12.9.1–15.35.0 Proxied.getOriginal binds admin.firestore, which
 // drops FieldValue/Timestamp/FieldPath. The modular entry point is not wrapped.
@@ -368,5 +370,32 @@ describe("usage increments", () => {
       totalElapsedTimeInMs: FieldValue.increment(200),
     });
     expect(update.mock.calls[0][0].totalElapsedTimeInMs).toBeInstanceOf(FieldValue);
+  });
+
+  it("resetUsageStats selects ids with FieldPath from firebase-admin/firestore", async () => {
+    expect(admin.firestore.FieldPath).toBeUndefined();
+
+    const docRef = {id: "onFormSubmittedForUser"};
+    const select = jest.fn().mockReturnValue({
+      get: jest.fn().mockResolvedValue({
+        forEach: (cb: (doc: {ref: unknown}) => void) => cb({ref: docRef}),
+      }),
+    });
+    (db.collection as jest.Mock).mockReturnValueOnce({select});
+    const set = jest.fn().mockResolvedValue(undefined);
+    const commit = jest.fn().mockResolvedValue(undefined);
+    jest.spyOn(BatchUtil, "create").mockReturnValue({set, commit} as unknown as BatchUtil);
+
+    await resetUsageStats({} as never);
+
+    expect(db.collection).toHaveBeenCalledWith("@server/usage/functions");
+    const selected = select.mock.calls[0][0];
+    expect(selected).toBeInstanceOf(FieldPath);
+    expect(selected.isEqual(FieldPath.documentId())).toBe(true);
+    expect(set).toHaveBeenCalledWith(docRef, {
+      totalElapsedTimeInMs: 0,
+      totalInvocations: 0,
+    });
+    expect(commit).toHaveBeenCalledTimes(1);
   });
 });

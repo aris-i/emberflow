@@ -17,7 +17,7 @@ import {
 } from "../types";
 import * as functions from "firebase-functions";
 import {dbStructure, Entity} from "../sample-custom/db-structure";
-import {FieldPath, FieldValue, Firestore, Timestamp} from "firebase-admin/firestore";
+import {FieldValue, Firestore, Timestamp} from "firebase-admin/firestore";
 import type {DatabaseEvent, DataSnapshot} from "firebase-functions/v2/database";
 import * as paths from "../utils/paths";
 import * as adminClient from "emberflow-admin-client/lib";
@@ -76,18 +76,21 @@ const transactionMock = {
   delete: jest.fn(),
 } as any;
 
-const firestoreSpy = jest.spyOn(admin, "firestore")
-  .mockImplementation(() => {
+const actualAdmin = jest.requireActual("firebase-admin") as typeof admin;
+// Proxied.getOriginal does value.bind(target), which drops FieldValue/Timestamp/FieldPath.
+const boundFirestore = actualAdmin.firestore.bind(actualAdmin);
+const firestoreDouble = new Proxy(boundFirestore, {
+  apply() {
     return {
-      Timestamp: {now: jest.fn(() => Timestamp.now())},
       collection: jest.fn(() => collectionMock),
       doc: jest.fn(() => docMock),
       runTransaction: jest.fn((fn) => fn(transactionMock)),
     } as unknown as Firestore;
-  });
-// jest.spyOn replaces admin.firestore and drops FieldValue/Timestamp/FieldPath,
-// the same way the Functions emulator bind does. Reattach the modular exports.
-Object.assign(firestoreSpy, {FieldValue, Timestamp, FieldPath});
+  },
+});
+jest.spyOn(admin, "firestore").mockImplementation(
+  firestoreDouble as unknown as typeof admin.firestore,
+);
 
 jest.spyOn(admin, "database")
   .mockImplementation(() => {
@@ -139,6 +142,12 @@ function createEvent(form: FirebaseFirestore.DocumentData, userId?: string): Dat
 }
 
 describe("onFormSubmit", () => {
+  it("keeps FieldValue, Timestamp, and FieldPath off the bound admin.firestore mock", () => {
+    expect(admin.firestore.FieldValue).toBeUndefined();
+    expect(admin.firestore.Timestamp).toBeUndefined();
+    expect(admin.firestore.FieldPath).toBeUndefined();
+  });
+
   const entity = "user";
   let parseEntityMock: jest.SpyInstance;
 

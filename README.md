@@ -68,6 +68,8 @@ Object.entries(functionsConfig).forEach(([key, value]) => {
 
 `initializeEmberFlow` takes a single options object (`InitializeEmberFlowOptions`). `projectConfig`, `admin`, `dbStructure`, `Entity`, `securityConfigs`, `validatorConfigs`, `logicConfigs`, and `patchLogicConfigs` are required; `hourlyLogicConfigs`, `cleanupConfigs`, `backFillPatchConfigs`, and `userRegisterFn` are optional.
 
+Emberflow loads `FieldValue`, `Timestamp`, `FieldPath`, and `GeoPoint` from `firebase-admin/firestore`, which Node resolves from the app's own `firebase-admin` install. Hoist a single copy that satisfies the `firebase-admin` peer range (`^13.8.0`). A second copy makes `instanceof FieldValue` fail, and sentinels are then dropped instead of written. When `admin.firestore.FieldValue` is present but is not that modular `FieldValue`, Emberflow logs a one-time warning at startup.
+
 ## Configuration
 
 Emberflow relies on several configuration objects to define how your project behaves.
