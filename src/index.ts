@@ -148,6 +148,8 @@ export const _mockable = {
   initActionRef,
 };
 
+export {ViewLogicsPublishError} from "./logics/view-logics";
+
 export interface InitializeEmberFlowOptions {
   projectConfig: ProjectConfig;
   admin: FirebaseAdmin;
@@ -179,13 +181,15 @@ export function initializeEmberFlow(
   pubsub = new PubSub();
   initClient(admin.app(), "service", "0.0.0");
   SUBMIT_FORM_TOPIC = pubsub.topic(SUBMIT_FORM_TOPIC_NAME);
+  const vl = projectConfig.pubsubPublishOptions?.viewLogics;
   VIEW_LOGICS_TOPIC = pubsub.topic(VIEW_LOGICS_TOPIC_NAME, {
+    ...vl,
     batching: {
       maxMessages: 100,
       maxMilliseconds: 10,
       maxBytes: 1024 * 1024,
+      ...vl?.batching,
     },
-    ...projectConfig.pubsubPublishOptions?.viewLogics,
   });
   PATCH_LOGICS_TOPIC = pubsub.topic(PATCH_LOGICS_TOPIC_NAME);
   FOR_DISTRIBUTION_TOPIC = pubsub.topic(FOR_DISTRIBUTION_TOPIC_NAME);

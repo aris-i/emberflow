@@ -546,9 +546,12 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
   return [srcToDstLogicFn, dstToSrcLogicFn];
 }
 
+export type ViewLogicsPublishError = Error & {failedDstPaths?: string[]};
+
 function getViewLogicsPublishConcurrency(): number {
   const configured = projectConfig?.viewLogicsPublishConcurrency ?? 50;
-  return Math.max(1, Math.min(500, Math.floor(configured)));
+  const num = Number.isNaN(configured) ? 1 : Math.floor(configured);
+  return Math.max(1, Math.min(500, num));
 }
 
 async function fillDeleteDoc(logicResultDoc: LogicResultDoc, basePath: string) {
@@ -572,21 +575,31 @@ export async function queueRunViewLogics(
   logicResultDocs: LogicResultDoc[],
   lastProcessedId?: string,
 ) {
-  const toPublish = logicResultDocs.filter((d) =>
-    findMatchingViewLogics(d, targetVersion)?.size &&
-    !d.skipRunViewLogics &&
-    ["create", "merge", "delete"].includes(d.action));
-
+  let toPublish: LogicResultDoc[];
   const chains = new Map<string, Array<{doc: LogicResultDoc; index: number}>>();
-  for (let i = 0; i < toPublish.length; i++) {
-    const d = toPublish[i];
-    const {basePath} = getDestPropAndDestPropId(d.dstPath);
-    let chain = chains.get(basePath);
-    if (!chain) {
-      chain = [];
-      chains.set(basePath, chain);
+  try {
+    toPublish = logicResultDocs.filter((d) =>
+      findMatchingViewLogics(d, targetVersion)?.size &&
+      !d.skipRunViewLogics &&
+      ["create", "merge", "delete"].includes(d.action));
+
+    for (let i = 0; i < toPublish.length; i++) {
+      const d = toPublish[i];
+      const {basePath} = getDestPropAndDestPropId(d.dstPath);
+      let chain = chains.get(basePath);
+      if (!chain) {
+        chain = [];
+        chains.set(basePath, chain);
+      }
+      chain.push({doc: d, index: i});
     }
-    chain.push({doc: d, index: i});
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      console.error(`Received error while publishing: ${error.message}`);
+    } else {
+      console.error("An unknown error occurred during publishing");
+    }
+    throw error;
   }
 
   const failures: {index: number; dstPath: string; error: unknown}[] = [];
@@ -614,10 +627,10 @@ export async function queueRunViewLogics(
       console.error(`Received error while publishing: ${f.dstPath}: ${msg}`);
     }
     const first = failures[0].error;
-    const err = first instanceof Error ?
+    const err: ViewLogicsPublishError = first instanceof Error ?
       first :
       new Error(typeof first === "string" ? first : "An unknown error occurred during publishing");
-    (err as any).failedDstPaths = failures.map((f) => f.dstPath);
+    err.failedDstPaths = failures.map((f) => f.dstPath);
     if (failures.length > 1) {
       err.message = `${err.message} (and ${failures.length - 1} more publish failures)`;
     }

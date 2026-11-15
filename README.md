@@ -84,8 +84,8 @@ Defines project-level settings, Pub/Sub options, and function configurations.
 | `budgetAlertTopicName` | `string` | *(required)* | Pub/Sub topic name for billing budget alerts. |
 | `maxCostLimitPerFunction` | `number` | *(required)* | Default cost limit per function. |
 | `specialCostLimitPerFunction` | `{ [key: string]: number }` | *(required)* | Map of function-specific cost limits. |
-| `viewLogicsPublishConcurrency` | `number` | `50` | Maximum concurrency for publishing view-logic messages (clamped between `1` and `500`; `1` restores sequential publishing). |
-| `pubsubPublishOptions` | `{ viewLogics?: PublishOptions }` | `{ viewLogics: { batching: { maxMessages: 100, maxMilliseconds: 10, maxBytes: 1048576 } } }` | Custom Pub/Sub `PublishOptions` overrides for topics (e.g. `viewLogics`). |
+| `viewLogicsPublishConcurrency` | `number` | `50` | Maximum concurrency for publishing view-logic messages (clamped between `1` and `500`; `1` publishes one doc at a time: chains for one document run back-to-back; order across documents is not guaranteed, as before). |
+| `pubsubPublishOptions` | `{ viewLogics?: PublishOptions }` | `{ viewLogics: { batching: { maxMessages: 100, maxMilliseconds: 10, maxBytes: 1048576 } } }` | Custom Pub/Sub `PublishOptions` overrides for topics (e.g. `viewLogics`). Deep-merges `batching` options so partial overrides preserve default limits. |
 | `logicResultDocuments` | `"all" \| "errors-only" \| "none"` | `"all"` | Controls saving of `documents` subcollections under `@actions/{actionId}/logicResults`: `"all"` saves all document copies; `"errors-only"` copies documents only for results with status `"error"` (or all results when action ends `processed-with-errors`); `"none"` skips copying documents. In all modes, summary documents record `documentsCount` and `dstPaths` (first 50). |
 | `functionsConfig` | `Record<string, FunctionConfig>` | `{}` | Per-function resource and runtime overrides (memory, timeout, maxInstances, etc.). |
 
@@ -652,6 +652,16 @@ firebase deploy --only firestore:indexes
   — unchanged entries are left as-is, so re-running/re-deploying is safe.
 - **Async builds**: A deploy only *requests* an index; it then sits in **Building** in the Firestore
   console until Firestore finishes, so it may not be usable immediately after the deploy.
+
+## Technical Debt
+
+The following items are tracked for future releases:
+
+- **`queueRunPatchLogics` error semantics**: `queueRunPatchLogics` still stops at the first failed publish and skips subsequent paths (retaining pre-2.3.0 behavior).
+- **Patch transaction retry behavior**: In `src/logics/patch-logics.ts:207`, view-logic publishing occurs inside the patch transaction. Because `queueRunViewLogics` attempts all documents before throwing, a publish failure occurs after attempted publishes; a patch transaction retry will republish view messages (view-logic merges and deletes are idempotent).
+- **`_mockable.queueRunViewLogics` parameter naming**: In `src/index-utils.ts:89`, the wrapper names its parameters `(appVersion, targetVersion, docs)` while forwarding positionally to `(targetVersion, appVersion, docs)`.
+- **Package `types` path**: `package.json` specifies `"types": "lib/index.d.js"` rather than `"lib/index.d.ts"`.
+- **Compiled test artifacts**: TypeScript compiles `src/tests/**` into `lib/tests/**`, which are bundled in the published npm tarball under `files: ["lib/"]`.
 
 ## Reference
 

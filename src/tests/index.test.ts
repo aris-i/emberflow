@@ -972,6 +972,29 @@ describe("onFormSubmit", () => {
       jest.spyOn(indexutils, "distributeFnTransactional").mockResolvedValue([]);
       jest.spyOn(viewLogics, "queueRunViewLogics").mockResolvedValue();
       jest.spyOn(patchLogics, "queueRunPatchLogics").mockResolvedValue();
+      jest.spyOn(_mockable, "initActionRef").mockImplementation((actionId: string) => {
+        const actionPath = `@actions/${actionId}`;
+        return {
+          id: actionId,
+          path: actionPath,
+          update: jest.fn(),
+          collection: (col: string) => ({
+            doc: (docId: string) => {
+              const lrPath = `${actionPath}/${col}/${docId}`;
+              return {
+                id: docId,
+                path: lrPath,
+                collection: (subCol: string) => ({
+                  doc: (subDocId: string) => ({
+                    id: subDocId,
+                    path: `${lrPath}/${subCol}/${subDocId}`,
+                  }),
+                }),
+              };
+            },
+          }),
+        } as unknown as DocumentReference;
+      });
     });
 
     afterEach(() => {
@@ -1019,8 +1042,10 @@ describe("onFormSubmit", () => {
       }));
       expect(summaryCall[1].dstPaths).toHaveLength(50);
 
-      // Verify that individual documents were set
+      // Verify that individual documents were set and target the correct path
       const docCall = transactionSetMock.mock.calls[2];
+      expect(docCall[0].path).toMatch(/\/documents\/.*-0-0$/);
+      expect(docCall[0].path).toBe("@actions/test-fid/logicResults/test-fid-0/documents/test-fid-0-0");
       expect(docCall[1]).toEqual(docsForLogic1[0]);
     });
 
@@ -1124,6 +1149,10 @@ describe("onFormSubmit", () => {
         documentsCount: 1,
         dstPaths: ["users/user-1/items/item-error"],
       }));
+
+      // Verify that individual documents were set and target the correct path
+      expect(transactionSetMock.mock.calls[2][0].path).toMatch(/\/documents\/.*-0-0$/);
+      expect(transactionSetMock.mock.calls[2][0].path).toBe("@actions/test-fid/logicResults/test-fid-0/documents/test-fid-0-0");
     });
 
     it("should never copy documents in 'none' mode even with error results", async () => {
@@ -1170,7 +1199,7 @@ describe("onFormSubmit", () => {
     it("should preserve unchanged post-commit order: formRef.update(finished) -> queueRunViewLogics -> distributeDoc (submit-form) -> queueRunPatchLogics", async () => {
       const callOrder: string[] = [];
 
-      refUpdateMock.mockImplementation((data: any) => {
+      refUpdateMock.mockImplementation((data: Record<string, unknown>) => {
         if (data && data["@status"] === "finished") {
           callOrder.push("formFinished");
         }
