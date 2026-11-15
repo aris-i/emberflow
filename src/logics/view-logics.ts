@@ -1,4 +1,4 @@
-import {db, docPaths, docPathsRegex, viewDefinitions, VIEW_LOGICS_TOPIC, VIEW_LOGICS_TOPIC_NAME} from "../index";
+import {db, docPaths, docPathsRegex, projectConfig, viewDefinitions, VIEW_LOGICS_TOPIC, VIEW_LOGICS_TOPIC_NAME} from "../index";
 import * as admin from "firebase-admin";
 import {CloudEvent} from "firebase-functions/lib/v2/core";
 import type {MessagePublishedData} from "firebase-functions/v2/pubsub";
@@ -10,6 +10,7 @@ import {
   expandConsolidateAndGroupByDstPath,
 } from "../index-utils";
 import {pubsubUtils} from "../utils/pubsub";
+import {runWithConcurrency} from "../utils/concurrency";
 import {queueInstructions} from "../utils/distribution";
 import {logMemoryUsage, reviveDateAndTimestamp} from "../utils/misc";
 import {chunkQuery} from "../utils/query";
@@ -545,53 +546,82 @@ export function createViewLogicFn(viewDefinition: ViewDefinition): ViewLogicFn[]
   return [srcToDstLogicFn, dstToSrcLogicFn];
 }
 
+function getViewLogicsPublishConcurrency(): number {
+  const configured = projectConfig?.viewLogicsPublishConcurrency ?? 50;
+  return Math.max(1, Math.min(500, Math.floor(configured)));
+}
+
+async function fillDeleteDoc(logicResultDoc: LogicResultDoc, basePath: string) {
+  const dstDocRef = db.doc(basePath);
+  const data = (await dstDocRef.get()).data() || {};
+  const {destProp, destPropId} = getDestPropAndDestPropId(logicResultDoc.dstPath);
+  if (destProp) {
+    if (destPropId) {
+      logicResultDoc.doc = data[destProp]?.[destPropId] || {};
+    } else {
+      logicResultDoc.doc = data[destProp] || {};
+    }
+  } else {
+    logicResultDoc.doc = data;
+  }
+}
+
 export async function queueRunViewLogics(
   targetVersion: string,
   appVersion: string,
   logicResultDocs: LogicResultDoc[],
   lastProcessedId?: string,
 ) {
-  try {
-    for (const logicResultDoc of logicResultDocs) {
-      if (!findMatchingViewLogics(logicResultDoc, targetVersion)?.size) {
-        continue;
-      }
+  const toPublish = logicResultDocs.filter((d) =>
+    findMatchingViewLogics(d, targetVersion)?.size &&
+    !d.skipRunViewLogics &&
+    ["create", "merge", "delete"].includes(d.action));
 
-      const {
-        action,
-        dstPath,
-        skipRunViewLogics,
-      } = logicResultDoc;
-      const {basePath} = getDestPropAndDestPropId(dstPath);
-      const dstDocRef = db.doc(basePath);
-      if (!skipRunViewLogics && ["create", "merge", "delete"].includes(action)) {
-        if (action === "delete") {
-          if (!logicResultDoc.doc || Object.keys(logicResultDoc.doc).length === 0) {
-            const data = (await dstDocRef.get()).data() || {};
-            const {destProp, destPropId} = getDestPropAndDestPropId(dstPath);
-            if (destProp) {
-              if (destPropId) {
-                logicResultDoc.doc = data[destProp]?.[destPropId] || {};
-              } else {
-                logicResultDoc.doc = data[destProp] || {};
-              }
-            } else {
-              logicResultDoc.doc = data;
-            }
-          }
+  const chains = new Map<string, Array<{doc: LogicResultDoc; index: number}>>();
+  for (let i = 0; i < toPublish.length; i++) {
+    const d = toPublish[i];
+    const {basePath} = getDestPropAndDestPropId(d.dstPath);
+    let chain = chains.get(basePath);
+    if (!chain) {
+      chain = [];
+      chains.set(basePath, chain);
+    }
+    chain.push({doc: d, index: i});
+  }
+
+  const failures: {index: number; dstPath: string; error: unknown}[] = [];
+  const tasks = [...chains.entries()].map(([basePath, docs]) => async () => {
+    for (const {doc: d, index} of docs) {
+      try {
+        if (d.action === "delete" && (!d.doc || Object.keys(d.doc).length === 0)) {
+          await fillDeleteDoc(d, basePath);
         }
         await VIEW_LOGICS_TOPIC.publishMessage({json: {
-          doc: logicResultDoc, appVersion, targetVersion, lastProcessedId,
+          doc: d, appVersion, targetVersion, lastProcessedId,
         }});
+      } catch (error) {
+        failures.push({index, dstPath: d.dstPath, error});
       }
     }
-  } catch (error: unknown) {
-    if (error instanceof Error) {
-      console.error(`Received error while publishing: ${error.message}`);
-    } else {
-      console.error("An unknown error occurred during publishing");
+  });
+
+  await runWithConcurrency(tasks, getViewLogicsPublishConcurrency());
+
+  if (failures.length > 0) {
+    failures.sort((a, b) => a.index - b.index);
+    for (const f of failures) {
+      const msg = f.error instanceof Error ? f.error.message : "An unknown error occurred during publishing";
+      console.error(`Received error while publishing: ${f.dstPath}: ${msg}`);
     }
-    throw error;
+    const first = failures[0].error;
+    const err = first instanceof Error ?
+      first :
+      new Error(typeof first === "string" ? first : "An unknown error occurred during publishing");
+    (err as any).failedDstPaths = failures.map((f) => f.dstPath);
+    if (failures.length > 1) {
+      err.message = `${err.message} (and ${failures.length - 1} more publish failures)`;
+    }
+    throw err;
   }
 }
 

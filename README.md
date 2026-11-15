@@ -72,6 +72,23 @@ Object.entries(functionsConfig).forEach(([key, value]) => {
 
 Emberflow relies on several configuration objects to define how your project behaves.
 
+### Project Configuration (`projectConfig`)
+
+Defines project-level settings, Pub/Sub options, and function configurations.
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `projectId` | `string` | *(required)* | Firebase project ID. |
+| `region` | `string` | *(required)* | Default GCP region for deployed Cloud Functions. |
+| `rtdbName` | `string` | *(required)* | Realtime Database instance name. |
+| `budgetAlertTopicName` | `string` | *(required)* | Pub/Sub topic name for billing budget alerts. |
+| `maxCostLimitPerFunction` | `number` | *(required)* | Default cost limit per function. |
+| `specialCostLimitPerFunction` | `{ [key: string]: number }` | *(required)* | Map of function-specific cost limits. |
+| `viewLogicsPublishConcurrency` | `number` | `50` | Maximum concurrency for publishing view-logic messages (clamped between `1` and `500`; `1` restores sequential publishing). |
+| `pubsubPublishOptions` | `{ viewLogics?: PublishOptions }` | `{ viewLogics: { batching: { maxMessages: 100, maxMilliseconds: 10, maxBytes: 1048576 } } }` | Custom Pub/Sub `PublishOptions` overrides for topics (e.g. `viewLogics`). |
+| `logicResultDocuments` | `"all" \| "errors-only" \| "none"` | `"all"` | Controls saving of `documents` subcollections under `@actions/{actionId}/logicResults`: `"all"` saves all document copies; `"errors-only"` copies documents only for results with status `"error"` (or all results when action ends `processed-with-errors`); `"none"` skips copying documents. In all modes, summary documents record `documentsCount` and `dstPaths` (first 50). |
+| `functionsConfig` | `Record<string, FunctionConfig>` | `{}` | Per-function resource and runtime overrides (memory, timeout, maxInstances, etc.). |
+
 ### Database Structure (`dbStructure`)
 
 Defines the hierarchy of your Firestore collections and how data is denormalized using views.

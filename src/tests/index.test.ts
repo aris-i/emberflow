@@ -1,4 +1,12 @@
-import {_mockable, db, hourlyLogicConfigs, initializeEmberFlow, onFormSubmit, onUserRegister} from "../index";
+import {
+  _mockable,
+  db,
+  hourlyLogicConfigs,
+  initializeEmberFlow,
+  onFormSubmit,
+  onUserRegister,
+  projectConfig as globalProjectConfig,
+} from "../index";
 import * as indexutils from "../index-utils";
 import * as transactionutils from "../utils/transaction";
 import * as admin from "firebase-admin";
@@ -609,6 +617,8 @@ describe("onFormSubmit", () => {
       message: errorMessage,
       name: "testLogic",
       timeFinished: expect.any(Timestamp),
+      documentsCount: 0,
+      dstPaths: [],
     }, {merge: true});
 
     validateFormMock.mockReset();
@@ -943,6 +953,278 @@ describe("onFormSubmit", () => {
     await onFormSubmit(event);
 
     expect(distributeDocSpy).toHaveBeenCalledWith(submitFormDoc, "4.0.0");
+  });
+
+  describe("logicResultDocuments option and saveLogicResults", () => {
+    const docPath = "users/user-1";
+    const form = {
+      "formData": JSON.stringify({
+        "@actionType": "update",
+        "@docPath": docPath,
+        "@appVersion": "4.0.0",
+      }),
+      "@status": "submit",
+    };
+
+    beforeEach(() => {
+      jest.spyOn(paths, "findMatchingDocPathRegex").mockReturnValue({entity: "user", regex: /users\/.*/});
+      jest.spyOn(indexutils, "expandConsolidateAndGroupByDstPath").mockResolvedValue(new Map());
+      jest.spyOn(indexutils, "distributeFnTransactional").mockResolvedValue([]);
+      jest.spyOn(viewLogics, "queueRunViewLogics").mockResolvedValue();
+      jest.spyOn(patchLogics, "queueRunPatchLogics").mockResolvedValue();
+    });
+
+    afterEach(() => {
+      globalProjectConfig.logicResultDocuments = undefined;
+    });
+
+    it("should copy all documents and write documentsCount and dstPaths (first 50) by default ('all')", async () => {
+      globalProjectConfig.logicResultDocuments = undefined; // default is 'all'
+      transactionSetMock.mockClear();
+
+      const docsForLogic1: LogicResultDoc[] = Array.from({length: 60}, (_, i) => ({
+        action: "merge" as LogicResultDocAction,
+        dstPath: `users/user-1/items/item-${i}`,
+        doc: {val: i},
+      }));
+
+      const logicResults: LogicResult[] = [
+        {
+          name: "logic1",
+          status: "finished",
+          timeFinished: _mockable.createNowTimestamp(),
+          documents: docsForLogic1,
+        },
+      ];
+
+      jest.spyOn(indexutils, "runBusinessLogics").mockResolvedValue({
+        status: "done",
+        logicResults,
+      });
+
+      const event = createEvent(form);
+      await onFormSubmit(event);
+
+      // Call 1 is actionRef
+      // Call 2 is logicResult summary doc
+      // Calls 3..62 are the 60 documents
+      expect(transactionSetMock).toHaveBeenCalledTimes(1 + 1 + 60);
+
+      const summaryCall = transactionSetMock.mock.calls[1];
+      expect(summaryCall[1]).toEqual(expect.objectContaining({
+        name: "logic1",
+        status: "finished",
+        documentsCount: 60,
+        dstPaths: docsForLogic1.slice(0, 50).map((d) => d.dstPath),
+      }));
+      expect(summaryCall[1].dstPaths).toHaveLength(50);
+
+      // Verify that individual documents were set
+      const docCall = transactionSetMock.mock.calls[2];
+      expect(docCall[1]).toEqual(docsForLogic1[0]);
+    });
+
+    it("should not copy documents for finished results in 'errors-only' mode when action succeeds", async () => {
+      globalProjectConfig.logicResultDocuments = "errors-only";
+      transactionSetMock.mockClear();
+
+      const doc1: LogicResultDoc = {
+        action: "merge" as LogicResultDocAction,
+        dstPath: "users/user-1/items/item-1",
+        doc: {val: 1},
+      };
+
+      const logicResults: LogicResult[] = [
+        {
+          name: "finishedLogic",
+          status: "finished",
+          timeFinished: _mockable.createNowTimestamp(),
+          documents: [doc1],
+        },
+      ];
+
+      jest.spyOn(indexutils, "runBusinessLogics").mockResolvedValue({
+        status: "done",
+        logicResults,
+      });
+
+      const event = createEvent(form);
+      await onFormSubmit(event);
+
+      // Call 1 is actionRef
+      // Call 2 is logicResult summary doc
+      // No documents collection set calls!
+      expect(transactionSetMock).toHaveBeenCalledTimes(2);
+
+      const summaryCall = transactionSetMock.mock.calls[1];
+      expect(summaryCall[1]).toEqual(expect.objectContaining({
+        name: "finishedLogic",
+        status: "finished",
+        documentsCount: 1,
+        dstPaths: ["users/user-1/items/item-1"],
+      }));
+    });
+
+    it("should copy documents in 'errors-only' mode when action ends processed-with-errors", async () => {
+      globalProjectConfig.logicResultDocuments = "errors-only";
+      transactionSetMock.mockClear();
+
+      const docFinished: LogicResultDoc = {
+        action: "merge" as LogicResultDocAction,
+        dstPath: "users/user-1/items/item-finished",
+        doc: {val: "finished"},
+      };
+      const docError: LogicResultDoc = {
+        action: "merge" as LogicResultDocAction,
+        dstPath: "users/user-1/items/item-error",
+        doc: {val: "error"},
+      };
+
+      const logicResults: LogicResult[] = [
+        {
+          name: "finishedLogic",
+          status: "finished",
+          timeFinished: _mockable.createNowTimestamp(),
+          documents: [docFinished],
+        },
+        {
+          name: "errorLogic",
+          status: "error",
+          message: "something broke",
+          timeFinished: _mockable.createNowTimestamp(),
+          documents: [docError],
+        },
+      ];
+
+      jest.spyOn(indexutils, "runBusinessLogics").mockResolvedValue({
+        status: "done",
+        logicResults,
+      });
+
+      const event = createEvent(form);
+      await onFormSubmit(event);
+
+      // Call 1 is actionRef (action.status = 'processed-with-errors')
+      // Call 2 is finishedLogic summary doc
+      // Call 3 is docFinished (copied because action ended processed-with-errors)
+      // Call 4 is errorLogic summary doc
+      // Call 5 is docError (copied)
+      expect(transactionSetMock).toHaveBeenCalledTimes(1 + 2 + 2);
+
+      const finishedSummary = transactionSetMock.mock.calls[1];
+      expect(finishedSummary[1]).toEqual(expect.objectContaining({
+        name: "finishedLogic",
+        documentsCount: 1,
+        dstPaths: ["users/user-1/items/item-finished"],
+      }));
+
+      const errorSummary = transactionSetMock.mock.calls[3];
+      expect(errorSummary[1]).toEqual(expect.objectContaining({
+        name: "errorLogic",
+        documentsCount: 1,
+        dstPaths: ["users/user-1/items/item-error"],
+      }));
+    });
+
+    it("should never copy documents in 'none' mode even with error results", async () => {
+      globalProjectConfig.logicResultDocuments = "none";
+      transactionSetMock.mockClear();
+
+      const docError: LogicResultDoc = {
+        action: "merge" as LogicResultDocAction,
+        dstPath: "users/user-1/items/item-error",
+        doc: {val: "error"},
+      };
+
+      const logicResults: LogicResult[] = [
+        {
+          name: "errorLogic",
+          status: "error",
+          message: "failed",
+          timeFinished: _mockable.createNowTimestamp(),
+          documents: [docError],
+        },
+      ];
+
+      jest.spyOn(indexutils, "runBusinessLogics").mockResolvedValue({
+        status: "done",
+        logicResults,
+      });
+
+      const event = createEvent(form);
+      await onFormSubmit(event);
+
+      // Call 1 is actionRef
+      // Call 2 is logicResult summary doc
+      // No document copy calls!
+      expect(transactionSetMock).toHaveBeenCalledTimes(2);
+
+      const summaryCall = transactionSetMock.mock.calls[1];
+      expect(summaryCall[1]).toEqual(expect.objectContaining({
+        name: "errorLogic",
+        documentsCount: 1,
+        dstPaths: ["users/user-1/items/item-error"],
+      }));
+    });
+
+    it("should preserve unchanged post-commit order: formRef.update(finished) -> queueRunViewLogics -> distributeDoc (submit-form) -> queueRunPatchLogics", async () => {
+      const callOrder: string[] = [];
+
+      refUpdateMock.mockImplementation((data: any) => {
+        if (data && data["@status"] === "finished") {
+          callOrder.push("formFinished");
+        }
+        return Promise.resolve();
+      });
+
+      const queueRunViewLogicsSpy = jest.spyOn(viewLogics, "queueRunViewLogics").mockImplementation(async () => {
+        callOrder.push("queueRunViewLogics");
+      });
+
+      const submitFormDoc: LogicResultDoc = {
+        action: "submit-form",
+        dstPath: "users/user-1/forms/test-form",
+        doc: {some: "data"},
+      };
+
+      const distributeDocSpy = jest.spyOn(indexutils, "distributeDoc").mockImplementation(async () => {
+        callOrder.push("distributeSubmitFormDoc");
+      });
+
+      const queueRunPatchLogicsSpy = jest.spyOn(patchLogics, "queueRunPatchLogics").mockImplementation(async () => {
+        callOrder.push("queueRunPatchLogics");
+      });
+
+      jest.spyOn(indexutils, "distributeFnTransactional").mockResolvedValue([submitFormDoc]);
+
+      const logicResults: LogicResult[] = [
+        {
+          name: "testLogic",
+          status: "finished",
+          timeFinished: _mockable.createNowTimestamp(),
+          documents: [submitFormDoc],
+        },
+      ];
+
+      jest.spyOn(indexutils, "runBusinessLogics").mockResolvedValue({
+        status: "done",
+        logicResults,
+      });
+
+      const event = createEvent(form);
+      await onFormSubmit(event);
+
+      expect(callOrder).toEqual([
+        "formFinished",
+        "queueRunViewLogics",
+        "distributeSubmitFormDoc",
+        "queueRunPatchLogics",
+      ]);
+
+      queueRunViewLogicsSpy.mockRestore();
+      distributeDocSpy.mockRestore();
+      queueRunPatchLogicsSpy.mockRestore();
+    });
   });
 });
 

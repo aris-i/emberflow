@@ -7,6 +7,7 @@ import Timestamp = firestore.Timestamp;
 import DocumentData = firestore.DocumentData;
 import {FormData} from "emberflow-admin-client/lib/types";
 import {UserRecord} from "firebase-admin/auth";
+import {PublishOptions} from "@google-cloud/pubsub";
 
 export type FirebaseAdmin = typeof admin;
 
@@ -51,7 +52,12 @@ export interface ProjectConfig {
         onDeleteFunctions?: FunctionConfig;
         onGroupPatchRequests?: FunctionConfig;
         onUserRegister?: FunctionConfig;
-    }
+    };
+    viewLogicsPublishConcurrency?: number;
+    pubsubPublishOptions?: {
+        viewLogics?: PublishOptions;
+    };
+    logicResultDocuments?: "all" | "errors-only" | "none";
 }
 
 export type ActionType = "create" | "update" | "delete";
@@ -172,6 +178,8 @@ export interface LogicResult{
     execTime?: number;
     timeFinished?: Timestamp;
     documents: LogicResultDoc[];
+    documentsCount?: number;
+    dstPaths?: string[];
     transactional?: boolean;
     version?: string;
 }
