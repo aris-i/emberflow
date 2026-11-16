@@ -15,9 +15,11 @@ import * as indexUtils from "../../index-utils";
 import {firestore} from "firebase-admin";
 import {
   initializeEmberFlow,
+  projectConfig as globalProjectConfig,
   VIEW_LOGICS_TOPIC,
   VIEW_LOGICS_TOPIC_NAME,
 } from "../../index";
+import {PubSub} from "@google-cloud/pubsub";
 import * as admin from "firebase-admin";
 import {securityConfigs} from "../../sample-custom/security";
 import {validatorConfigs} from "../../sample-custom/validators";
@@ -27,7 +29,7 @@ import Timestamp = firestore.Timestamp;
 import {_mockable as pathsMockable} from "../../utils/paths";
 import CollectionReference = firestore.CollectionReference;
 import {convertLogicResultsToMetricExecutions} from "../../index-utils";
-import {findMatchingViewLogics} from "../../logics/view-logics";
+import {findMatchingViewLogics, ViewLogicsPublishError} from "../../logics/view-logics";
 import * as paths from "../../utils/paths";
 
 jest.mock("../../utils/pubsub", () => {
@@ -1683,6 +1685,481 @@ describe("queueRunViewLogics", () => {
     });
     docSpy.mockRestore();
     (viewLogics.findMatchingViewLogics as jest.Mock).mockRestore();
+  });
+
+  it("should respect concurrency cap with 200 docs on distinct paths (max = 50) and handle clamping (0->1, NaN->1, 1000->500)", async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    publishMessageSpy.mockImplementation(() => {
+      inFlight++;
+      if (inFlight > maxInFlight) {
+        maxInFlight = inFlight;
+      }
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          inFlight--;
+          resolve("msg-id");
+        }, 2);
+      });
+    });
+
+    const origConcurrency = globalProjectConfig?.viewLogicsPublishConcurrency;
+    try {
+      // 1. Default (undefined): 200 docs on distinct paths -> maxInFlight is exactly 50
+      globalProjectConfig.viewLogicsPublishConcurrency = undefined;
+      const docs: LogicResultDoc[] = Array.from({length: 200}, (_, i) => ({
+        action: "create",
+        dstPath: `users/user-${i}`,
+        doc: {name: `user-${i}`},
+      }));
+
+      await viewLogics.queueRunViewLogics(targetVersion, appVersion, docs);
+
+      expect(publishMessageSpy).toHaveBeenCalledTimes(200);
+      expect(maxInFlight).toBe(50);
+
+      // 2. viewLogicsPublishConcurrency: 1 -> maxInFlight is 1
+      globalProjectConfig.viewLogicsPublishConcurrency = 1;
+      inFlight = 0;
+      maxInFlight = 0;
+      publishMessageSpy.mockClear();
+
+      const smallDocs1: LogicResultDoc[] = Array.from({length: 10}, (_, i) => ({
+        action: "create",
+        dstPath: `users/user-${i}`,
+        doc: {name: `user-${i}`},
+      }));
+
+      await viewLogics.queueRunViewLogics(targetVersion, appVersion, smallDocs1);
+
+      expect(publishMessageSpy).toHaveBeenCalledTimes(10);
+      expect(maxInFlight).toBe(1);
+
+      // 3. viewLogicsPublishConcurrency: 0 -> clamped to 1
+      globalProjectConfig.viewLogicsPublishConcurrency = 0;
+      inFlight = 0;
+      maxInFlight = 0;
+      publishMessageSpy.mockClear();
+
+      const smallDocs0: LogicResultDoc[] = Array.from({length: 10}, (_, i) => ({
+        action: "create",
+        dstPath: `users/user-${i}`,
+        doc: {name: `user-${i}`},
+      }));
+
+      await viewLogics.queueRunViewLogics(targetVersion, appVersion, smallDocs0);
+
+      expect(publishMessageSpy).toHaveBeenCalledTimes(10);
+      expect(maxInFlight).toBe(1);
+
+      // 4. viewLogicsPublishConcurrency: NaN -> clamped to 1
+      globalProjectConfig.viewLogicsPublishConcurrency = NaN;
+      inFlight = 0;
+      maxInFlight = 0;
+      publishMessageSpy.mockClear();
+
+      const smallDocsNaN: LogicResultDoc[] = Array.from({length: 10}, (_, i) => ({
+        action: "create",
+        dstPath: `users/user-${i}`,
+        doc: {name: `user-${i}`},
+      }));
+
+      await viewLogics.queueRunViewLogics(targetVersion, appVersion, smallDocsNaN);
+
+      expect(publishMessageSpy).toHaveBeenCalledTimes(10);
+      expect(maxInFlight).toBe(1);
+
+      // 5. viewLogicsPublishConcurrency: 1000 with 600 docs -> clamped to 500
+      globalProjectConfig.viewLogicsPublishConcurrency = 1000;
+      inFlight = 0;
+      maxInFlight = 0;
+      publishMessageSpy.mockClear();
+
+      const largeDocs: LogicResultDoc[] = Array.from({length: 600}, (_, i) => ({
+        action: "create",
+        dstPath: `users/user-${i}`,
+        doc: {name: `user-${i}`},
+      }));
+
+      await viewLogics.queueRunViewLogics(targetVersion, appVersion, largeDocs);
+
+      expect(publishMessageSpy).toHaveBeenCalledTimes(600);
+      expect(maxInFlight).toBe(500);
+    } finally {
+      globalProjectConfig.viewLogicsPublishConcurrency = origConcurrency;
+    }
+  });
+
+  it("should chain publishes sharing basePath in input order and run distinct paths concurrently", async () => {
+    const docA1: LogicResultDoc = {
+      action: "merge",
+      dstPath: "servers/serverA#x",
+      doc: {x: 1},
+    };
+    const docB: LogicResultDoc = {
+      action: "merge",
+      dstPath: "servers/serverB",
+      doc: {b: 1},
+    };
+    const docA2: LogicResultDoc = {
+      action: "merge",
+      dstPath: "servers/serverA#y",
+      doc: {y: 2},
+    };
+    const docA3: LogicResultDoc = {
+      action: "merge",
+      dstPath: "servers/serverA",
+      doc: {a: 3},
+    };
+
+    let resolveA1!: (val: string) => void;
+    let resolveB!: (val: string) => void;
+    let resolveA2!: (val: string) => void;
+    let resolveA3!: (val: string) => void;
+
+    const pA1 = new Promise<string>((res) => {
+      resolveA1 = res;
+    });
+    const pB = new Promise<string>((res) => {
+      resolveB = res;
+    });
+    const pA2 = new Promise<string>((res) => {
+      resolveA2 = res;
+    });
+    const pA3 = new Promise<string>((res) => {
+      resolveA3 = res;
+    });
+
+    const publishedDocs: LogicResultDoc[] = [];
+
+    publishMessageSpy.mockImplementation(({json}: {json: {doc: LogicResultDoc}}) => {
+      publishedDocs.push(json.doc);
+      if (json.doc.dstPath === "servers/serverA#x") return pA1;
+      if (json.doc.dstPath === "servers/serverB") return pB;
+      if (json.doc.dstPath === "servers/serverA#y") return pA2;
+      if (json.doc.dstPath === "servers/serverA") return pA3;
+      return Promise.resolve("msg-id");
+    });
+
+    const queuePromise = viewLogics.queueRunViewLogics(targetVersion, appVersion, [
+      docA1,
+      docB,
+      docA2,
+      docA3,
+    ]);
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(publishedDocs).toContainEqual(docA1);
+    expect(publishedDocs).toContainEqual(docB);
+    expect(publishedDocs).not.toContainEqual(docA2);
+    expect(publishedDocs).not.toContainEqual(docA3);
+
+    resolveA1("A1-done");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(publishedDocs).toContainEqual(docA2);
+    expect(publishedDocs).not.toContainEqual(docA3);
+
+    resolveA2("A2-done");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(publishedDocs).toContainEqual(docA3);
+
+    resolveB("B-done");
+    resolveA3("A3-done");
+
+    await queuePromise;
+    expect(publishedDocs).toEqual([docA1, docB, docA2, docA3]);
+  });
+
+  it("should attempt all docs when failures occur, log each failure, and rethrow first error with failedDstPaths and count", async () => {
+    const consoleErrorSpy = jest.spyOn(console, "error").mockImplementation();
+
+    const docs: LogicResultDoc[] = [
+      {action: "merge", dstPath: "servers/serverChain#prop0", doc: {val: 0}},
+      {action: "merge", dstPath: "servers/serverChain#prop1", doc: {val: 1}},
+      {action: "merge", dstPath: "servers/serverChain#prop2", doc: {val: 2}},
+      ...Array.from({length: 97}, (_, i) => ({
+        action: "create" as const,
+        dstPath: `servers/server-${i + 3}`,
+        doc: {val: i + 3},
+      })),
+    ];
+
+    publishMessageSpy.mockImplementation(({json}: {json: {doc: LogicResultDoc}}) => {
+      if (json.doc.dstPath === "servers/serverChain#prop1") {
+        return Promise.reject(new Error("Publish failed for doc 1"));
+      }
+      if (json.doc.dstPath === "servers/server-5") {
+        return Promise.reject(new Error("Publish failed for doc 5"));
+      }
+      return Promise.resolve("msg-id");
+    });
+
+    let thrownError: ViewLogicsPublishError | undefined;
+    try {
+      await viewLogics.queueRunViewLogics(targetVersion, appVersion, docs);
+    } catch (err) {
+      thrownError = err as ViewLogicsPublishError;
+    }
+
+    expect(thrownError).toBeDefined();
+    expect(thrownError).toBeInstanceOf(Error);
+    expect(publishMessageSpy).toHaveBeenCalledTimes(100);
+    expect(publishMessageSpy).toHaveBeenCalledWith(expect.objectContaining({
+      json: expect.objectContaining({
+        doc: expect.objectContaining({
+          dstPath: "servers/serverChain#prop2",
+        }),
+      }),
+    }));
+    expect(thrownError?.message).toContain("Publish failed for doc 1");
+    expect(thrownError?.message).toContain("(and 1 more publish failures)");
+    expect(thrownError?.failedDstPaths).toEqual([
+      "servers/serverChain#prop1",
+      "servers/server-5",
+    ]);
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(2);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "Received error while publishing: servers/serverChain#prop1: Publish failed for doc 1"
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "Received error while publishing: servers/server-5: Publish failed for doc 5"
+    );
+
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("should run delete branch reads concurrently and fill doc in place", async () => {
+    let inFlightReads = 0;
+    let maxInFlightReads = 0;
+
+    const mockData = {
+      userProp: {
+        item1: {name: "item-one"},
+      },
+    };
+
+    const docSpy = jest.spyOn(admin.firestore(), "doc").mockImplementation((_basePath: string) => {
+      return {
+        get: jest.fn().mockImplementation(() => {
+          inFlightReads++;
+          if (inFlightReads > maxInFlightReads) {
+            maxInFlightReads = inFlightReads;
+          }
+          return new Promise((resolve) => {
+            setTimeout(() => {
+              inFlightReads--;
+              resolve({
+                data: () => mockData,
+              });
+            }, 5);
+          });
+        }),
+      } as unknown as DocumentReference;
+    });
+
+    const deleteDocs: LogicResultDoc[] = Array.from({length: 10}, (_, i) => ({
+      action: "delete",
+      dstPath: `servers/server-${i}#userProp[item1]`,
+      doc: {},
+    }));
+
+    await viewLogics.queueRunViewLogics(targetVersion, appVersion, deleteDocs);
+
+    expect(maxInFlightReads).toBeGreaterThan(1);
+    expect(publishMessageSpy).toHaveBeenCalledTimes(10);
+    for (let i = 0; i < 10; i++) {
+      expect(deleteDocs[i].doc).toEqual({name: "item-one"});
+      expect(publishMessageSpy).toHaveBeenCalledWith(expect.objectContaining({
+        json: expect.objectContaining({
+          doc: expect.objectContaining({
+            dstPath: `servers/server-${i}#userProp[item1]`,
+            doc: {name: "item-one"},
+          }),
+        }),
+      }));
+    }
+
+    docSpy.mockRestore();
+  });
+
+  it("should filter out skipRunViewLogics, non-matching docs, and non-create/merge/delete actions", async () => {
+    const matchingCreate: LogicResultDoc = {
+      action: "create",
+      dstPath: "users/user-create",
+      doc: {a: 1},
+    };
+    const matchingMerge: LogicResultDoc = {
+      action: "merge",
+      dstPath: "users/user-merge",
+      doc: {b: 2},
+    };
+    const matchingDelete: LogicResultDoc = {
+      action: "delete",
+      dstPath: "users/user-delete",
+      doc: {c: 3},
+    };
+    const skippedDoc: LogicResultDoc = {
+      action: "create",
+      dstPath: "users/user-skipped",
+      doc: {d: 4},
+      skipRunViewLogics: true,
+    };
+    const copyDoc: LogicResultDoc = {
+      action: "copy",
+      dstPath: "users/user-copy",
+      doc: {e: 5},
+    };
+    const submitFormDoc: LogicResultDoc = {
+      action: "submit-form",
+      dstPath: "users/user-submit-form",
+      doc: {f: 6},
+    };
+    const nonMatchingDoc: LogicResultDoc = {
+      action: "create",
+      dstPath: "unknown/unknown-path",
+      doc: {g: 7},
+    };
+
+    findMatchingViewLogicsSpy.mockImplementation((doc: LogicResultDoc) => {
+      if (doc.dstPath.startsWith("users/")) {
+        return new Map([["0.0.1", {} as ViewLogicConfig]]);
+      }
+      return new Map();
+    });
+
+    await viewLogics.queueRunViewLogics(targetVersion, appVersion, [
+      matchingCreate,
+      matchingMerge,
+      matchingDelete,
+      skippedDoc,
+      copyDoc,
+      submitFormDoc,
+      nonMatchingDoc,
+    ]);
+
+    expect(publishMessageSpy).toHaveBeenCalledTimes(3);
+    expect(publishMessageSpy).toHaveBeenCalledWith({json: {doc: matchingCreate, appVersion, targetVersion}});
+    expect(publishMessageSpy).toHaveBeenCalledWith({json: {doc: matchingMerge, appVersion, targetVersion}});
+    expect(publishMessageSpy).toHaveBeenCalledWith({json: {doc: matchingDelete, appVersion, targetVersion}});
+  });
+
+  it("should preserve message shape including lastProcessedId when provided", async () => {
+    const doc1: LogicResultDoc = {
+      action: "create",
+      dstPath: "users/user-1",
+      doc: {name: "test-user"},
+    };
+
+    await viewLogics.queueRunViewLogics(targetVersion, appVersion, [doc1], "test-last-processed-id");
+
+    expect(publishMessageSpy).toHaveBeenCalledWith({
+      json: {
+        doc: doc1,
+        appVersion,
+        targetVersion,
+        lastProcessedId: "test-last-processed-id",
+      },
+    });
+  });
+
+  it("should create view-logics-queue topic with explicit batching and honor pubsubPublishOptions.viewLogics", () => {
+    const topicSpy = jest.spyOn(PubSub.prototype, "topic");
+
+    try {
+      initializeEmberFlow({
+        projectConfig,
+        admin,
+        dbStructure,
+        Entity,
+        securityConfigs,
+        validatorConfigs,
+        logicConfigs: [],
+        patchLogicConfigs: [],
+      });
+
+      expect(topicSpy).toHaveBeenCalledWith("view-logics-queue", {
+        batching: {
+          maxMessages: 100,
+          maxMilliseconds: 10,
+          maxBytes: 1024 * 1024,
+        },
+      });
+
+      const customOptions = {
+        batching: {
+          maxMessages: 50,
+          maxMilliseconds: 20,
+          maxBytes: 512 * 1024,
+        },
+      };
+      initializeEmberFlow({
+        projectConfig: {
+          ...projectConfig,
+          pubsubPublishOptions: {
+            viewLogics: customOptions,
+          },
+        },
+        admin,
+        dbStructure,
+        Entity,
+        securityConfigs,
+        validatorConfigs,
+        logicConfigs: [],
+        patchLogicConfigs: [],
+      });
+
+      expect(topicSpy).toHaveBeenCalledWith("view-logics-queue", {
+        batching: {
+          maxMessages: 50,
+          maxMilliseconds: 20,
+          maxBytes: 512 * 1024,
+        },
+      });
+
+      const partialOptions = {
+        batching: {
+          maxMessages: 50,
+        },
+      };
+      initializeEmberFlow({
+        projectConfig: {
+          ...projectConfig,
+          pubsubPublishOptions: {
+            viewLogics: partialOptions,
+          },
+        },
+        admin,
+        dbStructure,
+        Entity,
+        securityConfigs,
+        validatorConfigs,
+        logicConfigs: [],
+        patchLogicConfigs: [],
+      });
+
+      expect(topicSpy).toHaveBeenCalledWith("view-logics-queue", {
+        batching: {
+          maxMessages: 50,
+          maxMilliseconds: 10,
+          maxBytes: 1024 * 1024,
+        },
+      });
+    } finally {
+      topicSpy.mockRestore();
+      initializeEmberFlow({
+        projectConfig,
+        admin,
+        dbStructure,
+        Entity,
+        securityConfigs,
+        validatorConfigs,
+        logicConfigs: [],
+        patchLogicConfigs: [],
+      });
+    }
   });
 });
 

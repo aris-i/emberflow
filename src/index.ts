@@ -148,6 +148,8 @@ export const _mockable = {
   initActionRef,
 };
 
+export {ViewLogicsPublishError} from "./logics/view-logics";
+
 export interface InitializeEmberFlowOptions {
   projectConfig: ProjectConfig;
   admin: FirebaseAdmin;
@@ -179,7 +181,16 @@ export function initializeEmberFlow(
   pubsub = new PubSub();
   initClient(admin.app(), "service", "0.0.0");
   SUBMIT_FORM_TOPIC = pubsub.topic(SUBMIT_FORM_TOPIC_NAME);
-  VIEW_LOGICS_TOPIC = pubsub.topic(VIEW_LOGICS_TOPIC_NAME);
+  const vl = projectConfig.pubsubPublishOptions?.viewLogics;
+  VIEW_LOGICS_TOPIC = pubsub.topic(VIEW_LOGICS_TOPIC_NAME, {
+    ...vl,
+    batching: {
+      maxMessages: 100,
+      maxMilliseconds: 10,
+      maxBytes: 1024 * 1024,
+      ...vl?.batching,
+    },
+  });
   PATCH_LOGICS_TOPIC = pubsub.topic(PATCH_LOGICS_TOPIC_NAME);
   FOR_DISTRIBUTION_TOPIC = pubsub.topic(FOR_DISTRIBUTION_TOPIC_NAME);
   INSTRUCTIONS_TOPIC = pubsub.topic(INSTRUCTIONS_TOPIC_NAME);
@@ -592,15 +603,30 @@ export async function onFormSubmit(
 
       txn.set(actionRef, action, {merge: true});
       async function saveLogicResults() {
+        const mode = projectConfig.logicResultDocuments ?? "all";
         for (let i = 0; i < runBusinessLogicStatus.logicResults.length; i++) {
           const {documents, ...logicResult} = runBusinessLogicStatus.logicResults[i];
+          const docs = documents || [];
           const logicResultsRef = actionRef.collection("logicResults")
             .doc(`${actionRef.id}-${i}`);
-          txn.set(logicResultsRef, logicResult, {merge: true});
-          const documentsRef = logicResultsRef.collection("documents");
-          for (let j = 0; j < documents.length; j++) {
-            const docRef = documentsRef.doc(`${logicResultsRef.id}-${j}`);
-            txn.set(docRef, documents[j], {merge: true});
+          const logicResultSummary = {
+            ...logicResult,
+            documentsCount: docs.length,
+            dstPaths: docs.slice(0, 50).map((d) => d.dstPath),
+          };
+          txn.set(logicResultsRef, logicResultSummary, {merge: true});
+
+          const shouldCopyDocuments =
+            mode === "all" ||
+            (mode === "errors-only" &&
+              (action.status === "processed-with-errors" || logicResult.status === "error"));
+
+          if (shouldCopyDocuments) {
+            const documentsRef = logicResultsRef.collection("documents");
+            for (let j = 0; j < docs.length; j++) {
+              const docRef = documentsRef.doc(`${logicResultsRef.id}-${j}`);
+              txn.set(docRef, docs[j], {merge: true});
+            }
           }
         }
       }

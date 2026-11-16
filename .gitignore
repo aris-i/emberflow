@@ -10,3 +10,7 @@ typings/
 node_modules/
 /.idea/
 /.npmrc
+
+# Pack artifacts
+*.tgz
+
