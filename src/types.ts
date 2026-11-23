@@ -58,7 +58,15 @@ export interface ProjectConfig {
         viewLogics?: PublishOptions;
     };
     logicResultDocuments?: "all" | "errors-only" | "none";
+    /**
+     * What a business-logic error does to the form status (see README,
+     * "Form status when a logic errors"). Opt-in; default "finished" keeps the
+     * pre-2.4.0 behaviour. Unknown values warn once and fall back to "finished".
+     */
+    logicErrorFormStatus?: LogicErrorFormStatus;
 }
+
+export type LogicErrorFormStatus = "finished" | "thrown-only" | "all";
 
 export type ActionType = "create" | "update" | "delete";
 export interface Action{
@@ -182,6 +190,12 @@ export interface LogicResult{
     dstPaths?: string[];
     transactional?: boolean;
     version?: string;
+    /**
+     * Set by Emberflow (never by a logic) when this result was built from an
+     * exception the logic threw, as opposed to a returned status "error".
+     * A value a logic returns itself is stripped by Emberflow.
+     */
+    thrown?: boolean;
 }
 export type LogicFn = (txnGet: TxnGet, action: Action, sharedMap: Map<string, any>) => Promise<LogicResult>;
 export type LogicActionType = "create" | "update" | "delete";

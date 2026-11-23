@@ -5,6 +5,7 @@ import {
   Instructions,
   LogicActionType,
   LogicConfig,
+  LogicErrorFormStatus,
   LogicResult,
   LogicResultDoc,
   MetricExecution,
@@ -370,7 +371,8 @@ export async function executeLogicWithMetrics(
 ): Promise<LogicResult> {
   const start = performance.now();
   try {
-    const result = await fn();
+    // A logic can't mark its own result as thrown: the marker only comes from the catch path below.
+    const {thrown: _thrown, ...result} = await fn();
     const end = performance.now();
     const execTime = end - start;
     return {
@@ -395,8 +397,116 @@ export async function executeLogicWithMetrics(
       ...(version ? {version} : {}),
       message: (e as Error).message,
       timeFinished: admin.firestore.Timestamp.now(),
+      thrown: true,
     };
   }
+}
+
+export const LOGIC_ERROR_MESSAGE_PREFIX = "logic-error:";
+export const LOGIC_ERROR_MAX_MESSAGE_LENGTH = 200;
+export const LOGIC_ERROR_MAX_LISTED_LOGICS = 10;
+export const LOGIC_ERROR_MAX_NAME_LENGTH = 100;
+
+// Returns the logic results that should turn the form status into "error" for
+// the given mode. "finished" (the default, also used for unknown values) never
+// does; "thrown-only" uses results built from a thrown exception; "all" uses
+// every result with status "error".
+export function getFormErrorLogicResults(
+  mode: LogicErrorFormStatus | undefined,
+  logicResults: LogicResult[],
+): LogicResult[] {
+  if (mode === "thrown-only") {
+    return logicResults.filter((result) => result.status === "error" && result.thrown === true);
+  }
+  if (mode === "all") {
+    return logicResults.filter((result) => result.status === "error");
+  }
+  return [];
+}
+
+// Removes the words older clients auto-retry on ("contention", "aborted") so a
+// "logic-error:" message can never trigger a resubmit. Newlines become spaces.
+function sanitizeClientText(text: string): string {
+  return rewriteRetryWords(text.replace(/[\r\n]+/g, " "));
+}
+
+// Rewrites the words older clients auto-retry on (case-insensitive):
+// "contention" -> "conflict", "aborted" -> "stopped".
+export function rewriteRetryWords(text: string): string {
+  return text
+    .replace(/contention/gi, "conflict")
+    .replace(/aborted/gi, "stopped");
+}
+
+const LOGIC_ERROR_FORM_STATUS_VALUES: readonly LogicErrorFormStatus[] = ["finished", "thrown-only", "all"];
+const warnedLogicErrorFormStatusValues = new Set<string>();
+
+// Returns the effective logicErrorFormStatus. Unset means "finished". An unknown
+// value (e.g. a typo like "thrown_only") logs one warning per value and falls
+// back to "finished".
+export function resolveLogicErrorFormStatus(mode: unknown): LogicErrorFormStatus {
+  if (mode === undefined || mode === null) {
+    return "finished";
+  }
+  if ((LOGIC_ERROR_FORM_STATUS_VALUES as readonly unknown[]).includes(mode)) {
+    return mode as LogicErrorFormStatus;
+  }
+  const key = String(mode);
+  if (!warnedLogicErrorFormStatusValues.has(key)) {
+    warnedLogicErrorFormStatusValues.add(key);
+    console.warn(`Unknown projectConfig.logicErrorFormStatus value "${key}"; ` +
+      `expected one of ${LOGIC_ERROR_FORM_STATUS_VALUES.map((v) => `"${v}"`).join(", ")}. Falling back to "finished".`);
+  }
+  return "finished";
+}
+
+function truncate(text: string, maxLength: number): string {
+  return text.length > maxLength ? `${text.slice(0, maxLength - 3)}...` : text;
+}
+
+// Builds the client-facing "@messages" text for a form that ends as "error"
+// because of logic errors. The full exception text stays in the server log
+// ("Error in logic ...") and in @actions/{id}/logicResults.
+export function buildLogicErrorFormMessage(errorLogicResults: LogicResult[]): string {
+  const listed = errorLogicResults.slice(0, LOGIC_ERROR_MAX_LISTED_LOGICS).map(({name, message}) => {
+    const text = truncate(sanitizeClientText(message || "(no message)"), LOGIC_ERROR_MAX_MESSAGE_LENGTH);
+    return `${truncate(sanitizeClientText(name || "(unnamed logic)"), LOGIC_ERROR_MAX_NAME_LENGTH)}: ${text}`;
+  });
+  const remaining = errorLogicResults.length - listed.length;
+  if (remaining > 0) {
+    listed.push(`(+${remaining} more)`);
+  }
+  const message = `${LOGIC_ERROR_MESSAGE_PREFIX} Some changes from this form may already be saved; check before trying again. ` +
+    `Failed logics: ${listed.join("; ")}`;
+  // Final pass: names and joins must not reintroduce retry words either.
+  return sanitizeClientText(message);
+}
+
+// Turns anything caught by onFormSubmit's outer catch into a readable string
+// for "@messages" (never an object or "[object Object]").
+export function toReadableErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message || error.name || "Unknown error";
+  }
+  if (typeof error === "string") {
+    return error || "Unknown error";
+  }
+  if (error && typeof error === "object") {
+    const {message} = error as {message?: unknown};
+    if (typeof message === "string" && message) {
+      return message;
+    }
+    try {
+      const json = JSON.stringify(error);
+      if (json && json !== "{}") {
+        return json;
+      }
+    } catch (_e) {
+      // fall through
+    }
+    return "Unknown error";
+  }
+  return error === undefined || error === null ? "Unknown error" : String(error);
 }
 
 export const runBusinessLogics = async (

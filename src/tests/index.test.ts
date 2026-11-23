@@ -1255,6 +1255,374 @@ describe("onFormSubmit", () => {
       queueRunPatchLogicsSpy.mockRestore();
     });
   });
+
+  describe("logicErrorFormStatus option", () => {
+    const docPath = "users/user-1";
+    const form = {
+      "formData": JSON.stringify({
+        "@actionType": "update",
+        "@docPath": docPath,
+        "@appVersion": "4.0.0",
+      }),
+      "@status": "submit",
+    };
+    const retryWords = /contention|aborted/i;
+    const okDoc: LogicResultDoc = {
+      action: "merge" as LogicResultDocAction,
+      dstPath: "users/user-1/items/item-ok",
+      doc: {val: "ok"},
+    };
+
+    const okResult = (): LogicResult => ({
+      name: "okLogic",
+      status: "finished",
+      timeFinished: _mockable.createNowTimestamp(),
+      documents: [okDoc],
+    });
+    const thrownResult = (message = "Cannot read properties of undefined (reading 'menuItems')"): LogicResult => ({
+      name: "thrownLogic",
+      status: "error",
+      message,
+      timeFinished: _mockable.createNowTimestamp(),
+      documents: [],
+      thrown: true,
+    });
+    const returnedErrorResult = (): LogicResult => ({
+      name: "returnedErrorLogic",
+      status: "error",
+      message: "Topic not found",
+      timeFinished: _mockable.createNowTimestamp(),
+      documents: [],
+    });
+
+    const formStatusUpdates = () => refUpdateMock.mock.calls
+      .map((call) => call[0])
+      .filter((data) => data && ["finished", "error"].includes(data["@status"]));
+
+    const runWith = async (logicResults: LogicResult[], status: RunBusinessLogicStatus["status"] = "done") => {
+      jest.spyOn(indexutils, "runBusinessLogics").mockResolvedValue({status, logicResults});
+      await onFormSubmit(createEvent(form));
+    };
+
+    let expandSpy: jest.SpyInstance;
+    let distributeFnTransactionalSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      jest.spyOn(console, "error").mockImplementation();
+      jest.spyOn(paths, "findMatchingDocPathRegex").mockReturnValue({entity: "user", regex: /users\/.*/});
+      expandSpy = jest.spyOn(indexutils, "expandConsolidateAndGroupByDstPath").mockResolvedValue(new Map());
+      distributeFnTransactionalSpy = jest.spyOn(indexutils, "distributeFnTransactional").mockResolvedValue([]);
+      jest.spyOn(viewLogics, "queueRunViewLogics").mockResolvedValue();
+      jest.spyOn(patchLogics, "queueRunPatchLogics").mockResolvedValue();
+      transactionSetMock.mockClear();
+    });
+
+    afterEach(() => {
+      globalProjectConfig.logicErrorFormStatus = undefined;
+    });
+
+    it("default (unset): a returned error and a thrown error still end the form 'finished' with no @messages", async () => {
+      globalProjectConfig.logicErrorFormStatus = undefined;
+      await runWith([okResult(), returnedErrorResult(), thrownResult()]);
+
+      expect(formStatusUpdates()).toEqual([{"@status": "finished"}]);
+      expect(transactionSetMock.mock.calls[0][1].status).toBe("processed-with-errors");
+    });
+
+    it("'finished' set explicitly behaves exactly like the default", async () => {
+      globalProjectConfig.logicErrorFormStatus = "finished";
+      await runWith([okResult(), returnedErrorResult(), thrownResult()]);
+
+      expect(formStatusUpdates()).toEqual([{"@status": "finished"}]);
+      expect(transactionSetMock.mock.calls[0][1].status).toBe("processed-with-errors");
+    });
+
+    it("'thrown-only' with a thrown logic ends the form 'error' with a 'logic-error:' message and still distributes the other logics' documents", async () => {
+      globalProjectConfig.logicErrorFormStatus = "thrown-only";
+      const logicResults = [okResult(), thrownResult()];
+      await runWith(logicResults);
+
+      const updates = formStatusUpdates();
+      expect(updates).toHaveLength(1);
+      expect(updates[0]["@status"]).toBe("error");
+      expect(updates[0]["@messages"].startsWith("logic-error:")).toBe(true);
+      expect(updates[0]["@messages"]).toContain("thrownLogic: Cannot read properties of undefined (reading 'menuItems')");
+      expect(updates[0]["@messages"]).not.toContain("okLogic");
+      // @actions status unchanged
+      expect(transactionSetMock.mock.calls[0][1].status).toBe("processed-with-errors");
+      // sibling logic's documents are still distributed
+      expect(distributeFnTransactionalSpy).toHaveBeenCalledWith(expect.anything(), logicResults, "4.0.0");
+      expect(expandSpy).toHaveBeenCalledWith([okDoc]);
+      // the saved logicResults summary does not gain the in-memory marker
+      const thrownSummary = transactionSetMock.mock.calls
+        .map((call) => call[1])
+        .find((data) => data && data.name === "thrownLogic");
+      expect(thrownSummary).toBeDefined();
+      expect(thrownSummary).not.toHaveProperty("thrown");
+    });
+
+    it("'thrown-only' never sends the client retry words, even for a thrown contention error", async () => {
+      globalProjectConfig.logicErrorFormStatus = "thrown-only";
+      await runWith([thrownResult("10 ABORTED: Aborted due to cross-transaction contention. Too much contention.")]);
+
+      const updates = formStatusUpdates();
+      expect(updates).toHaveLength(1);
+      expect(updates[0]["@status"]).toBe("error");
+      expect(updates[0]["@messages"].startsWith("logic-error:")).toBe(true);
+      expect(updates[0]["@messages"]).not.toMatch(retryWords);
+    });
+
+    it("'thrown-only' with a logic that returns status 'error' (no throw) ends the form 'finished'", async () => {
+      globalProjectConfig.logicErrorFormStatus = "thrown-only";
+      await runWith([okResult(), returnedErrorResult()]);
+
+      expect(formStatusUpdates()).toEqual([{"@status": "finished"}]);
+    });
+
+    it("'all' with a logic that returns status 'error' ends the form 'error' with the prefixed message", async () => {
+      globalProjectConfig.logicErrorFormStatus = "all";
+      await runWith([okResult(), returnedErrorResult()]);
+
+      const updates = formStatusUpdates();
+      expect(updates).toHaveLength(1);
+      expect(updates[0]["@status"]).toBe("error");
+      expect(updates[0]["@messages"].startsWith("logic-error:")).toBe(true);
+      expect(updates[0]["@messages"]).toContain("returnedErrorLogic: Topic not found");
+    });
+
+    it("'all' lists several failing logics in one message", async () => {
+      globalProjectConfig.logicErrorFormStatus = "all";
+      await runWith([returnedErrorResult(), okResult(), thrownResult()]);
+
+      const updates = formStatusUpdates();
+      expect(updates).toHaveLength(1);
+      expect(updates[0]["@messages"]).toContain("returnedErrorLogic: Topic not found");
+      expect(updates[0]["@messages"]).toContain("thrownLogic: ");
+    });
+
+    it.each(["thrown-only", "all"] as const)("'%s' ends the form 'finished' when every logic succeeds", async (mode) => {
+      globalProjectConfig.logicErrorFormStatus = mode;
+      await runWith([okResult()]);
+
+      expect(formStatusUpdates()).toEqual([{"@status": "finished"}]);
+      expect(transactionSetMock.mock.calls[0][1].status).toBe("processed");
+    });
+
+    it.each([undefined, "finished", "thrown-only", "all"] as const)("mode %s: no matching logics still ends the form 'finished'", async (mode) => {
+      globalProjectConfig.logicErrorFormStatus = mode;
+      await runWith([], "no-matching-logics");
+
+      expect(formStatusUpdates()).toEqual([{"@status": "finished"}]);
+      expect(transactionSetMock.mock.calls[0][1].status).toBe("processed-with-errors");
+    });
+
+    it("keeps the post-commit order when the form ends 'error': form status -> queueRunViewLogics -> distributeDoc (submit-form) -> queueRunPatchLogics", async () => {
+      globalProjectConfig.logicErrorFormStatus = "thrown-only";
+      const callOrder: string[] = [];
+      refUpdateMock.mockImplementation((data: Record<string, unknown>) => {
+        if (data && data["@status"] === "error") {
+          callOrder.push("formError");
+        }
+        return Promise.resolve();
+      });
+      jest.spyOn(viewLogics, "queueRunViewLogics").mockImplementation(async () => {
+        callOrder.push("queueRunViewLogics");
+      });
+      const submitFormDoc: LogicResultDoc = {
+        action: "submit-form",
+        dstPath: "users/user-1/forms/test-form",
+        doc: {some: "data"},
+      };
+      jest.spyOn(indexutils, "distributeDoc").mockImplementation(async () => {
+        callOrder.push("distributeSubmitFormDoc");
+      });
+      jest.spyOn(patchLogics, "queueRunPatchLogics").mockImplementation(async () => {
+        callOrder.push("queueRunPatchLogics");
+      });
+      distributeFnTransactionalSpy.mockResolvedValue([submitFormDoc]);
+
+      await runWith([
+        {name: "submitLogic", status: "finished", timeFinished: _mockable.createNowTimestamp(), documents: [submitFormDoc]},
+        thrownResult(),
+      ]);
+
+      expect(callOrder).toEqual([
+        "formError",
+        "queueRunViewLogics",
+        "distributeSubmitFormDoc",
+        "queueRunPatchLogics",
+      ]);
+    });
+
+    it("'thrown-only' ignores a thrown marker a logic returns itself (form ends 'finished')", async () => {
+      globalProjectConfig.logicErrorFormStatus = "thrown-only";
+      jest.spyOn(indexutils, "runBusinessLogics").mockImplementation(async () => ({
+        status: "done",
+        logicResults: [
+          await indexutils.executeLogicWithMetrics("selfMarkedLogic", async () => ({
+            name: "selfMarkedLogic", status: "error", message: "soft skip", documents: [], thrown: true,
+          })),
+        ],
+      }));
+      await onFormSubmit(createEvent(form));
+
+      expect(formStatusUpdates()).toEqual([{"@status": "finished"}]);
+      expect(transactionSetMock.mock.calls[0][1].status).toBe("processed-with-errors");
+    });
+
+    it("an unknown value (e.g. 'thrown_only') logs one warning and falls back to 'finished'", async () => {
+      const warnSpy = console.warn as unknown as jest.Mock;
+      globalProjectConfig.logicErrorFormStatus = "thrown_only" as never;
+      await runWith([okResult(), thrownResult()]);
+      await runWith([okResult(), thrownResult()]);
+
+      expect(formStatusUpdates()).toEqual([{"@status": "finished"}, {"@status": "finished"}]);
+      const unknownWarnings = warnSpy.mock.calls.filter((call) =>
+        String(call[0]).includes("Unknown projectConfig.logicErrorFormStatus value \"thrown_only\""));
+      expect(unknownWarnings).toHaveLength(1);
+    });
+
+    describe.each([undefined, "finished", "thrown-only", "all"] as const)("early exits are unchanged in mode %s", (mode) => {
+      beforeEach(() => {
+        globalProjectConfig.logicErrorFormStatus = mode;
+      });
+
+      it("early error (no @appVersion)", async () => {
+        await onFormSubmit(createEvent({
+          "formData": JSON.stringify({"@actionType": "update", "@docPath": docPath}),
+          "@status": "submit",
+        }));
+        expect(refUpdateMock.mock.calls.map((c) => c[0])).toEqual([
+          {"@status": "error", "@messages": "No appVersion found in metadata"},
+        ]);
+      });
+
+      it("cancelled", async () => {
+        jest.spyOn(indexutils, "delayFormSubmissionAndCheckIfCancelled").mockResolvedValue(true);
+        await onFormSubmit(createEvent({
+          "formData": JSON.stringify({"@actionType": "update", "@docPath": docPath, "@appVersion": "4.0.0", "@delay": 1000}),
+          "@status": "submit",
+        }));
+        expect(refUpdateMock.mock.calls.map((c) => c[0])).toEqual([{"@status": "cancelled"}]);
+      });
+
+      it("validation-error", async () => {
+        jest.spyOn(indexutils, "validateForm").mockResolvedValue([true, {field1: ["bad"]}]);
+        const runBusinessLogicsSpy = jest.spyOn(indexutils, "runBusinessLogics");
+        await onFormSubmit(createEvent(form));
+        expect(refUpdateMock.mock.calls.map((c) => c[0])).toEqual([
+          {"@status": "validation-error", "@messages": JSON.stringify({field1: ["bad"]})},
+        ]);
+        expect(runBusinessLogicsSpy).not.toHaveBeenCalled();
+      });
+
+      it("security-error", async () => {
+        jest.spyOn(indexutils, "validateForm").mockResolvedValue([false, {}]);
+        jest.spyOn(indexutils, "getSecurityFn").mockReturnValue(() =>
+          Promise.resolve({status: "rejected", message: "not allowed"} as SecurityResult));
+        await onFormSubmit(createEvent(form));
+        expect(refUpdateMock.mock.calls.map((c) => c[0])).toEqual([
+          {"@status": "security-error", "@messages": "not allowed"},
+        ]);
+      });
+    });
+  });
+
+  describe("outer catch", () => {
+    const contentionText = "10 ABORTED: Too much contention on these documents. Please try again.";
+    const retryWords = /contention|aborted/i;
+    const outerCatchForm = {
+      "formData": JSON.stringify({"@actionType": "update", "@docPath": "users/user-1", "@appVersion": "4.0.0"}),
+      "@status": "submit",
+    };
+    const errorUpdates = () => refUpdateMock.mock.calls.map((c) => c[0]).filter((data) => data["@status"] === "error");
+
+    afterEach(() => {
+      globalProjectConfig.logicErrorFormStatus = undefined;
+    });
+
+    it.each([undefined, "finished", "thrown-only"] as const)(
+      "after commit (mode %s): rewrites contention/aborted in @messages and logs the original text", async (mode) => {
+        globalProjectConfig.logicErrorFormStatus = mode;
+        const errorSpy = jest.spyOn(console, "error").mockImplementation();
+        const warnSpy = console.warn as unknown as jest.Mock;
+        jest.spyOn(paths, "findMatchingDocPathRegex").mockReturnValue({entity: "user", regex: /users\/.*/});
+        jest.spyOn(indexutils, "distributeFnTransactional").mockResolvedValue([]);
+        transactionSetMock.mockClear();
+        jest.spyOn(indexutils, "runBusinessLogics").mockResolvedValue({
+          status: "done",
+          logicResults: [{
+            name: "okLogic", status: "finished", timeFinished: _mockable.createNowTimestamp(),
+            documents: [{action: "merge", dstPath: "users/user-1/items/a", doc: {a: 1}}],
+          }],
+        });
+        // The non-transactional distribution runs after the transaction has committed.
+        const contentionError = Object.assign(new Error(contentionText), {code: 10});
+        jest.spyOn(indexutils, "expandConsolidateAndGroupByDstPath").mockRejectedValue(contentionError);
+
+        await onFormSubmit(createEvent(outerCatchForm));
+
+        // the transaction committed (action doc written)
+        expect(transactionSetMock).toHaveBeenCalled();
+        const updates = errorUpdates();
+        expect(updates).toHaveLength(1);
+        expect(typeof updates[0]["@messages"]).toBe("string");
+        expect(updates[0]["@messages"]).not.toMatch(retryWords);
+        expect(updates[0]["@messages"]).toBe("10 stopped: Too much conflict on these documents. Please try again.");
+        // the full original text stays in the server log
+        expect(errorSpy).toHaveBeenCalledWith("Error in onFormSubmit", contentionError);
+        expect(warnSpy.mock.calls.some((call) => String(call[0]).includes(`Original: ${contentionText}`))).toBe(true);
+      });
+
+    it.each([undefined, "finished", "thrown-only"] as const)(
+      "before commit (mode %s): leaves a contention message unchanged so the client can retry", async (mode) => {
+        globalProjectConfig.logicErrorFormStatus = mode;
+        jest.spyOn(console, "error").mockImplementation();
+        const distributeSpy = jest.spyOn(indexutils, "expandConsolidateAndGroupByDstPath");
+        jest.spyOn(indexutils, "runBusinessLogics").mockRejectedValue(
+          Object.assign(new Error(contentionText), {code: 10}));
+
+        await onFormSubmit(createEvent(outerCatchForm));
+
+        expect(distributeSpy).not.toHaveBeenCalled();
+        const updates = errorUpdates();
+        expect(updates).toHaveLength(1);
+        expect(updates[0]["@messages"]).toBe(contentionText);
+      });
+
+    it.each([undefined, "thrown-only"] as const)("writes the error message as a readable string in @messages (mode %s)", async (mode) => {
+      globalProjectConfig.logicErrorFormStatus = mode;
+      jest.spyOn(console, "error").mockImplementation();
+      jest.spyOn(indexutils, "runBusinessLogics").mockRejectedValue(new Error("Unexpected failure in runBusinessLogics"));
+
+      await onFormSubmit(createEvent({
+        "formData": JSON.stringify({"@actionType": "update", "@docPath": "users/user-1", "@appVersion": "4.0.0"}),
+        "@status": "submit",
+      }));
+
+      const errorUpdate = refUpdateMock.mock.calls.map((c) => c[0]).find((data) => data["@status"] === "error");
+      expect(errorUpdate).toBeDefined();
+      expect(typeof errorUpdate["@messages"]).toBe("string");
+      expect(errorUpdate["@messages"]).toBe("Unexpected failure in runBusinessLogics");
+      expect(typeof errorUpdate.execTime).toBe("number");
+      globalProjectConfig.logicErrorFormStatus = undefined;
+    });
+
+    it("never writes [object Object] when a non-Error value is thrown", async () => {
+      jest.spyOn(console, "error").mockImplementation();
+      jest.spyOn(indexutils, "runBusinessLogics").mockRejectedValue({code: "internal"});
+
+      await onFormSubmit(createEvent({
+        "formData": JSON.stringify({"@actionType": "update", "@docPath": "users/user-1", "@appVersion": "4.0.0"}),
+        "@status": "submit",
+      }));
+
+      const errorUpdate = refUpdateMock.mock.calls.map((c) => c[0]).find((data) => data["@status"] === "error");
+      expect(typeof errorUpdate["@messages"]).toBe("string");
+      expect(errorUpdate["@messages"]).not.toContain("[object Object]");
+      expect(errorUpdate["@messages"]).toBe("{\"code\":\"internal\"}");
+    });
+  });
 });
 
 describe("onUserRegister", () => {
