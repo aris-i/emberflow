@@ -87,6 +87,7 @@ Defines project-level settings, Pub/Sub options, and function configurations.
 | `viewLogicsPublishConcurrency` | `number` | `50` | Maximum concurrency for publishing view-logic messages (clamped between `1` and `500`; `1` publishes one doc at a time: chains for one document run back-to-back; order across documents is not guaranteed, as before). |
 | `pubsubPublishOptions` | `{ viewLogics?: PublishOptions }` | `{ viewLogics: { batching: { maxMessages: 100, maxMilliseconds: 10, maxBytes: 1048576 } } }` | Custom Pub/Sub `PublishOptions` overrides for topics (e.g. `viewLogics`). Deep-merges `batching` options so partial overrides preserve default limits. |
 | `logicResultDocuments` | `"all" \| "errors-only" \| "none"` | `"all"` | Controls saving of `documents` subcollections under `@actions/{actionId}/logicResults`: `"all"` saves all document copies; `"errors-only"` copies documents only for results with status `"error"` (or all results when action ends `processed-with-errors`); `"none"` skips copying documents. In all modes, summary documents record `documentsCount` and `dstPaths` (first 50). |
+| `logicErrorFormStatus` | `"finished" \| "thrown-only" \| "all"` | `"finished"` | What a business-logic error does to the form status. `"finished"` keeps the pre-2.4.0 behaviour (the form ends `"finished"`; errors only reach `@actions`). `"thrown-only"` ends the form `"error"` when at least one logic **threw**. `"all"` ends the form `"error"` when any logic result has status `"error"`. See [Form status when a logic errors](#form-status-when-a-logic-errors). |
 | `functionsConfig` | `Record<string, FunctionConfig>` | `{}` | Per-function resource and runtime overrides (memory, timeout, maxInstances, etc.). |
 
 ### Database Structure (`dbStructure`)
@@ -186,6 +187,43 @@ export const logics: LogicConfig[] = [
   },
 ];
 ```
+
+#### Form status when a logic errors
+
+By default (`logicErrorFormStatus` unset or `"finished"`), a form whose business logics return or throw errors still
+ends with `@status: "finished"` and no `@messages`; the errors are only recorded on the `@actions` document
+(`status: "processed-with-errors"`) and its `logicResults`. This is unchanged since 1.4.11.
+
+Projects can opt in to surfacing logic errors to the client:
+
+| Value | Form ends `"error"` when… |
+|---|---|
+| `"finished"` *(default)* | never: today's behaviour. |
+| `"thrown-only"` | at least one logic **threw** an exception (Emberflow marks those results with `thrown: true`). Logics that deliberately *return* `status: "error"` (soft skips) still end `"finished"`. |
+| `"all"` | any logic result has `status: "error"`, returned or thrown. |
+
+When the option turns a form into `"error"`:
+
+- `@messages` starts with the fixed prefix **`logic-error:`**, then a note that other changes from the same form may
+  already be saved, then each failed logic's name and message (each message is cut to 200 characters, and at most 10
+  logics are listed, followed by `(+N more)`).
+- **Partial success:** sibling logics still run and their documents are still committed and distributed. `"error"`
+  here does not mean a rollback.
+- The words `contention` and `aborted` are rewritten in this message (to `conflict` / `stopped`), so clients that
+  auto-retry on those words never resubmit a logic-error form. The full exception text stays in the server log
+  (`Error in logic "…"`) and in `@actions/{actionId}/logicResults`.
+- "No matching logics found" still ends `"finished"` in every mode.
+- No new form status is introduced, so `emberflow-rn-client` and `emberflow-admin-client` need no upgrade:
+  `"error"` is already a final status for both.
+- The `@actions` status, `logicResults`, the `logicResultDocuments` copying, metrics and the post-commit order
+  (form status, then view logics, then submit-form docs, then patch logics) are unchanged.
+
+> **Client retry warning:** a client that resubmits a form when `@messages` contains contention words must skip
+> messages that begin with `logic-error:`. Earlier logics may already have saved their changes, so a resubmit could
+> apply them twice.
+
+Separately, since 2.4.0 an unexpected exception in `onFormSubmit` itself writes the error's message text as a string
+to `@messages` (previously the raw error object was written, which clients showed as an empty message).
 
 ### Hourly Business Logics (`hourlyLogicConfigs`)
 
@@ -652,6 +690,17 @@ firebase deploy --only firestore:indexes
   — unchanged entries are left as-is, so re-running/re-deploying is safe.
 - **Async builds**: A deploy only *requests* an index; it then sits in **Building** in the Firestore
   console until Firestore finishes, so it may not be usable immediately after the deploy.
+
+## Release Notes
+
+### 2.4.0
+
+- **New opt-in `projectConfig.logicErrorFormStatus`** (`"finished"` default, `"thrown-only"`, `"all"`): lets a logic
+  error end the form as `"error"` with a `logic-error:` message. Default behaviour is unchanged. See
+  [Form status when a logic errors](#form-status-when-a-logic-errors).
+- **`LogicResult.thrown?: boolean`**: optional marker Emberflow sets on results built from a thrown exception.
+  Additive; existing logics compile unchanged. It is not written to `@actions/{actionId}/logicResults`.
+- **Fix:** `onFormSubmit`'s outer catch now writes a readable string to `@messages` instead of the raw error object.
 
 ## Technical Debt
 

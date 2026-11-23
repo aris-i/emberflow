@@ -37,6 +37,8 @@ import {
   distributeLater,
   executeLogicWithMetrics,
   expandConsolidateAndGroupByDstPath,
+  buildLogicErrorFormMessage,
+  getFormErrorLogicResults,
   getFormModifiedFields,
   getSecurityFn,
   groupDocsByTargetDocPath,
@@ -45,6 +47,7 @@ import {
   resolveViewAndPatchLogicTriggers,
   distributeAndCascadeLogicResultDocs,
   runBusinessLogics,
+  toReadableErrorMessage,
   validateForm,
 } from "./index-utils";
 import {
@@ -605,7 +608,8 @@ export async function onFormSubmit(
       async function saveLogicResults() {
         const mode = projectConfig.logicResultDocuments ?? "all";
         for (let i = 0; i < runBusinessLogicStatus.logicResults.length; i++) {
-          const {documents, ...logicResult} = runBusinessLogicStatus.logicResults[i];
+          // "thrown" is an in-memory marker for the form status; keep the saved summary unchanged.
+          const {documents, thrown: _thrown, ...logicResult} = runBusinessLogicStatus.logicResults[i];
           const docs = documents || [];
           const logicResultsRef = actionRef.collection("logicResults")
             .doc(`${actionRef.id}-${i}`);
@@ -694,7 +698,18 @@ export async function onFormSubmit(
     };
     logicResults.push(distributeNonTransactionalPerfLogicResults);
 
-    await formRef.update({"@status": "finished"});
+    const formErrorLogicResults =
+      getFormErrorLogicResults(projectConfig.logicErrorFormStatus, runBusinessLogicStatus.logicResults);
+    if (formErrorLogicResults.length > 0) {
+      console.warn(`Form ${formId} ends as "error" (logicErrorFormStatus: ${projectConfig.logicErrorFormStatus}); ` +
+        `failed logics: ${formErrorLogicResults.map((result) => result.name).join(", ")}`);
+      await formRef.update({
+        "@status": "error",
+        "@messages": buildLogicErrorFormMessage(formErrorLogicResults),
+      });
+    } else {
+      await formRef.update({"@status": "finished"});
+    }
 
     await queueRunViewLogics(targetVersion, appVersion, docsForViewLogics);
     logMemoryUsage(`${formId}: After Saving Transactional Logic Logics`);
@@ -740,7 +755,7 @@ export async function onFormSubmit(
       execTime,
     };
     logicResults.push(onFormSubmitLogicResult);
-    await formRef.update({"@status": "error", "@messages": error, "execTime": execTime});
+    await formRef.update({"@status": "error", "@messages": toReadableErrorMessage(error), "execTime": execTime});
   }
 }
 

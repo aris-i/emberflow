@@ -2678,6 +2678,145 @@ describe("executeLogicWithMetrics", () => {
     expect(errorSpy).not.toHaveBeenCalled();
     errorSpy.mockRestore();
   });
+
+  it("should set the thrown marker only on results built in the catch path", async () => {
+    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => undefined);
+    const thrownResult = await indexUtils.executeLogicWithMetrics("FailingLogic", jest.fn().mockRejectedValue(new Error("Boom")));
+    expect(thrownResult.thrown).toBe(true);
+
+    const successResult = await indexUtils.executeLogicWithMetrics("OkLogic",
+      jest.fn().mockResolvedValue({name: "OkLogic", status: "finished", documents: []} as LogicResult));
+    expect(successResult).not.toHaveProperty("thrown");
+
+    const returnedErrorResult = await indexUtils.executeLogicWithMetrics("SoftErrorLogic",
+      jest.fn().mockResolvedValue({name: "SoftErrorLogic", status: "error", message: "soft skip", documents: []} as LogicResult));
+    expect(returnedErrorResult.status).toBe("error");
+    expect(returnedErrorResult).not.toHaveProperty("thrown");
+    errorSpy.mockRestore();
+  });
+
+  it("should rethrow a contention error without building a result or thrown marker", async () => {
+    const error = new Error("10 ABORTED: Too much contention on these documents.");
+    const fn = jest.fn().mockRejectedValue(error);
+    let result: LogicResult | undefined;
+    let caught: unknown;
+    try {
+      result = await indexUtils.executeLogicWithMetrics("Logic", fn, "1.0.0", () => true);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBe(error);
+    expect(result).toBeUndefined();
+  });
+});
+
+describe("getFormErrorLogicResults", () => {
+  const thrown: LogicResult = {name: "thrownLogic", status: "error", message: "Boom", documents: [], thrown: true};
+  const returned: LogicResult = {name: "returnedLogic", status: "error", message: "soft skip", documents: []};
+  const ok: LogicResult = {name: "okLogic", status: "finished", documents: []};
+
+  it("returns nothing when the option is unset (default)", () => {
+    expect(indexUtils.getFormErrorLogicResults(undefined, [thrown, returned, ok])).toEqual([]);
+  });
+
+  it("returns nothing for 'finished' and for unknown values", () => {
+    expect(indexUtils.getFormErrorLogicResults("finished", [thrown, returned, ok])).toEqual([]);
+    expect(indexUtils.getFormErrorLogicResults("bogus" as never, [thrown, returned, ok])).toEqual([]);
+  });
+
+  it("returns only thrown error results for 'thrown-only'", () => {
+    expect(indexUtils.getFormErrorLogicResults("thrown-only", [thrown, returned, ok])).toEqual([thrown]);
+    expect(indexUtils.getFormErrorLogicResults("thrown-only", [returned, ok])).toEqual([]);
+  });
+
+  it("returns every error result for 'all'", () => {
+    expect(indexUtils.getFormErrorLogicResults("all", [thrown, returned, ok])).toEqual([thrown, returned]);
+    expect(indexUtils.getFormErrorLogicResults("all", [ok])).toEqual([]);
+  });
+});
+
+describe("buildLogicErrorFormMessage", () => {
+  const retryWords = /contention|aborted/i;
+
+  it("starts with the prefix, warns about partial saves and names the logic and its message", () => {
+    const message = indexUtils.buildLogicErrorFormMessage([
+      {name: "renameIngredient", status: "error", message: "No menuItems map", documents: [], thrown: true},
+    ]);
+    expect(message.startsWith("logic-error:")).toBe(true);
+    expect(message).toContain("may already be saved");
+    expect(message).toContain("renameIngredient: No menuItems map");
+  });
+
+  it("never contains the client retry words 'contention' or 'aborted'", () => {
+    const message = indexUtils.buildLogicErrorFormMessage([
+      {name: "logicA", status: "error", message: "10 ABORTED: Too much contention on these documents.", documents: [], thrown: true},
+      {name: "logicB", status: "error", message: "Aborted due to cross-transaction contention.", documents: [], thrown: true},
+      {name: "abortedContentionLogic", status: "error", message: "aborted\ncontention CONTENTION Aborted", documents: [], thrown: true},
+    ]);
+    expect(message.startsWith("logic-error:")).toBe(true);
+    expect(message).not.toMatch(retryWords);
+    expect(message).not.toContain("10 aborted");
+    expect(message).not.toContain("aborted due to");
+    expect(message).toContain("logicA:");
+    expect(message).toContain("logicB:");
+    expect(message).not.toMatch(/[\r\n]/);
+  });
+
+  it("never contains the retry words even when they straddle the truncation limit", () => {
+    for (let pad = 180; pad < 205; pad++) {
+      const longMessage = "x".repeat(pad) + "contention aborted ".repeat(20);
+      const message = indexUtils.buildLogicErrorFormMessage([
+        {name: "logicA", status: "error", message: longMessage, documents: [], thrown: true},
+      ]);
+      expect(message).not.toMatch(retryWords);
+    }
+  });
+
+  it("lists every failing logic and truncates each message at the limit", () => {
+    const long = "y".repeat(indexUtils.LOGIC_ERROR_MAX_MESSAGE_LENGTH + 500);
+    const message = indexUtils.buildLogicErrorFormMessage([
+      {name: "logic1", status: "error", message: long, documents: [], thrown: true},
+      {name: "logic2", status: "error", message: "short", documents: [], thrown: true},
+      {name: "logic3", status: "error", documents: [], thrown: true},
+    ]);
+    expect(message).toContain("logic1: ");
+    expect(message).toContain("logic2: short");
+    expect(message).toContain("logic3: (no message)");
+    const logic1Text = message.split("logic1: ")[1].split("; ")[0];
+    expect(logic1Text.length).toBe(indexUtils.LOGIC_ERROR_MAX_MESSAGE_LENGTH);
+    expect(logic1Text.endsWith("...")).toBe(true);
+  });
+
+  it("bounds the total length when many logics fail", () => {
+    const results: LogicResult[] = Array.from({length: 50}, (_, i) => ({
+      name: `logic${i}-${"n".repeat(500)}`,
+      status: "error" as const,
+      message: "m".repeat(1000),
+      documents: [],
+      thrown: true,
+    }));
+    const message = indexUtils.buildLogicErrorFormMessage(results);
+    expect(message).toContain("(+40 more)");
+    expect(message.length).toBeLessThan(4000);
+  });
+});
+
+describe("toReadableErrorMessage", () => {
+  it("returns the message of an Error", () => {
+    expect(indexUtils.toReadableErrorMessage(new Error("Boom"))).toBe("Boom");
+  });
+
+  it("returns strings as-is and never [object Object] for objects", () => {
+    expect(indexUtils.toReadableErrorMessage("plain")).toBe("plain");
+    expect(indexUtils.toReadableErrorMessage({message: "from object"})).toBe("from object");
+    expect(indexUtils.toReadableErrorMessage({code: 7})).toBe("{\"code\":7}");
+    expect(indexUtils.toReadableErrorMessage({})).toBe("Unknown error");
+    expect(indexUtils.toReadableErrorMessage(undefined)).toBe("Unknown error");
+    expect(indexUtils.toReadableErrorMessage(42)).toBe("42");
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    expect(indexUtils.toReadableErrorMessage(circular)).toBe("Unknown error");
+  });
 });
 
 describe("transactional read contention", () => {
@@ -2773,6 +2912,8 @@ describe("transactional read contention", () => {
 
     expect(logicResults.map((r) => r.status)).toEqual(["error", "finished"]);
     expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(logicResults[0].thrown).toBe(true);
+    expect(logicResults[1]).not.toHaveProperty("thrown");
   });
 
   it("passes successful txnGet reads through unchanged", async () => {

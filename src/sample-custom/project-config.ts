@@ -7,4 +7,7 @@ export const projectConfig: ProjectConfig = {
   budgetAlertTopicName: "budget-alerts",
   maxCostLimitPerFunction: 10,
   specialCostLimitPerFunction: {},
+  // What a business-logic error does to the form status (default "finished", unchanged behaviour).
+  // "thrown-only": end the form "error" when a logic threw; "all": when any logic result is "error".
+  // logicErrorFormStatus: "thrown-only",
 };
