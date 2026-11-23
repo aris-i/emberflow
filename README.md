@@ -199,14 +199,17 @@ Projects can opt in to surfacing logic errors to the client:
 | Value | Form ends `"error"` when… |
 |---|---|
 | `"finished"` *(default)* | never: today's behaviour. |
-| `"thrown-only"` | at least one logic **threw** an exception (Emberflow marks those results with `thrown: true`). Logics that deliberately *return* `status: "error"` (soft skips) still end `"finished"`. |
+| `"thrown-only"` | at least one logic **threw** an exception (Emberflow marks those results with `thrown: true`; a `thrown` value a logic returns itself is ignored). Logics that deliberately *return* `status: "error"` (soft skips) still end `"finished"`. |
 | `"all"` | any logic result has `status: "error"`, returned or thrown. |
+
+Any other value (for example the typo `"thrown_only"`) logs one warning per value and falls back to `"finished"`.
 
 When the option turns a form into `"error"`:
 
 - `@messages` starts with the fixed prefix **`logic-error:`**, then a note that other changes from the same form may
-  already be saved, then each failed logic's name and message (each message is cut to 200 characters, and at most 10
-  logics are listed, followed by `(+N more)`).
+  already be saved, then each failed logic's name and message. Each message is cut to 200 characters and each logic
+  name to 100; at most 10 logics are listed, followed by `(+N more)`. Line breaks (CR/LF) in names and messages are
+  replaced with spaces, so the message is a single line.
 - **Partial success:** sibling logics still run and their documents are still committed and distributed. `"error"`
   here does not mean a rollback.
 - The words `contention` and `aborted` are rewritten in this message (to `conflict` / `stopped`), so clients that
@@ -222,8 +225,19 @@ When the option turns a form into `"error"`:
 > messages that begin with `logic-error:`. Earlier logics may already have saved their changes, so a resubmit could
 > apply them twice.
 
-Separately, since 2.4.0 an unexpected exception in `onFormSubmit` itself writes the error's message text as a string
-to `@messages` (previously the raw error object was written, which clients showed as an empty message).
+#### Unexpected errors in `onFormSubmit` (all modes, including the default)
+
+Since 2.4.0, an unexpected exception caught by `onFormSubmit` itself writes a readable string to `@messages`: the
+error's message, or JSON for a non-`Error` object, never `[object Object]`. Before 2.4.0 the raw error object was
+written: a plain `Error` was stored with no `@messages` at all, while a gRPC-style Firestore error was stored as an
+object such as `{code: 10, details: "…"}`.
+
+- **Before the business-logic transaction commits**, the text is written unchanged. Nothing was saved, so a client
+  that auto-retries on contention words can safely resubmit.
+- **After the transaction has committed** (for example when the non-transactional distribution fails), `contention`
+  and `aborted` are rewritten to `conflict` / `stopped` (case-insensitive, the same rewrite as `logic-error:`
+  messages), so the client cannot resubmit on top of saved changes. The full original text stays in the server log
+  (`Error in onFormSubmit` and an `onFormSubmit failed after commit` warning).
 
 ### Hourly Business Logics (`hourlyLogicConfigs`)
 
@@ -698,9 +712,13 @@ firebase deploy --only firestore:indexes
 - **New opt-in `projectConfig.logicErrorFormStatus`** (`"finished"` default, `"thrown-only"`, `"all"`): lets a logic
   error end the form as `"error"` with a `logic-error:` message. Default behaviour is unchanged. See
   [Form status when a logic errors](#form-status-when-a-logic-errors).
-- **`LogicResult.thrown?: boolean`**: optional marker Emberflow sets on results built from a thrown exception.
+- **`LogicResult.thrown?: boolean`**: optional marker Emberflow sets on results built from a thrown exception
+  (a value a logic returns itself is stripped).
   Additive; existing logics compile unchanged. It is not written to `@actions/{actionId}/logicResults`.
 - **Fix:** `onFormSubmit`'s outer catch now writes a readable string to `@messages` instead of the raw error object.
+  After the business-logic transaction has committed, `contention` / `aborted` in that string are rewritten to
+  `conflict` / `stopped` so clients can't auto-retry on top of saved changes (all modes, including the default).
+- An unknown `logicErrorFormStatus` value logs one warning and falls back to `"finished"`.
 
 ## Technical Debt
 

@@ -371,7 +371,8 @@ export async function executeLogicWithMetrics(
 ): Promise<LogicResult> {
   const start = performance.now();
   try {
-    const result = await fn();
+    // A logic can't mark its own result as thrown: the marker only comes from the catch path below.
+    const {thrown: _thrown, ...result} = await fn();
     const end = performance.now();
     const execTime = end - start;
     return {
@@ -426,10 +427,37 @@ export function getFormErrorLogicResults(
 // Removes the words older clients auto-retry on ("contention", "aborted") so a
 // "logic-error:" message can never trigger a resubmit. Newlines become spaces.
 function sanitizeClientText(text: string): string {
+  return rewriteRetryWords(text.replace(/[\r\n]+/g, " "));
+}
+
+// Rewrites the words older clients auto-retry on (case-insensitive):
+// "contention" -> "conflict", "aborted" -> "stopped".
+export function rewriteRetryWords(text: string): string {
   return text
-    .replace(/[\r\n]+/g, " ")
     .replace(/contention/gi, "conflict")
     .replace(/aborted/gi, "stopped");
+}
+
+const LOGIC_ERROR_FORM_STATUS_VALUES: readonly LogicErrorFormStatus[] = ["finished", "thrown-only", "all"];
+const warnedLogicErrorFormStatusValues = new Set<string>();
+
+// Returns the effective logicErrorFormStatus. Unset means "finished". An unknown
+// value (e.g. a typo like "thrown_only") logs one warning per value and falls
+// back to "finished".
+export function resolveLogicErrorFormStatus(mode: unknown): LogicErrorFormStatus {
+  if (mode === undefined || mode === null) {
+    return "finished";
+  }
+  if ((LOGIC_ERROR_FORM_STATUS_VALUES as readonly unknown[]).includes(mode)) {
+    return mode as LogicErrorFormStatus;
+  }
+  const key = String(mode);
+  if (!warnedLogicErrorFormStatusValues.has(key)) {
+    warnedLogicErrorFormStatusValues.add(key);
+    console.warn(`Unknown projectConfig.logicErrorFormStatus value "${key}"; ` +
+      `expected one of ${LOGIC_ERROR_FORM_STATUS_VALUES.map((v) => `"${v}"`).join(", ")}. Falling back to "finished".`);
+  }
+  return "finished";
 }
 
 function truncate(text: string, maxLength: number): string {

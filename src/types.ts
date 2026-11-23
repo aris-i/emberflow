@@ -61,7 +61,7 @@ export interface ProjectConfig {
     /**
      * What a business-logic error does to the form status (see README,
      * "Form status when a logic errors"). Opt-in; default "finished" keeps the
-     * pre-2.4.0 behaviour.
+     * pre-2.4.0 behaviour. Unknown values warn once and fall back to "finished".
      */
     logicErrorFormStatus?: LogicErrorFormStatus;
 }
@@ -193,6 +193,7 @@ export interface LogicResult{
     /**
      * Set by Emberflow (never by a logic) when this result was built from an
      * exception the logic threw, as opposed to a returned status "error".
+     * A value a logic returns itself is stripped by Emberflow.
      */
     thrown?: boolean;
 }

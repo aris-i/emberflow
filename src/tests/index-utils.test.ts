@@ -2692,7 +2692,20 @@ describe("executeLogicWithMetrics", () => {
       jest.fn().mockResolvedValue({name: "SoftErrorLogic", status: "error", message: "soft skip", documents: []} as LogicResult));
     expect(returnedErrorResult.status).toBe("error");
     expect(returnedErrorResult).not.toHaveProperty("thrown");
+
+    const selfMarkedResult = await indexUtils.executeLogicWithMetrics("SelfMarkedLogic",
+      jest.fn().mockResolvedValue({name: "SelfMarkedLogic", status: "error", message: "soft", documents: [], thrown: true} as LogicResult));
+    expect(selfMarkedResult.status).toBe("error");
+    expect(selfMarkedResult).not.toHaveProperty("thrown");
     errorSpy.mockRestore();
+  });
+
+  it("should strip a thrown marker a logic returns itself on the success path", async () => {
+    const result = await indexUtils.executeLogicWithMetrics("SelfMarkedLogic",
+      jest.fn().mockResolvedValue({name: "SelfMarkedLogic", status: "error", message: "soft skip", documents: [], thrown: true} as LogicResult));
+    expect(result).not.toHaveProperty("thrown");
+    expect(indexUtils.getFormErrorLogicResults("thrown-only", [result])).toEqual([]);
+    expect(indexUtils.getFormErrorLogicResults("all", [result])).toEqual([result]);
   });
 
   it("should rethrow a contention error without building a result or thrown marker", async () => {
@@ -2798,6 +2811,36 @@ describe("buildLogicErrorFormMessage", () => {
     const message = indexUtils.buildLogicErrorFormMessage(results);
     expect(message).toContain("(+40 more)");
     expect(message.length).toBeLessThan(4000);
+  });
+});
+
+describe("resolveLogicErrorFormStatus", () => {
+  it("returns the three valid values unchanged and 'finished' when unset, without warning", () => {
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+    expect(indexUtils.resolveLogicErrorFormStatus(undefined)).toBe("finished");
+    expect(indexUtils.resolveLogicErrorFormStatus("finished")).toBe("finished");
+    expect(indexUtils.resolveLogicErrorFormStatus("thrown-only")).toBe("thrown-only");
+    expect(indexUtils.resolveLogicErrorFormStatus("all")).toBe("all");
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it("falls back to 'finished' for an unknown value and warns once per value", () => {
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+    expect(indexUtils.resolveLogicErrorFormStatus("thrown_only-unit")).toBe("finished");
+    expect(indexUtils.resolveLogicErrorFormStatus("thrown_only-unit")).toBe("finished");
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][0]).toContain("Unknown projectConfig.logicErrorFormStatus value \"thrown_only-unit\"");
+    expect(warnSpy.mock.calls[0][0]).toContain("Falling back to \"finished\"");
+    warnSpy.mockRestore();
+  });
+});
+
+describe("rewriteRetryWords", () => {
+  it("rewrites contention and aborted case-insensitively and leaves other text alone", () => {
+    expect(indexUtils.rewriteRetryWords("10 ABORTED: Too much contention. Aborted due to CONTENTION"))
+      .toBe("10 stopped: Too much conflict. stopped due to conflict");
+    expect(indexUtils.rewriteRetryWords("line1\nline2")).toBe("line1\nline2");
   });
 });
 

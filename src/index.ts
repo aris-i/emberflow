@@ -40,6 +40,8 @@ import {
   buildLogicErrorFormMessage,
   getFormErrorLogicResults,
   getFormModifiedFields,
+  resolveLogicErrorFormStatus,
+  rewriteRetryWords,
   getSecurityFn,
   groupDocsByTargetDocPath,
   onDeleteFunction,
@@ -415,6 +417,9 @@ export async function onFormSubmit(
   const formRef = formSnapshot.ref;
   const start = performance.now();
   const logicResults: LogicResult[] = [];
+  // Set once the business-logic transaction has committed. After that a client
+  // retry would run the form again on top of saved writes.
+  let transactionCommitted = false;
 
   try {
     const trimmedForm = trimStrings(JSON.parse(formSnapshot.val().formData));
@@ -666,6 +671,7 @@ export async function onFormSubmit(
 
       return "transaction-complete";
     });
+    transactionCommitted = true;
     logMemoryUsage(`${formId}: After Running Transaction`);
 
     if (runTransactionStatus.includes("error")) {
@@ -698,10 +704,11 @@ export async function onFormSubmit(
     };
     logicResults.push(distributeNonTransactionalPerfLogicResults);
 
+    const logicErrorFormStatus = resolveLogicErrorFormStatus(projectConfig.logicErrorFormStatus);
     const formErrorLogicResults =
-      getFormErrorLogicResults(projectConfig.logicErrorFormStatus, runBusinessLogicStatus.logicResults);
+      getFormErrorLogicResults(logicErrorFormStatus, runBusinessLogicStatus.logicResults);
     if (formErrorLogicResults.length > 0) {
-      console.warn(`Form ${formId} ends as "error" (logicErrorFormStatus: ${projectConfig.logicErrorFormStatus}); ` +
+      console.warn(`Form ${formId} ends as "error" (logicErrorFormStatus: ${logicErrorFormStatus}); ` +
         `failed logics: ${formErrorLogicResults.map((result) => result.name).join(", ")}`);
       await formRef.update({
         "@status": "error",
@@ -755,7 +762,16 @@ export async function onFormSubmit(
       execTime,
     };
     logicResults.push(onFormSubmitLogicResult);
-    await formRef.update({"@status": "error", "@messages": toReadableErrorMessage(error), "execTime": execTime});
+    const originalMessage = toReadableErrorMessage(error);
+    let clientMessage = originalMessage;
+    if (transactionCommitted) {
+      // Changes are already saved: never let the client auto-retry on contention words.
+      clientMessage = rewriteRetryWords(originalMessage);
+      if (clientMessage !== originalMessage) {
+        console.warn(`onFormSubmit failed after commit; retry words rewritten in @messages. Original: ${originalMessage}`);
+      }
+    }
+    await formRef.update({"@status": "error", "@messages": clientMessage, "execTime": execTime});
   }
 }
 
